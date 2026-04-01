@@ -40,12 +40,15 @@ type classifyRequest struct {
 // ClassifyAlert calls POST /classify on the sidecar and returns top-K candidates.
 // Returns a non-nil error if the sidecar is unreachable.
 func (c *Client) ClassifyAlert(ctx context.Context, name, query, app, subsystem string) ([]Candidate, error) {
-	payload, _ := json.Marshal(classifyRequest{
+	payload, err := json.Marshal(classifyRequest{
 		Name:      name,
 		Query:     query,
 		App:       app,
 		Subsystem: subsystem,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/classify", bytes.NewReader(payload))
 	if err != nil {
@@ -77,5 +80,9 @@ func (c *Client) IsHealthy(ctx context.Context) bool {
 		return false
 	}
 	resp, err := c.httpClient.Do(req)
-	return err == nil && resp.StatusCode == http.StatusOK
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
