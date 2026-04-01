@@ -133,6 +133,8 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 			NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
 			NvidiaModel:     h.config.LLM.NvidiaModel,
 			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
 		}
 		validatorProvider, err := llm.NewClassifierProvider(
 			h.config.LLM.ValidatorProvider,
@@ -280,6 +282,8 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 			NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
 			NvidiaModel:     h.config.LLM.NvidiaModel,
 			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
 		})
 	} else {
 		// Use configured suggestion provider + model
@@ -293,6 +297,8 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 			NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
 			NvidiaModel:     h.config.LLM.NvidiaModel,
 			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
 		})
 	}
 	if err != nil {

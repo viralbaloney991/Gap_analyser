@@ -34,6 +34,8 @@ type LLMConfig struct {
 	NvidiaAPIKey    string `yaml:"nvidia_api_key"`
 	NvidiaModel     string `yaml:"nvidia_model"`
 	NvidiaEndpoint  string `yaml:"nvidia_endpoint"`
+	GeminiAPIKey    string `yaml:"gemini_api_key"`
+	GeminiModel     string `yaml:"gemini_model"`
 
 	// ClassifierProvider/Model is a fast model used only for MITRE technique classification.
 	ClassifierProvider string `yaml:"classifier_provider"`
@@ -90,6 +92,9 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("NVIDIA_API_KEY"); v != "" {
 		cfg.LLM.NvidiaAPIKey = v
+	}
+	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
+		cfg.LLM.GeminiAPIKey = v
 	}
 	if cfg.LLM.DefaultProvider == "" {
 		cfg.LLM.DefaultProvider = "claude"
