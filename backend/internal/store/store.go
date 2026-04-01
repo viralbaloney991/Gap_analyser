@@ -39,7 +39,7 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 		return nil, fmt.Errorf("neondb migrate: %w", err)
 	}
 
-	log.Printf("connected to NeonDB")
+	log.Printf("INFO [store] connected to NeonDB")
 	return s, nil
 }
 
@@ -97,11 +97,22 @@ func (s *Store) LoadAlerts(ctx context.Context, client string) ([]*models.AlertD
 	return alerts, nil
 }
 
-// UpsertAlerts bulk-upserts all alerts for a client.
-// Existing rows are replaced; new rows are inserted.
+// UpsertAlerts replaces all stored alerts for a client with the given set.
+// Runs in a transaction: deletes existing rows first, then inserts the new set.
+// This ensures alerts deleted in Coralogix are removed from the store.
 func (s *Store) UpsertAlerts(ctx context.Context, client string, alerts []*models.AlertDef) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx) // no-op if already committed
+
+	if _, err := tx.Exec(ctx, `DELETE FROM client_alerts WHERE client = $1`, client); err != nil {
+		return fmt.Errorf("delete existing alerts: %w", err)
+	}
+
 	if len(alerts) == 0 {
-		return nil
+		return tx.Commit(ctx)
 	}
 
 	batch := &pgx.Batch{}
@@ -113,20 +124,19 @@ func (s *Store) UpsertAlerts(ctx context.Context, client string, alerts []*model
 		batch.Queue(`
 			INSERT INTO client_alerts (client, alert_id, data, fetched_at)
 			VALUES ($1, $2, $3, NOW())
-			ON CONFLICT (client, alert_id)
-			DO UPDATE SET data = EXCLUDED.data, fetched_at = NOW()
 		`, client, alert.ID, string(data))
 	}
 
-	results := s.pool.SendBatch(ctx, batch)
-	defer results.Close()
-
+	results := tx.SendBatch(ctx, batch)
 	for range alerts {
 		if _, err := results.Exec(); err != nil {
-			return fmt.Errorf("upsert batch exec: %w", err)
+			results.Close()
+			return fmt.Errorf("insert batch exec: %w", err)
 		}
 	}
-	return nil
+	results.Close()
+
+	return tx.Commit(ctx)
 }
 
 // GetLastSynced returns when client was last synced.
