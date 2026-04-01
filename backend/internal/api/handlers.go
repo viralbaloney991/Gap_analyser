@@ -162,6 +162,8 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 				llmMappings = llm.BatchClassifyAndValidate(ctx, classifierClient, validatorProvider, h.cache, inputs)
 			}
 		}
+	} else {
+		log.Printf("WARN [analyze] cache unavailable, skipping MITRE classification pipeline for client=%s", req.Client)
 	}
 
 	// Extract features.
@@ -264,24 +266,35 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine LLM provider
-	providerName := req.Provider
-	if providerName == "" {
-		if h.config.LLM.SuggestionProvider != "" {
-			providerName = h.config.LLM.SuggestionProvider
-		} else {
+	// Determine LLM provider.
+	// When the caller specifies req.Provider, use that provider's default model to avoid
+	// cross-provider model contamination (e.g. a Claude model being sent to the Nvidia endpoint).
+	// When no provider is specified, use the configured suggestion provider + model.
+	var provider llm.Provider
+	var err error
+	if req.Provider != "" {
+		// Caller-specified provider: use default model for that provider
+		provider, err = llm.NewProvider(req.Provider, llm.ProviderConfig{
+			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+			ClaudeModel:     h.config.LLM.ClaudeModel,
+			NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
+			NvidiaModel:     h.config.LLM.NvidiaModel,
+			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+		})
+	} else {
+		// Use configured suggestion provider + model
+		providerName := h.config.LLM.SuggestionProvider
+		if providerName == "" {
 			providerName = h.config.LLM.DefaultProvider
 		}
+		provider, err = llm.NewClassifierProvider(providerName, h.config.LLM.SuggestionModel, llm.ProviderConfig{
+			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+			ClaudeModel:     h.config.LLM.ClaudeModel,
+			NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
+			NvidiaModel:     h.config.LLM.NvidiaModel,
+			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+		})
 	}
-	suggestionModel := h.config.LLM.SuggestionModel
-	baseCfg := llm.ProviderConfig{
-		AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
-		ClaudeModel:     h.config.LLM.ClaudeModel,
-		NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
-		NvidiaModel:     h.config.LLM.NvidiaModel,
-		NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
-	}
-	provider, err := llm.NewClassifierProvider(providerName, suggestionModel, baseCfg)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -357,8 +370,15 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		tactic = mitre.GetTechniqueTactic(req.TechniqueID)
 	}
 
+	effectiveProvider := req.Provider
+	if effectiveProvider == "" {
+		effectiveProvider = h.config.LLM.SuggestionProvider
+		if effectiveProvider == "" {
+			effectiveProvider = h.config.LLM.DefaultProvider
+		}
+	}
 	log.Printf("INFO [suggestions] client=%s technique=%s (%s) log_sources=%d provider=%s",
-		req.Client, req.TechniqueID, techniqueName, len(logSources), providerName)
+		req.Client, req.TechniqueID, techniqueName, len(logSources), effectiveProvider)
 
 	gapInput := llm.GapInput{
 		LogSources: logSources,
