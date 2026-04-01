@@ -23,6 +23,7 @@ type Config struct {
 	Clients        map[string]ClientConfig `yaml:"clients"`
 	LLM            LLMConfig               `yaml:"llm"`
 	Classifier     ClassifierConfig        `yaml:"classifier"`
+	NeonDSN        string                  `yaml:"neon_dsn"`
 }
 
 // LLMConfig holds settings for LLM-powered suggestions.
@@ -31,9 +32,10 @@ type LLMConfig struct {
 	DefaultProvider string `yaml:"default_provider"` // "claude" or "nvidia"
 	AnthropicAPIKey string `yaml:"anthropic_api_key"`
 	ClaudeModel     string `yaml:"claude_model"`
-	NvidiaAPIKey    string `yaml:"nvidia_api_key"`
-	NvidiaModel     string `yaml:"nvidia_model"`
-	NvidiaEndpoint  string `yaml:"nvidia_endpoint"`
+	NvidiaAPIKey           string `yaml:"nvidia_api_key"`
+	NvidiaSuggestionAPIKey string `yaml:"nvidia_suggestion_api_key"` // separate key for suggestion model if different account
+	NvidiaModel            string `yaml:"nvidia_model"`
+	NvidiaEndpoint         string `yaml:"nvidia_endpoint"`
 	GeminiAPIKey    string `yaml:"gemini_api_key"`
 	GeminiModel     string `yaml:"gemini_model"`
 
@@ -95,6 +97,9 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
 		cfg.LLM.GeminiAPIKey = v
+	}
+	if v := os.Getenv("NEON_DSN"); v != "" {
+		cfg.NeonDSN = v
 	}
 	if cfg.LLM.DefaultProvider == "" {
 		cfg.LLM.DefaultProvider = "claude"
