@@ -1,6 +1,6 @@
 import json
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from classifier.mitre import parse_techniques, fetch_stix
 
 
@@ -54,3 +54,20 @@ def test_parse_techniques_fields():
     assert t["name"] == "OS Credential Dumping"
     assert "dump credentials" in t["description"]
     assert "lsass" in t["detection"]
+
+
+def test_fetch_stix_returns_dict():
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"objects": []}
+    mock_resp.raise_for_status.return_value = None
+    with patch("requests.get", return_value=mock_resp) as mock_get:
+        result = fetch_stix("http://example.com/stix.json")
+        mock_get.assert_called_once_with("http://example.com/stix.json", timeout=30)
+        assert result == {"objects": []}
+
+
+def test_fetch_stix_raises_on_network_error():
+    import requests as req
+    with patch("requests.get", side_effect=req.exceptions.ConnectionError("timeout")):
+        with pytest.raises(RuntimeError, match="Failed to fetch MITRE STIX"):
+            fetch_stix("http://example.com/stix.json")

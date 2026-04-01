@@ -4,9 +4,17 @@ STIX_URL = "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack
 
 
 def fetch_stix(url: str = STIX_URL) -> dict:
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    """Fetch MITRE ATT&CK Enterprise STIX bundle from the given URL.
+
+    Raises:
+        RuntimeError: if the request fails or returns a non-2xx status.
+    """
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Failed to fetch MITRE STIX from {url}: {e}") from e
 
 
 def parse_techniques(stix: dict) -> list[dict]:
@@ -15,7 +23,7 @@ def parse_techniques(stix: dict) -> list[dict]:
     for obj in stix.get("objects", []):
         if obj.get("type") != "attack-pattern":
             continue
-        if obj.get("x_mitre_deprecated", False):
+        if obj.get("x_mitre_deprecated", False) or obj.get("x_mitre_revoked", False):
             continue
 
         technique_id = None
