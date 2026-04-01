@@ -32,7 +32,10 @@ func (w *Worker) Start(ctx context.Context) {
 	for name, cfg := range w.clients {
 		lastSynced, ok, err := w.store.GetLastSynced(ctx, name)
 		if err != nil {
-			log.Printf("WARN [sync] check last_synced client=%s: %v", name, err)
+			// Treat as stale on error: conservative choice ensures data is fresh.
+			// The sync goroutine will fail gracefully if the store is truly unavailable.
+			log.Printf("WARN [sync] check last_synced client=%s: %v — treating as stale", name, err)
+			ok = false
 		}
 		if !ok || time.Since(lastSynced) > syncInterval {
 			clientCfg := cfg // capture loop variable
@@ -73,7 +76,11 @@ func (w *Worker) SyncClient(ctx context.Context, clientName string, cfg config.C
 		log.Printf("ERROR [sync] create coralogix client=%s: %v", clientName, err)
 		return
 	}
-	defer cx.Close()
+	defer func() {
+		if err := cx.Close(); err != nil {
+			log.Printf("WARN [sync] close coralogix client=%s: %v", clientName, err)
+		}
+	}()
 
 	alerts, err := cx.FetchActiveAlerts(ctx)
 	if err != nil {
