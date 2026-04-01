@@ -13,17 +13,22 @@ log = logging.getLogger(__name__)
 
 techniques: list[dict] = []
 index_entries: list[IndexEntry] = []
+_startup_error: str = ""
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global techniques, index_entries
+    global techniques, index_entries, _startup_error
     log.info("Loading MITRE ATT&CK data...")
-    stix = fetch_stix()
-    techniques = parse_techniques(stix)
-    log.info(f"Parsed {len(techniques)} techniques")
-    index_entries = load_or_build(techniques)
-    log.info(f"Index ready ({len(index_entries)} entries)")
+    try:
+        stix = fetch_stix()
+        techniques = parse_techniques(stix)
+        log.info(f"Parsed {len(techniques)} techniques")
+        index_entries = load_or_build(techniques)
+        log.info(f"Index ready ({len(index_entries)} entries)")
+    except Exception as exc:
+        log.error(f"Startup failed: {exc}")
+        _startup_error = str(exc)
     yield
 
 
@@ -37,13 +42,10 @@ class ClassifyRequest(BaseModel):
     subsystem: str = ""
 
 
-def lifespan_setup():
-    """Exposed for tests to trigger setup manually."""
-    pass
-
-
 @app.get("/health")
 def health():
+    if _startup_error:
+        return {"status": "degraded", "error": _startup_error, "techniques": 0}
     return {"status": "ok", "techniques": len(techniques)}
 
 

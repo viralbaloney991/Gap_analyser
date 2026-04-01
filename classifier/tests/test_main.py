@@ -9,26 +9,18 @@ MOCK_TECHNIQUES = [
 ]
 
 
-@pytest.fixture
-def client():
-    import classifier.main as m
+@pytest.fixture(scope="session")
+def mock_index():
     from classifier.embedder import build_index
+    return build_index(MOCK_TECHNIQUES)
 
-    # Directly set module-level globals so the running app sees them
-    original_techniques = m.techniques
-    original_index = m.index_entries
 
-    m.techniques = list(MOCK_TECHNIQUES)
-    m.index_entries = build_index(MOCK_TECHNIQUES)
-
-    from classifier.main import app, lifespan_setup
-    test_client = TestClient(app)
-
-    yield test_client
-
-    # Restore originals after test
-    m.techniques = original_techniques
-    m.index_entries = original_index
+@pytest.fixture
+def client(mock_index):
+    import classifier.main as m
+    m.techniques = MOCK_TECHNIQUES
+    m.index_entries = mock_index
+    return TestClient(m.app)
 
 
 def test_health(client):
