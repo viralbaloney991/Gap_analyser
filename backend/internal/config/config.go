@@ -95,6 +95,9 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("NVIDIA_API_KEY"); v != "" {
 		cfg.LLM.NvidiaAPIKey = v
 	}
+	if v := os.Getenv("NVIDIA_SUGGESTION_API_KEY"); v != "" {
+		cfg.LLM.NvidiaSuggestionAPIKey = v
+	}
 	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
 		cfg.LLM.GeminiAPIKey = v
 	}
