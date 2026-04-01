@@ -19,6 +19,7 @@ import (
 	"coralogix-alert-analyzer/internal/models"
 	"coralogix-alert-analyzer/internal/monday"
 	"coralogix-alert-analyzer/internal/similarity"
+	"coralogix-alert-analyzer/internal/store"
 )
 
 // Handler holds dependencies for HTTP handlers.
@@ -26,14 +27,17 @@ type Handler struct {
 	config       *config.Config
 	mondayClient *monday.Client
 	cache        *cache.Store
+	alertStore   *store.Store // NeonDB; nil if unavailable — falls back to live fetch
 }
 
-// NewHandler creates a new Handler with the given config and cache.
-func NewHandler(cfg *config.Config, store *cache.Store) *Handler {
+// NewHandler creates a new Handler.
+// redisStore and alertStore may each be nil if the respective service is unavailable.
+func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.Store) *Handler {
 	return &Handler{
 		config:       cfg,
 		mondayClient: monday.NewClient(cfg.MondayAPIToken, cfg.MondayBoardID),
-		cache:        store,
+		cache:        redisStore,
+		alertStore:   alertStore,
 	}
 }
 
@@ -106,6 +110,18 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		defer wg.Done()
+		if h.alertStore != nil {
+			stored, err := h.alertStore.LoadAlerts(ctx, req.Client)
+			if err != nil {
+				log.Printf("WARN [analyze] load from store client=%s: %v — falling back to live", req.Client, err)
+			} else if len(stored) > 0 {
+				log.Printf("INFO [analyze] loaded %d alerts from store client=%s", len(stored), req.Client)
+				alerts = stored
+				return
+			} else {
+				log.Printf("INFO [analyze] store empty for client=%s — fetching live (first boot)", req.Client)
+			}
+		}
 		alerts, alertsErr = fetchAlerts(ctx, clientCfg.Region, clientCfg.APIKey)
 	}()
 
@@ -272,6 +288,13 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 	// When the caller specifies req.Provider, use that provider's default model to avoid
 	// cross-provider model contamination (e.g. a Claude model being sent to the Nvidia endpoint).
 	// When no provider is specified, use the configured suggestion provider + model.
+
+	// For NVIDIA suggestions, prefer the dedicated suggestion key (may be a different account/model).
+	nvidiaKey := h.config.LLM.NvidiaAPIKey
+	if h.config.LLM.NvidiaSuggestionAPIKey != "" {
+		nvidiaKey = h.config.LLM.NvidiaSuggestionAPIKey
+	}
+
 	var provider llm.Provider
 	var err error
 	if req.Provider != "" {
@@ -279,8 +302,8 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		provider, err = llm.NewProvider(req.Provider, llm.ProviderConfig{
 			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
 			ClaudeModel:     h.config.LLM.ClaudeModel,
-			NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
-			NvidiaModel:     h.config.LLM.NvidiaModel,
+			NvidiaAPIKey:    nvidiaKey,
+			NvidiaModel:     h.config.LLM.SuggestionModel,
 			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
 			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
 			GeminiModel:     h.config.LLM.GeminiModel,
@@ -294,7 +317,7 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		provider, err = llm.NewClassifierProvider(providerName, h.config.LLM.SuggestionModel, llm.ProviderConfig{
 			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
 			ClaudeModel:     h.config.LLM.ClaudeModel,
-			NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
+			NvidiaAPIKey:    nvidiaKey,
 			NvidiaModel:     h.config.LLM.NvidiaModel,
 			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
 			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
