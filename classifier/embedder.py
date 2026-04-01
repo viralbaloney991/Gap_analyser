@@ -1,9 +1,12 @@
+import logging
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
+
+logger = logging.getLogger(__name__)
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 CACHE_PATH = Path(__file__).parent / "embeddings.pkl"
@@ -48,10 +51,14 @@ def build_index(techniques: list[dict]) -> list[IndexEntry]:
 
 def search_index(query: str, entries: list[IndexEntry], top_k: int = 3) -> list[dict]:
     """Return top-k techniques most similar to query, sorted by score descending."""
+    if not entries:
+        return []
+
     model = _get_model()
     query_vec = model.encode([query], convert_to_numpy=True)[0]
     query_vec = query_vec / max(np.linalg.norm(query_vec), 1e-8)
 
+    top_k = min(top_k, len(entries))
     matrix = np.stack([e.embedding for e in entries])
     scores = matrix @ query_vec
 
@@ -69,8 +76,18 @@ def search_index(query: str, entries: list[IndexEntry], top_k: int = 3) -> list[
 def load_or_build(techniques: list[dict]) -> list[IndexEntry]:
     """Load index from disk if available, otherwise build and persist to embeddings.pkl."""
     if CACHE_PATH.exists():
-        with open(CACHE_PATH, "rb") as f:
-            return pickle.load(f)
+        try:
+            with open(CACHE_PATH, "rb") as f:
+                result = pickle.load(f)
+            if (
+                isinstance(result, list)
+                and len(result) > 0
+                and all(isinstance(e, IndexEntry) for e in result)
+            ):
+                return result
+            logger.warning("Cache validation failed (unexpected format); rebuilding index.")
+        except (pickle.UnpicklingError, EOFError, Exception) as exc:
+            logger.warning("Failed to load cache (%s); rebuilding index.", exc)
     entries = build_index(techniques)
     with open(CACHE_PATH, "wb") as f:
         pickle.dump(entries, f)

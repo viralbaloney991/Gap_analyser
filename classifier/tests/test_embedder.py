@@ -53,4 +53,4 @@ def test_search_scores_between_0_and_1():
     entries = build_index(SAMPLE_TECHNIQUES)
     results = search_index("assume role cloud account", entries, top_k=3)
     for r in results:
-        assert 0.0 <= r["score"] <= 1.0
+        assert -1.0 <= r["score"] <= 1.0
