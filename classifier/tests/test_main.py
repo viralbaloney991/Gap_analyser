@@ -20,6 +20,7 @@ def client(mock_index):
     import classifier.main as m
     m.techniques = MOCK_TECHNIQUES
     m.index_entries = mock_index
+    m._startup_error = ""
     return TestClient(m.app)
 
 
