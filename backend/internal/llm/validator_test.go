@@ -64,6 +64,12 @@ func TestBuildValidatorUserMessage(t *testing.T) {
 	if !containsStr(msg, "0.91") {
 		t.Error("message missing score")
 	}
+	if !containsStr(msg, "okta") {
+		t.Error("message missing app")
+	}
+	if !containsStr(msg, "okta-audit") {
+		t.Error("message missing subsystem")
+	}
 }
 
 func containsStr(s, sub string) bool {

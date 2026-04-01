@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"coralogix-alert-analyzer/internal/classifier"
@@ -76,7 +77,7 @@ func parseValidationResult(raw string) ([]string, error) {
 		if len(lines) > 1 {
 			cleaned = lines[1]
 		}
-		if idx := strings.LastIndex(cleaned, "```"); idx > 0 {
+		if idx := strings.LastIndex(cleaned, "```"); idx >= 0 {
 			cleaned = cleaned[:idx]
 		}
 		cleaned = strings.TrimSpace(cleaned)
@@ -85,6 +86,9 @@ func parseValidationResult(raw string) ([]string, error) {
 	var result validationResult
 	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
 		return nil, fmt.Errorf("parse validation result: %w (raw: %.100s)", err, raw)
+	}
+	if len(result.Rejected) > 0 {
+		log.Printf("DEBUG [validator] rejected techniques: %v", result.Rejected)
 	}
 	if result.Confirmed == nil {
 		return []string{}, nil
