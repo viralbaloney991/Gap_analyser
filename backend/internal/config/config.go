@@ -35,8 +35,7 @@ type LLMConfig struct {
 	NvidiaModel     string `yaml:"nvidia_model"`
 	NvidiaEndpoint  string `yaml:"nvidia_endpoint"`
 
-	// ClassifierProvider/Model is a fast model used only for MITRE technique
-	// classification. Defaults to DefaultProvider + NvidiaModel/ClaudeModel if unset.
+	// ClassifierProvider/Model is a fast model used only for MITRE technique classification.
 	ClassifierProvider string `yaml:"classifier_provider"`
 	ClassifierModel    string `yaml:"classifier_model"`
 
@@ -94,6 +93,16 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.LLM.DefaultProvider == "" {
 		cfg.LLM.DefaultProvider = "claude"
+	}
+
+	if cfg.Classifier.Endpoint == "" {
+		return nil, fmt.Errorf("config: classifier.endpoint is required")
+	}
+	if cfg.LLM.ValidatorModel == "" {
+		return nil, fmt.Errorf("config: llm.validator_model is required")
+	}
+	if cfg.LLM.SuggestionModel == "" {
+		return nil, fmt.Errorf("config: llm.suggestion_model is required")
 	}
 
 	return &cfg, nil
