@@ -1,0 +1,169 @@
+package models
+
+// Region represents a Coralogix deployment region.
+type Region struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Endpoint string `json:"endpoint"`
+}
+
+// Regions maps region IDs to their gRPC endpoints.
+var Regions = map[string]Region{
+	"eu1": {ID: "eu1", Name: "Europe 1", Endpoint: "api.coralogix.com:443"},
+	"eu2": {ID: "eu2", Name: "Europe 2", Endpoint: "api.eu2.coralogix.com:443"},
+	"us1": {ID: "us1", Name: "US 1", Endpoint: "api.coralogix.us:443"},
+	"us2": {ID: "us2", Name: "US 2", Endpoint: "api.cx498.coralogix.com:443"},
+	"ap1": {ID: "ap1", Name: "Asia Pacific 1 (India)", Endpoint: "api.app.coralogix.in:443"},
+	"ap2": {ID: "ap2", Name: "Asia Pacific 2 (Singapore)", Endpoint: "api.coralogixsg.com:443"},
+	"ap3": {ID: "ap3", Name: "Asia Pacific 3", Endpoint: "api.ap3.coralogix.com:443"},
+}
+
+// AlertDef represents a parsed Coralogix alert definition.
+type AlertDef struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Enabled     bool              `json:"enabled"`
+	Priority    string            `json:"priority"`
+	AlertType   string            `json:"alert_type"`
+	TypeDef     map[string]any    `json:"type_definition"`
+	GroupByKeys []string          `json:"group_by_keys"`
+	Labels      map[string]string `json:"entity_labels"`
+	Features    AlertFeatures     `json:"features"`
+}
+
+// AlertFeatures are extracted dimensions used for similarity and MITRE mapping.
+type AlertFeatures struct {
+	DataSources    []string `json:"data_sources"`
+	Entities       []string `json:"entities"`
+	Actions        []string `json:"actions"`
+	Conditions     []string `json:"conditions"`
+	TimeWindow     string   `json:"time_window"`
+	Techniques     []string `json:"techniques"`
+	Tactics        []string `json:"tactics"`
+	BuildingBlocks []string `json:"building_blocks,omitempty"`
+	VendorCovered  bool     `json:"vendor_covered,omitempty"`
+	VendorName     string   `json:"vendor_name,omitempty"`
+	IsSecurityAlert bool    `json:"is_security_alert"`
+}
+
+// MITRECoverageResult is the response for MITRE coverage analysis.
+type MITRECoverageResult struct {
+	NavigatorLayer map[string]any    `json:"navigator_layer"`
+	Summary        MITRECoverageSummary `json:"summary"`
+}
+
+type MITRECoverageSummary struct {
+	TotalTechniques      int                       `json:"total_techniques"`
+	CoveredTechniques    int                       `json:"covered_techniques"`
+	CoveragePercent      float64                   `json:"coverage_percent"`
+	TotalSubTechniques   int                       `json:"total_sub_techniques"`
+	CoveredSubTechniques int                       `json:"covered_sub_techniques"`
+	TacticBreakdown      map[string]TacticCoverage `json:"tactic_breakdown"`
+}
+
+type TacticCoverage struct {
+	TacticName  string  `json:"tactic_name"`
+	Total       int     `json:"total"`
+	Covered     int     `json:"covered"`
+	Percent     float64 `json:"percent"`
+	TotalSubs   int     `json:"total_subs"`
+	CoveredSubs int     `json:"covered_subs"`
+}
+
+// SimilarityResult is the response for alert insight analysis.
+type SimilarityResult struct {
+	Families         []DetectionFamily   `json:"families"`
+	Duplicates       []DuplicateGroup    `json:"duplicates"`
+	MergeSuggestions []MergeSuggestion   `json:"merge_suggestions"`
+	CoverageInsights []string            `json:"coverage_insights"`
+	UniqueDetections []string            `json:"unique_detections"`
+}
+
+type DetectionFamily struct {
+	Name    string   `json:"name"`
+	AlertIDs []string `json:"alert_ids"`
+	AlertNames []string `json:"alert_names"`
+}
+
+type DuplicateGroup struct {
+	AlertIDs    []string `json:"alert_ids"`
+	AlertNames  []string `json:"alert_names"`
+	Similarity  float64  `json:"similarity"`
+	Explanation string   `json:"explanation"`
+}
+
+type MergeSuggestion struct {
+	AlertIDs    []string `json:"alert_ids"`
+	AlertNames  []string `json:"alert_names"`
+	Reason      string   `json:"reason"`
+}
+
+type PairComparison struct {
+	AlertA      string  `json:"alert_a"`
+	AlertB      string  `json:"alert_b"`
+	NameA       string  `json:"name_a"`
+	NameB       string  `json:"name_b"`
+	Similarity  float64 `json:"similarity"`
+	Explanation string  `json:"explanation"`
+}
+
+// API request/response types.
+type ClientAnalyzeRequest struct {
+	Client string `json:"client"`
+}
+
+type AnalyzeResponse struct {
+	Integrations  []IntegrationInfo    `json:"integrations"`
+	Stats         AnalysisStats        `json:"stats"`
+	MITRECoverage *MITRECoverageResult `json:"mitre_coverage"`
+	AlertInsights *SimilarityResult    `json:"alert_insights"`
+	Cached        bool                 `json:"cached"`
+}
+
+type IntegrationInfo struct {
+	Name        string `json:"name"`
+	Application string `json:"application"`
+	Subsystem   string `json:"subsystem"`
+	AlertCount  int    `json:"alert_count"`
+}
+
+type AnalysisStats struct {
+	TotalIntegrations      int `json:"total_integrations"`
+	DoneIntegrations       int `json:"done_integrations"`
+	TotalAlerts            int `json:"total_alerts"`
+	SecurityAlerts         int `json:"security_alerts"`
+	VendorCoveredAlerts    int `json:"vendor_covered_alerts"`
+	IntegrationsWithAlerts int `json:"integrations_with_alerts"`
+}
+
+// SuggestionsRequest is the request body for per-technique alert suggestions.
+type SuggestionsRequest struct {
+	Client      string `json:"client"`
+	Provider    string `json:"provider"`     // "claude" or "nvidia"; empty = default
+	TechniqueID string `json:"technique_id"` // e.g. "T1059"
+	Tactic      string `json:"tactic"`       // e.g. "execution"
+	Force       bool   `json:"force"`        // if true, bypass cache and append a new generation
+}
+
+// SuggestionsResponse wraps LLM-generated alert suggestions for one technique.
+type SuggestionsResponse struct {
+	Provider      string            `json:"provider"`
+	TechniqueID   string            `json:"technique_id"`
+	TechniqueName string            `json:"technique_name"`
+	Suggestions   []AlertSuggestion `json:"suggestions"`
+	LogSources    []string          `json:"log_sources"`
+}
+
+// AlertSuggestion is a single LLM-generated alert recommendation.
+type AlertSuggestion struct {
+	LogSource   string `json:"log_source"`
+	AlertName   string `json:"alert_name"`
+	Description string `json:"description"`
+	QueryHint   string `json:"query_hint"`
+	Priority    string `json:"priority"`
+}
+
+type ErrorResponse struct {
+	Error string `json:"error"`
+}
