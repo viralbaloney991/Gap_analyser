@@ -62,6 +62,16 @@ func (s *Store) migrate(ctx context.Context) error {
 			client      TEXT        PRIMARY KEY,
 			last_synced TIMESTAMPTZ NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS suggestion_cache (
+			id           BIGSERIAL   PRIMARY KEY,
+			cache_key    TEXT        NOT NULL,
+			technique_id TEXT        NOT NULL,
+			log_sources  TEXT[]      NOT NULL,
+			suggestions  JSONB       NOT NULL,
+			provider     TEXT        NOT NULL,
+			generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS suggestion_cache_key_idx ON suggestion_cache(cache_key);
 	`)
 	return err
 }
@@ -164,6 +174,66 @@ func (s *Store) SetLastSynced(ctx context.Context, client string, t time.Time) e
 	`, client, t)
 	if err != nil {
 		return fmt.Errorf("upsert sync_state: %w", err)
+	}
+	return nil
+}
+
+// SuggestionRow is one generation of LLM suggestions for a (technique, log_sources) pair.
+// Suggestions is a raw JSON array — kept as json.RawMessage to avoid import cycles with the llm package.
+type SuggestionRow struct {
+	CacheKey    string
+	TechniqueID string
+	LogSources  []string
+	Suggestions json.RawMessage // serialised []llm.Suggestion
+	Provider    string
+	GeneratedAt time.Time
+}
+
+// GetCachedSuggestions returns all suggestion rows for a cache key ordered ASC by generated_at.
+// Returns an empty (non-nil) slice when no rows exist.
+func (s *Store) GetCachedSuggestions(ctx context.Context, cacheKey string) ([]SuggestionRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT cache_key, technique_id, log_sources, suggestions, provider, generated_at
+		FROM suggestion_cache
+		WHERE cache_key = $1
+		ORDER BY generated_at ASC
+	`, cacheKey)
+	if err != nil {
+		return nil, fmt.Errorf("query suggestion_cache: %w", err)
+	}
+	defer rows.Close()
+
+	var result []SuggestionRow
+	for rows.Next() {
+		var row SuggestionRow
+		var suggestions []byte
+		if err := rows.Scan(
+			&row.CacheKey, &row.TechniqueID, &row.LogSources,
+			&suggestions, &row.Provider, &row.GeneratedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan suggestion_cache row: %w", err)
+		}
+		row.Suggestions = json.RawMessage(suggestions)
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("suggestion_cache rows error: %w", err)
+	}
+	if result == nil {
+		result = []SuggestionRow{}
+	}
+	return result, nil
+}
+
+// AppendCachedSuggestions inserts one new suggestion generation row.
+// Existing rows are never modified — the table is append-only.
+func (s *Store) AppendCachedSuggestions(ctx context.Context, row SuggestionRow) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO suggestion_cache (cache_key, technique_id, log_sources, suggestions, provider, generated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`, row.CacheKey, row.TechniqueID, row.LogSources, string(row.Suggestions), row.Provider, row.GeneratedAt)
+	if err != nil {
+		return fmt.Errorf("insert suggestion_cache: %w", err)
 	}
 	return nil
 }
