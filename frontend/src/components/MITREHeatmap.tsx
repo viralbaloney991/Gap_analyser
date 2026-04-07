@@ -97,12 +97,12 @@ export default function MITREHeatmap({ data, clientName }: Props) {
     URL.revokeObjectURL(url);
   };
 
-  const handleGenerateAlerts = async (technique: NavigatorTechnique) => {
+  const handleGenerateAlerts = async (technique: NavigatorTechnique, force = false) => {
     setSuggestions(null);
     setSuggestionsError(null);
     setSuggestionsLoading(true);
     try {
-      const result = await fetchSuggestions(clientName, technique.techniqueID, technique.tactic, selectedProvider || undefined);
+      const result = await fetchSuggestions(clientName, technique.techniqueID, technique.tactic, selectedProvider || undefined, force);
       setSuggestions(result);
     } catch (err: unknown) {
       setSuggestionsError(err instanceof Error ? err.message : 'Failed to generate suggestions');
@@ -243,7 +243,7 @@ export default function MITREHeatmap({ data, clientName }: Props) {
                     disabled={suggestionsLoading}
                   >
                     <option value="">Default model</option>
-                    <option value="nvidia">NVIDIA (Mistral)</option>
+                    <option value="nvidia">NVIDIA (Qwen)</option>
                     <option value="claude">Claude (Haiku)</option>
                     <option value="gemini">Gemini 2.0 Flash</option>
                   </select>
@@ -265,6 +265,13 @@ export default function MITREHeatmap({ data, clientName }: Props) {
                     <div className="suggestions-header">
                       <span>{suggestions.suggestions.length} suggestion{suggestions.suggestions.length !== 1 ? 's' : ''}</span>
                       <span className="suggestions-provider">via {suggestions.provider}</span>
+                      <button
+                        className="btn btn-small"
+                        onClick={() => handleGenerateAlerts(selectedTechnique, true)}
+                        disabled={suggestionsLoading}
+                      >
+                        Regenerate
+                      </button>
                     </div>
                     {suggestions.suggestions.length === 0 ? (
                       <div className="suggestions-empty">
