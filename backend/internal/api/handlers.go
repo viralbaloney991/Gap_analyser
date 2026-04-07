@@ -2,12 +2,16 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"coralogix-alert-analyzer/internal/cache"
 	"coralogix-alert-analyzer/internal/classifier"
@@ -418,6 +422,33 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	// Build cache key (requires logSources to be finalised above).
+	var cacheKey string
+	if h.alertStore != nil {
+		cacheKey = buildSuggestionCacheKey(req.TechniqueID, logSources)
+	}
+
+	// Cache hit path — skip when force=true or store unavailable.
+	if !req.Force && h.alertStore != nil {
+		cached, err := h.alertStore.GetCachedSuggestions(ctx, cacheKey)
+		if err != nil {
+			log.Printf("WARN [suggestions] cache lookup client=%s technique=%s: %v", req.Client, req.TechniqueID, err)
+		} else if len(cached) > 0 {
+			merged, latestProvider := mergeCachedSuggestions(cached)
+			log.Printf("INFO [suggestions] cache hit client=%s technique=%s rows=%d merged=%d",
+				req.Client, req.TechniqueID, len(cached), len(merged))
+			writeJSON(w, http.StatusOK, models.SuggestionsResponse{
+				Provider:      latestProvider,
+				TechniqueID:   req.TechniqueID,
+				TechniqueName: techniqueName,
+				Suggestions:   merged,
+				LogSources:    logSources,
+			})
+			return
+		}
+	}
+
+	// Cache miss or force — call the LLM.
 	result, err := llm.GenerateSuggestions(ctx, provider, gapInput)
 	if err != nil {
 		log.Printf("ERROR [suggestions] LLM call failed: %v", err)
@@ -425,27 +456,123 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Map to response model
-	suggestions := make([]models.AlertSuggestion, len(result.Suggestions))
-	for i, s := range result.Suggestions {
-		suggestions[i] = models.AlertSuggestion{
-			LogSource:   s.LogSource,
-			AlertName:   s.AlertName,
-			Description: s.Description,
-			QueryHint:   s.QueryHint,
-			Priority:    s.Priority,
+	// Append to persistent cache.
+	if h.alertStore != nil && cacheKey != "" {
+		sugsJSON, _ := json.Marshal(result.Suggestions)
+		appendErr := h.alertStore.AppendCachedSuggestions(ctx, store.SuggestionRow{
+			CacheKey:    cacheKey,
+			TechniqueID: req.TechniqueID,
+			LogSources:  logSources,
+			Suggestions: json.RawMessage(sugsJSON),
+			Provider:    result.Provider,
+			GeneratedAt: time.Now().UTC(),
+		})
+		if appendErr != nil {
+			log.Printf("WARN [suggestions] cache append client=%s technique=%s: %v", req.Client, req.TechniqueID, appendErr)
 		}
 	}
 
-	resp := models.SuggestionsResponse{
-		Provider:      result.Provider,
-		TechniqueID:   req.TechniqueID,
-		TechniqueName: techniqueName,
-		Suggestions:   suggestions,
-		LogSources:    logSources,
+	// For force requests, re-fetch the full pool and return the merged result.
+	// For cache-miss requests, return the LLM result directly (single row, no merge needed).
+	var (
+		finalSuggestions []models.AlertSuggestion
+		finalProvider    = result.Provider
+	)
+
+	if req.Force && h.alertStore != nil && cacheKey != "" {
+		allRows, fetchErr := h.alertStore.GetCachedSuggestions(ctx, cacheKey)
+		if fetchErr != nil {
+			log.Printf("WARN [suggestions] force pool fetch client=%s technique=%s: %v", req.Client, req.TechniqueID, fetchErr)
+		} else {
+			finalSuggestions, finalProvider = mergeCachedSuggestions(allRows)
+		}
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	if finalSuggestions == nil {
+		finalSuggestions = make([]models.AlertSuggestion, len(result.Suggestions))
+		for i, s := range result.Suggestions {
+			finalSuggestions[i] = models.AlertSuggestion{
+				LogSource:   s.LogSource,
+				AlertName:   s.AlertName,
+				Description: s.Description,
+				QueryHint:   s.QueryHint,
+				Priority:    s.Priority,
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, models.SuggestionsResponse{
+		Provider:      finalProvider,
+		TechniqueID:   req.TechniqueID,
+		TechniqueName: techniqueName,
+		Suggestions:   finalSuggestions,
+		LogSources:    logSources,
+	})
+}
+
+// buildSuggestionCacheKey returns a stable SHA256 hex key for a (technique, log_sources) pair.
+// Log sources are sorted before hashing so insertion order does not affect the key.
+func buildSuggestionCacheKey(techniqueID string, logSources []string) string {
+	sorted := make([]string, len(logSources))
+	copy(sorted, logSources)
+	sort.Strings(sorted)
+	raw := techniqueID + "|" + strings.Join(sorted, ",")
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// mergeCachedSuggestions flattens all suggestion rows into a single deduplicated list.
+// rows must be ordered ASC by generated_at so that later rows win dedup conflicts.
+// Returns the merged suggestions sorted by priority then alert_name, and the provider
+// of the most recent row.
+func mergeCachedSuggestions(rows []store.SuggestionRow) ([]models.AlertSuggestion, string) {
+	type entry struct {
+		sug   models.AlertSuggestion
+		genAt time.Time
+	}
+	seen := make(map[string]entry)
+	var latestProvider string
+
+	priorityOrder := map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+	for _, row := range rows {
+		latestProvider = row.Provider
+		var llmSugs []llm.Suggestion
+		if err := json.Unmarshal(row.Suggestions, &llmSugs); err != nil {
+			log.Printf("WARN [suggestions] unmarshal cached suggestions: %v", err)
+			continue
+		}
+		for _, s := range llmSugs {
+			key := strings.ToLower(s.AlertName)
+			existing, exists := seen[key]
+			if !exists || row.GeneratedAt.After(existing.genAt) {
+				seen[key] = entry{
+					sug: models.AlertSuggestion{
+						LogSource:   s.LogSource,
+						AlertName:   s.AlertName,
+						Description: s.Description,
+						QueryHint:   s.QueryHint,
+						Priority:    s.Priority,
+					},
+					genAt: row.GeneratedAt,
+				}
+			}
+		}
+	}
+
+	merged := make([]models.AlertSuggestion, 0, len(seen))
+	for _, e := range seen {
+		merged = append(merged, e.sug)
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		pi := priorityOrder[strings.ToLower(merged[i].Priority)]
+		pj := priorityOrder[strings.ToLower(merged[j].Priority)]
+		if pi != pj {
+			return pi < pj
+		}
+		return strings.ToLower(merged[i].AlertName) < strings.ToLower(merged[j].AlertName)
+	})
+	return merged, latestProvider
 }
 
 // fetchAlerts creates a Coralogix client, fetches active alerts, and closes the client.
