@@ -76,6 +76,11 @@ body {
   width: 100%;
 }
 
+.app-main--landing {
+  padding: 0;
+  max-width: none;
+}
+
 /* ── Status Indicator (shared: header + landing page) ─ */
 .header-status {
   display: flex;
@@ -198,7 +203,6 @@ body {
 .map-dot {
   fill: var(--accent);
   cursor: pointer;
-  transition: r 0.15s;
 }
 .map-dot--selected {
   fill: #ffffff;

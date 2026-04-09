@@ -68,7 +68,7 @@ function App() {
         </div>
       </header>
 
-      <main className="app-main">
+      <main className={`app-main${view === 'form' ? ' app-main--landing' : ''}`}>
         {error && <div className="error-banner">{error}</div>}
 
         {view === 'form' && (
