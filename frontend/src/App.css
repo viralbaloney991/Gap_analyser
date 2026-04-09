@@ -273,31 +273,32 @@ body {
 
 .stats-row {
   display: flex;
-  gap: 16px;
+  gap: 10px;
   margin-bottom: 24px;
 }
 
 .stat-card {
   flex: 1;
-  background: var(--surface);
+  background: var(--accent-dim);
   border: 1px solid var(--border);
+  border-left: 2px solid var(--border-bright);
   border-radius: var(--radius);
-  padding: 16px 20px;
-  text-align: center;
+  padding: 14px 18px;
 }
 
 .stat-number {
   font-size: 1.8rem;
   font-weight: 700;
   color: var(--text);
+  line-height: 1;
 }
 
 .stat-desc {
-  font-size: 0.8rem;
+  font-size: 0.68rem;
   color: var(--text-dim);
-  margin-top: 4px;
+  margin-top: 5px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
 }
 
 .integration-table-wrap {
@@ -340,8 +341,8 @@ body {
   text-align: center;
 }
 
-.row-blind-spot {
-  opacity: 0.6;
+.row-blind-spot td {
+  color: var(--danger);
 }
 
 .action-buttons {
