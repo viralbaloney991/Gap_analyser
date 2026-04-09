@@ -89,8 +89,8 @@ export default function IntegrationSummary({ data, clientName, loading, onViewMI
                 </tr>
               </thead>
               <tbody>
-                {sorted.map((integ, i) => (
-                  <tr key={i} className={integ.alert_count === 0 ? 'row-blind-spot' : ''}>
+                {sorted.map((integ) => (
+                  <tr key={integ.name} className={integ.alert_count === 0 ? 'row-blind-spot' : ''}>
                     <td>
                       {integ.alert_count > 0
                         ? <span className="status-tag status-tag--ok">[OK]</span>
