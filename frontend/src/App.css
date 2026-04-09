@@ -347,34 +347,37 @@ body {
 
 .action-buttons {
   display: flex;
-  gap: 16px;
+  gap: 12px;
 }
 
 .btn-action {
   flex: 1;
   padding: 20px 24px;
-  background: var(--surface);
+  background: var(--accent-dim);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--border-bright);
   border-radius: var(--radius);
   color: var(--text);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.2s, background 0.2s;
+  font-family: var(--font-mono);
+  transition: border-left-color 0.15s, background 0.15s;
 }
 
 .btn-action:hover {
-  border-color: var(--accent);
-  background: var(--surface-hover);
+  border-left-color: var(--accent);
+  background: rgba(0, 255, 100, 0.08);
 }
 
 .action-title {
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: 600;
   margin-bottom: 6px;
+  color: var(--accent);
 }
 
 .action-desc {
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--text-dim);
 }
 

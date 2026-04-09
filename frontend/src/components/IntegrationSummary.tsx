@@ -98,11 +98,11 @@ export default function IntegrationSummary({ data, clientName, loading, onViewMI
 
       <div className="action-buttons">
         <button className="btn btn-action" onClick={onViewMITRE}>
-          <div className="action-title">MITRE ATT&CK Coverage</div>
+          <div className="action-title">→ MITRE ATT&CK Coverage</div>
           <div className="action-desc">Technique-level detection coverage across the ATT&CK matrix</div>
         </button>
         <button className="btn btn-action" onClick={onViewInsights}>
-          <div className="action-title">Alert Insights</div>
+          <div className="action-title">→ Alert Insights</div>
           <div className="action-desc">Find duplicates, gaps, and merge opportunities</div>
         </button>
       </div>
