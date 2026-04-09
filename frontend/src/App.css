@@ -189,6 +189,7 @@ body {
   width: 100% !important;
   height: 100% !important;
   z-index: 2;
+  cursor: crosshair;
 }
 
 .map-geography {
@@ -213,7 +214,7 @@ body {
   transform-box: fill-box;
   transform-origin: center;
   pointer-events: none;
-  animation: map-ring-pulse 2s ease-out infinite;
+  animation: map-ring-pulse 2s ease-in-out infinite;
 }
 .map-dot-ring--selected {
   animation: none;
@@ -221,8 +222,8 @@ body {
 }
 
 @keyframes map-ring-pulse {
-  0%   { transform: scale(1);   opacity: 0.55; }
-  100% { transform: scale(3.5); opacity: 0; }
+  0%   { transform: scale(1);   opacity: 0.8; }
+  100% { transform: scale(1.8); opacity: 0; }
 }
 
 /* Tooltip */

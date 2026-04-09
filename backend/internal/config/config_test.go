@@ -6,6 +6,29 @@ import (
 	"coralogix-alert-analyzer/internal/config"
 )
 
+func TestClientsWithRegion_normalisesRegionToLowercase(t *testing.T) {
+	cfg := &config.Config{
+		Clients: map[string]config.ClientConfig{
+			"Alpha": {APIKey: "k1", Region: "EU1"},
+			"Beta":  {APIKey: "k2", Region: "US1"},
+		},
+	}
+	got := cfg.ClientsWithRegion()
+	for _, c := range got {
+		for _, ch := range c.Region {
+			if ch >= 'A' && ch <= 'Z' {
+				t.Errorf("client %s: region %q contains uppercase character", c.Name, c.Region)
+			}
+		}
+	}
+	if got[0].Region != "eu1" {
+		t.Errorf("want eu1, got %s", got[0].Region)
+	}
+	if got[1].Region != "us1" {
+		t.Errorf("want us1, got %s", got[1].Region)
+	}
+}
+
 func TestClientsWithRegion_sortedByName(t *testing.T) {
 	cfg := &config.Config{
 		Clients: map[string]config.ClientConfig{

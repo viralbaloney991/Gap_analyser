@@ -121,16 +121,6 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// ClientNames returns sorted client names.
-func (c *Config) ClientNames() []string {
-	names := make([]string, 0, len(c.Clients))
-	for name := range c.Clients {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
 // ClientInfo holds the name and region of a client, used in the /api/clients response.
 type ClientInfo struct {
 	Name   string `json:"name"`

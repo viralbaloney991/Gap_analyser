@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
 import { fetchClients } from '../services/api';
 import type { ClientInfo } from '../types';
@@ -37,7 +38,6 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
     fetchClients()
       .then((list) => {
         setClients(list);
-        if (list.length > 0) setSelected(list[0].name);
       })
       .catch(() => setFetchError('Failed to load client list'));
   }, []);
@@ -107,13 +107,14 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
         })}
       </ComposableMap>
 
-      {tooltip && (
+      {tooltip && createPortal(
         <div
           className="map-tooltip"
           style={{ left: tooltip.x, top: tooltip.y }}
         >
           {tooltip.name} · {tooltip.region.toUpperCase()}
-        </div>
+        </div>,
+        document.body
       )}
 
       <div className="client-selector-content">
