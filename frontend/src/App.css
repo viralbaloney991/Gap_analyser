@@ -76,7 +76,7 @@ body {
   width: 100%;
 }
 
-/* ── Header Status ───────────────────────────────── */
+/* ── Status Indicator (shared: header + landing page) ─ */
 .header-status {
   display: flex;
   align-items: center;
