@@ -45,7 +45,7 @@ func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.S
 	}
 }
 
-// HandleClients returns the list of configured client names.
+// HandleClients returns the list of configured clients with their region.
 func (h *Handler) HandleClients(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")

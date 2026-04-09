@@ -141,7 +141,7 @@ type ClientInfo struct {
 func (c *Config) ClientsWithRegion() []ClientInfo {
 	clients := make([]ClientInfo, 0, len(c.Clients))
 	for name, cfg := range c.Clients {
-		clients = append(clients, ClientInfo{Name: name, Region: cfg.Region})
+		clients = append(clients, ClientInfo{Name: name, Region: strings.ToLower(cfg.Region)})
 	}
 	sort.Slice(clients, func(i, j int) bool {
 		return clients[i].Name < clients[j].Name
