@@ -103,38 +103,43 @@ body {
 
 /* ── Buttons ─────────────────────────────────────── */
 .btn {
-  padding: 10px 24px;
+  padding: 8px 20px;
   border: none;
   border-radius: var(--radius);
-  font-size: 0.95rem;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.15s;
+  letter-spacing: 0.05em;
 }
 
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-primary {
   background: var(--accent);
-  color: white;
+  color: var(--bg);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
-.btn-primary:hover:not(:disabled) { background: var(--accent); }
+.btn-primary:hover:not(:disabled) { background: #33ff80; }
 
 .btn-secondary {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border-bright);
 }
-.btn-secondary:hover:not(:disabled) { background: var(--surface-hover); }
+.btn-secondary:hover:not(:disabled) { background: var(--accent-dim); }
 
 .btn-small {
-  padding: 6px 14px;
-  font-size: 0.85rem;
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--border);
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--border-bright);
 }
-.btn-small:hover { background: var(--surface-hover); }
+.btn-small:hover { background: var(--accent-dim); }
 
 /* ── Client Selector ─────────────────────────────── */
 .client-selector {
