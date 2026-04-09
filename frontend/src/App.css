@@ -2,24 +2,34 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-  --bg: #0f1117;
-  --surface: #1a1d27;
-  --surface-hover: #22263a;
-  --border: #2a2e3e;
-  --text: #e4e7ef;
-  --text-dim: #8b90a0;
-  --accent: #6366f1;
-  --accent-hover: #818cf8;
-  --red: #ff0000;
-  --orange: #ff8c00;
-  --yellow: #ffd700;
-  --green: #00cc00;
-  --danger: #ef4444;
-  --radius: 8px;
+  /* Backgrounds */
+  --bg:             #020b05;
+  --bg-mid:         #0a1f0f;
+  --surface:        #0d2412;
+  --surface-hover:  #122b17;
+  --border:         rgba(0, 255, 100, 0.12);
+  --border-bright:  rgba(0, 255, 100, 0.3);
+
+  /* Text */
+  --text:           #e0ffe8;
+  --text-dim:       rgba(0, 255, 100, 0.45);
+  --text-code:      #b0ffca;
+
+  /* Accent */
+  --accent:         #00ff64;
+  --accent-dim:     rgba(0, 255, 100, 0.15);
+
+  /* Semantic */
+  --danger:         #ff4d4d;
+  --danger-dim:     rgba(255, 77, 77, 0.12);
+  --warn:           #ffb347;
+
+  --radius:         3px;
+  --font-mono:      'IBM Plex Mono', 'JetBrains Mono', monospace;
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-mono);
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
@@ -68,7 +78,7 @@ body {
   background: var(--accent);
   color: white;
 }
-.btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-primary:hover:not(:disabled) { background: var(--accent); }
 
 .btn-secondary {
   background: var(--surface);
@@ -548,7 +558,7 @@ body {
 }
 
 .btn-generate:hover:not(:disabled) {
-  background: var(--accent-hover);
+  background: var(--accent);
 }
 
 .btn-generate:disabled {
@@ -645,7 +655,7 @@ body {
 .suggestion-query code {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.72rem;
-  color: var(--green);
+  color: var(--text-code);
   white-space: pre-wrap;
   word-break: break-all;
 }
