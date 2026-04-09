@@ -672,7 +672,7 @@ body {
 .suggestions-error {
   margin-top: 8px;
   padding: 8px;
-  background: rgba(239, 68, 68, 0.15);
+  background: var(--danger-dim);
   border: 1px solid var(--danger);
   border-radius: var(--radius);
   color: var(--danger);
@@ -807,7 +807,7 @@ body {
 }
 
 .tab-btn.active .tab-count {
-  background: rgba(99, 102, 241, 0.2);
+  background: var(--accent-dim);
   color: var(--accent);
 }
 
@@ -864,7 +864,7 @@ body {
 }
 
 .unique-card .alert-name {
-  background: rgba(99, 102, 241, 0.08);
+  background: var(--accent-dim);
   border-left: 3px solid var(--accent);
 }
 
