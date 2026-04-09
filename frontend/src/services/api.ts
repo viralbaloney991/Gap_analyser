@@ -1,8 +1,8 @@
-import type { AnalyzeResponse, SuggestionsResponse } from '../types';
+import type { AnalyzeResponse, ClientInfo, SuggestionsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
-export async function fetchClients(): Promise<string[]> {
+export async function fetchClients(): Promise<ClientInfo[]> {
   const res = await fetch(`${API_BASE}/api/clients`);
   if (!res.ok) throw new Error('Failed to fetch clients');
   return res.json();
