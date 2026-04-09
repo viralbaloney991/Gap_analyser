@@ -51,7 +51,7 @@ func (h *Handler) HandleClients(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	writeJSON(w, http.StatusOK, h.config.ClientNames())
+	writeJSON(w, http.StatusOK, h.config.ClientsWithRegion())
 }
 
 // HandleAnalyze runs the full analysis pipeline for a client.

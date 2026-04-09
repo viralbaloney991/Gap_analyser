@@ -130,3 +130,21 @@ func (c *Config) ClientNames() []string {
 	sort.Strings(names)
 	return names
 }
+
+// ClientInfo holds the name and region of a client, used in the /api/clients response.
+type ClientInfo struct {
+	Name   string `json:"name"`
+	Region string `json:"region"`
+}
+
+// ClientsWithRegion returns client info (name + region) sorted by name.
+func (c *Config) ClientsWithRegion() []ClientInfo {
+	clients := make([]ClientInfo, 0, len(c.Clients))
+	for name, cfg := range c.Clients {
+		clients = append(clients, ClientInfo{Name: name, Region: cfg.Region})
+	}
+	sort.Slice(clients, func(i, j int) bool {
+		return clients[i].Name < clients[j].Name
+	})
+	return clients
+}
