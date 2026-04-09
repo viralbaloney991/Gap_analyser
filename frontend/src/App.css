@@ -141,13 +141,10 @@ body {
 }
 .btn-small:hover { background: var(--accent-dim); }
 
-/* ── Client Selector ─────────────────────────────── */
+/* ── Client Selector — World Map ─────────────────── */
 .client-selector {
   position: relative;
-  min-height: calc(100vh - 53px);
-  display: flex;
-  align-items: flex-end;
-  padding: 48px;
+  height: calc(100vh - 53px);
   overflow: hidden;
 }
 
@@ -161,6 +158,7 @@ body {
   mask-image: linear-gradient(to bottom, transparent 0%, black 55%);
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 55%);
   pointer-events: none;
+  z-index: 1;
 }
 
 .client-selector-corner {
@@ -169,6 +167,7 @@ body {
   letter-spacing: 0.2em;
   color: var(--text-dim);
   text-transform: uppercase;
+  z-index: 10;
 }
 .client-selector-corner.top-left  { top: 20px; left: 28px; }
 .client-selector-corner.top-right {
@@ -178,9 +177,90 @@ body {
   gap: 6px;
 }
 
+/* World map SVG */
+.world-map {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 2;
+}
+
+.map-geography {
+  fill: rgba(0, 255, 100, 0.06);
+  stroke: rgba(0, 255, 100, 0.22);
+  stroke-width: 0.5;
+  outline: none;
+  transition: fill 0.15s;
+}
+
+/* Client marker dots */
+.map-dot {
+  fill: var(--accent);
+  cursor: pointer;
+  transition: r 0.15s;
+}
+.map-dot--selected {
+  fill: #ffffff;
+}
+
+.map-dot-ring {
+  fill: var(--accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  pointer-events: none;
+  animation: map-ring-pulse 2s ease-out infinite;
+}
+.map-dot-ring--selected {
+  animation: none;
+  opacity: 0.35;
+}
+
+@keyframes map-ring-pulse {
+  0%   { transform: scale(1);   opacity: 0.55; }
+  100% { transform: scale(3.5); opacity: 0; }
+}
+
+/* Tooltip */
+.map-tooltip {
+  position: fixed;
+  background: var(--surface);
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 100;
+  transform: translate(-50%, calc(-100% - 10px));
+}
+
+/* Error banner over map */
+.map-error {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+}
+
+/* Bottom content block */
 .client-selector-content {
-  position: relative;
-  max-width: 480px;
+  position: absolute;
+  bottom: 40px;
+  left: 48px;
+  z-index: 10;
+}
+
+.selected-client-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  min-height: 1rem;
 }
 
 .landing-wordmark {
@@ -210,31 +290,8 @@ body {
   letter-spacing: 0.2em;
   color: var(--text-dim);
   text-transform: uppercase;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
 }
-
-.landing-form {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-
-.landing-form select {
-  flex: 1;
-  padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid var(--border-bright);
-  border-radius: var(--radius);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
-  outline: none;
-  transition: border-color 0.15s;
-  cursor: pointer;
-  appearance: auto;
-}
-.landing-form select:focus { border-color: var(--accent); }
-.landing-form select:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ── Integration Summary ─────────────────────────── */
 .integration-summary {
