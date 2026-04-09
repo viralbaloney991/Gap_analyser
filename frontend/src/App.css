@@ -42,15 +42,30 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 32px;
+  padding: 14px 32px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--bg);
 }
 
 .app-header h1 {
-  font-size: 1.2rem;
-  font-weight: 600;
+  font-size: 1.1rem;
+  font-weight: 300;
+  color: var(--text);
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+
+.app-header h1 strong {
+  font-weight: 700;
   color: var(--accent);
+}
+
+.app-header h1 sup {
+  font-size: 0.55rem;
+  color: var(--text-dim);
+  letter-spacing: 0.12em;
+  margin-right: 5px;
+  vertical-align: super;
 }
 
 .app-main {
@@ -59,6 +74,31 @@ body {
   max-width: 1400px;
   margin: 0 auto;
   width: 100%;
+}
+
+/* ── Header Status ───────────────────────────────── */
+.header-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.68rem;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; box-shadow: 0 0 5px var(--accent); }
+  50%       { opacity: 0.25; box-shadow: none; }
 }
 
 /* ── Buttons ─────────────────────────────────────── */
