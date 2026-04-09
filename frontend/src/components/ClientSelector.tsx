@@ -56,10 +56,6 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
       <div className="client-selector-grid" />
 
       <span className="client-selector-corner top-left">CX_ALERTS v2.1</span>
-      <span className="client-selector-corner top-right">
-        <span className="status-dot" />
-        ONLINE
-      </span>
 
       {fetchError && <div className="error-banner map-error">{fetchError}</div>}
 
@@ -119,7 +115,7 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
 
       <div className="client-selector-content">
         <div className="selected-client-label">
-          {selected ? `▶ ${selected}` : 'Select a client on the map'}
+          {selected ? `[ ${selected} ]` : 'Select a client on the map'}
         </div>
         <h2 className="landing-wordmark"><strong>Alert</strong> Analyzer</h2>
         <p className="landing-subtitle">Coralogix Integration Intelligence</p>
@@ -129,7 +125,7 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
             onClick={handleAnalyze}
             disabled={loading || !selected}
           >
-            {loading ? 'ANALYZING...' : `ANALYZE ${selected} →`}
+            {loading ? 'ANALYZING...' : `[ ANALYZE ${selected} ]`}
           </button>
         )}
       </div>
