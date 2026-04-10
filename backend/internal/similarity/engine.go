@@ -50,13 +50,32 @@ const (
 
 // Common security categories used for gap analysis.
 var commonCategories = []string{
+	// Identity
 	"login anomalies",
-	"privilege escalation",
-	"data exfiltration",
-	"lateral movement",
-	"token abuse",
 	"mfa bypass",
+	"credential stuffing",
+	"token abuse",
+	"session hijacking",
+	// Endpoint
+	"malware execution",
+	"persistence",
+	"privilege escalation",
+	// Cloud
+	"iam abuse",
+	"storage exfiltration",
+	"resource abuse",
+	// Network
+	"lateral movement",
+	"port scanning",
+	"c2 traffic",
+	// Data
+	"data exfiltration",
+	"sensitive data access",
 	"api abuse",
+	// Additional
+	"ransomware",
+	"supply chain",
+	"insider threat",
 }
 
 // Analyze performs full similarity analysis on a set of alert definitions and
@@ -99,12 +118,16 @@ func Analyze(alerts []*models.AlertDef) *models.SimilarityResult {
 	// Step 7: Unique detections.
 	uniqueDetections := findUniqueDetections(vectors, matrix, n)
 
+	// Step 8: Noise detection.
+	noiseAlerts := findNoiseAlerts(vectors)
+
 	return &models.SimilarityResult{
 		Families:         families,
 		Duplicates:       duplicates,
 		MergeSuggestions: mergeSuggestions,
 		CoverageInsights: coverageInsights,
 		UniqueDetections: uniqueDetections,
+		NoiseAlerts:      noiseAlerts,
 	}
 }
 
@@ -806,4 +829,24 @@ func findUniqueDetections(vectors []featureVector, matrix [][]float64, n int) []
 		}
 	}
 	return unique
+}
+
+// ---------------------------------------------------------------------------
+// Step 8: Noise Detection
+// ---------------------------------------------------------------------------
+
+// findNoiseAlerts returns names of alerts whose total unique feature token
+// count is below the noise threshold (sparse = likely threshold-only alert).
+func findNoiseAlerts(vectors []featureVector) []string {
+	const noiseThreshold = 3
+	var noisy []string
+	for _, v := range vectors {
+		total := len(v.dataSources) + len(v.entities) + len(v.actions) +
+			len(v.conditions) + len(v.techniques)
+		if total < noiseThreshold {
+			noisy = append(noisy, v.alertName)
+		}
+	}
+	sort.Strings(noisy)
+	return noisy
 }
