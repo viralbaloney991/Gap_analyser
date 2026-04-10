@@ -13,14 +13,15 @@ import (
 
 // featureVector holds the tokenized, lowercase feature sets for a single alert.
 type featureVector struct {
-	alertID     string
-	alertName   string
-	alertType   string
-	dataSources map[string]struct{}
-	entities    map[string]struct{}
-	actions     map[string]struct{}
-	conditions  map[string]struct{}
-	techniques  map[string]struct{}
+	alertID           string
+	alertName         string
+	alertType         string
+	dataSources       map[string]struct{}
+	entities          map[string]struct{}
+	actions           map[string]struct{}
+	conditions        map[string]struct{}
+	techniques        map[string]struct{}
+	groupByCategories map[string]struct{}
 }
 
 // pairScore stores the similarity score between two alerts.
@@ -31,11 +32,13 @@ type pairScore struct {
 
 // Similarity weights for each feature dimension.
 const (
-	weightDataSources = 0.20
-	weightEntities    = 0.15
-	weightActions     = 0.20
-	weightConditions  = 0.20
-	weightTechniques  = 0.15
+	// Existing dimensions scaled ×0.75 to make room for weightGroupBy.
+	weightDataSources = 0.15
+	weightEntities    = 0.11
+	weightActions     = 0.15
+	weightConditions  = 0.15
+	weightTechniques  = 0.11
+	weightGroupBy     = 0.25
 	weightAlertType   = 0.10
 
 	duplicateThreshold = 0.85
@@ -141,14 +144,15 @@ func buildFeatureVectors(alerts []*models.AlertDef) []featureVector {
 	vectors := make([]featureVector, len(alerts))
 	for i, a := range alerts {
 		vectors[i] = featureVector{
-			alertID:     a.ID,
-			alertName:   a.Name,
-			alertType:   strings.ToLower(a.AlertType),
-			dataSources: toSet(a.Features.DataSources),
-			entities:    toSet(a.Features.Entities),
-			actions:     toSet(a.Features.Actions),
-			conditions:  toSet(a.Features.Conditions),
-			techniques:  toSet(a.Features.Techniques),
+			alertID:           a.ID,
+			alertName:         a.Name,
+			alertType:         strings.ToLower(a.AlertType),
+			dataSources:       toSet(a.Features.DataSources),
+			entities:          toSet(a.Features.Entities),
+			actions:           toSet(a.Features.Actions),
+			conditions:        toSet(a.Features.Conditions),
+			techniques:        toSet(a.Features.Techniques),
+			groupByCategories: normalizeGroupByKeys(a.GroupByKeys),
 		}
 	}
 	return vectors
@@ -242,6 +246,7 @@ func scorePair(a, b featureVector) float64 {
 	score += weightActions * jaccard(a.actions, b.actions)
 	score += weightConditions * jaccard(a.conditions, b.conditions)
 	score += weightTechniques * jaccard(a.techniques, b.techniques)
+	score += weightGroupBy * jaccardGroupBy(a.groupByCategories, b.groupByCategories)
 
 	if a.alertType == b.alertType && a.alertType != "" {
 		score += weightAlertType
