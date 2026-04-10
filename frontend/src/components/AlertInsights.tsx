@@ -1,52 +1,124 @@
 import { useState } from 'react';
-import type { SimilarityResult } from '../types';
+import type { SimilarityResult, InsightsReport } from '../types';
 
 interface Props {
   data: SimilarityResult;
+  report: InsightsReport | null;
 }
 
-type Tab = 'duplicates' | 'families' | 'merge' | 'coverage' | 'unique';
+type Tab = 'duplicates' | 'families' | 'merge' | 'coverage' | 'noise' | 'unique';
 
-export default function AlertInsights({ data }: Props) {
+export default function AlertInsights({ data, report }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('duplicates');
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: 'duplicates', label: 'Duplicates', count: data.duplicates?.length || 0 },
-    { key: 'families', label: 'Detection Families', count: data.families?.length || 0 },
-    { key: 'merge', label: 'Merge Suggestions', count: data.merge_suggestions?.length || 0 },
-    { key: 'coverage', label: 'Coverage Insights', count: data.coverage_insights?.length || 0 },
-    { key: 'unique', label: 'Unique Detections', count: data.unique_detections?.length || 0 },
+    { key: 'families', label: 'Families', count: data.families?.length || 0 },
+    { key: 'merge', label: 'Merge', count: data.merge_suggestions?.length || 0 },
+    { key: 'coverage', label: 'Coverage', count: data.coverage_insights?.length || 0 },
+    { key: 'noise', label: 'Noise', count: data.noise_alerts?.length || 0 },
+    { key: 'unique', label: 'Unique', count: data.unique_detections?.length || 0 },
   ];
+
+  const gapCount = data.coverage_insights?.length || 0;
+  const noiseCount = data.noise_alerts?.length || 0;
 
   return (
     <div className="alert-insights">
-      <h2>Alert Insights</h2>
+      <div className="insights-grid">
 
-      <div className="insights-tabs">
-        {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.label}
-            <span className="tab-count">{tab.count}</span>
-          </button>
-        ))}
-      </div>
+        {/* Left Panel */}
+        <div className="insights-panel">
 
-      <div className="tab-content">
-        {activeTab === 'duplicates' && <DuplicatesView data={data} />}
-        {activeTab === 'families' && <FamiliesView data={data} />}
-        {activeTab === 'merge' && <MergeView data={data} />}
-        {activeTab === 'coverage' && <CoverageView data={data} />}
-        {activeTab === 'unique' && <UniqueView data={data} />}
+          {/* Summary */}
+          <div className="insights-panel-summary">
+            {report ? report.summary : (
+              <>
+                <div className="insights-skeleton" style={{ width: '100%' }} />
+                <div className="insights-skeleton" style={{ width: '85%' }} />
+                <div className="insights-skeleton" style={{ width: '70%' }} />
+              </>
+            )}
+          </div>
+
+          {/* TOP PRIORITY */}
+          <div className="insights-panel-section">
+            <div className="insights-panel-section-title">Top Priority</div>
+            {report ? report.top_priority.map((item, i) => (
+              <div key={i} className="insights-panel-item insights-panel-item--priority">
+                {i + 1}. {item}
+              </div>
+            )) : (
+              <>
+                <div className="insights-skeleton" style={{ width: '90%' }} />
+                <div className="insights-skeleton" style={{ width: '80%' }} />
+              </>
+            )}
+          </div>
+
+          {/* STRENGTHS */}
+          <div className="insights-panel-section">
+            <div className="insights-panel-section-title">Strengths</div>
+            {report ? report.strengths.map((s, i) => (
+              <div key={i} className="insights-panel-item">• {s}</div>
+            )) : (
+              <>
+                <div className="insights-skeleton" style={{ width: '75%' }} />
+                <div className="insights-skeleton" style={{ width: '65%' }} />
+              </>
+            )}
+          </div>
+
+          {/* SIGNALS */}
+          <div className="insights-panel-section">
+            <div className="insights-panel-section-title">Signals</div>
+            <div className="insights-panel-item">
+              [{data.duplicates?.length || 0}] duplicates
+            </div>
+            <div className="insights-panel-item">
+              [{data.families?.length || 0}] families
+            </div>
+            <div className={`insights-panel-item${noiseCount > 0 ? ' insights-panel-item--danger' : ''}`}>
+              [{noiseCount}{noiseCount > 0 ? '!' : ''}] noise
+            </div>
+            <div className={`insights-panel-item${gapCount > 0 ? ' insights-panel-item--danger' : ''}`}>
+              [{gapCount}{gapCount > 0 ? '!' : ''}] gaps
+            </div>
+          </div>
+
+        </div>
+
+        {/* Right Panel */}
+        <div className="insights-tabs-panel">
+          <div className="insights-tabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                className={`tab-btn ${activeTab === tab.key ? 'active' : ''}`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                {tab.label}
+                <span className="tab-count">{tab.count}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="tab-content">
+            {activeTab === 'duplicates' && <DuplicatesView data={data} report={report} />}
+            {activeTab === 'families' && <FamiliesView data={data} />}
+            {activeTab === 'merge' && <MergeView data={data} />}
+            {activeTab === 'coverage' && <CoverageView data={data} report={report} />}
+            {activeTab === 'noise' && <NoiseView data={data} />}
+            {activeTab === 'unique' && <UniqueView data={data} />}
+          </div>
+        </div>
+
       </div>
     </div>
   );
 }
 
-function DuplicatesView({ data }: { data: SimilarityResult }) {
+function DuplicatesView({ data, report }: { data: SimilarityResult; report: InsightsReport | null }) {
   if (!data.duplicates?.length) {
     return <div className="empty-state">No duplicate detections found.</div>;
   }
@@ -64,7 +136,9 @@ function DuplicatesView({ data }: { data: SimilarityResult }) {
               <div key={j} className="alert-name">{name}</div>
             ))}
           </div>
-          <div className="card-explanation">{dup.explanation}</div>
+          <div className="card-explanation">
+            {report?.enriched_dups?.[i] ?? dup.explanation}
+          </div>
         </div>
       ))}
     </div>
@@ -117,7 +191,7 @@ function MergeView({ data }: { data: SimilarityResult }) {
   );
 }
 
-function CoverageView({ data }: { data: SimilarityResult }) {
+function CoverageView({ data, report }: { data: SimilarityResult; report: InsightsReport | null }) {
   if (!data.coverage_insights?.length) {
     return <div className="empty-state">No coverage insights available.</div>;
   }
@@ -125,7 +199,25 @@ function CoverageView({ data }: { data: SimilarityResult }) {
     <div className="card-list">
       {data.coverage_insights.map((insight, i) => (
         <div key={i} className="insight-card coverage-card">
-          <p>{insight}</p>
+          <p>{report?.enriched_gaps?.[i] ?? insight}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function NoiseView({ data }: { data: SimilarityResult }) {
+  if (!data.noise_alerts?.length) {
+    return <div className="empty-state">No noise alerts detected.</div>;
+  }
+  return (
+    <div className="card-list">
+      {data.noise_alerts.map((name, i) => (
+        <div key={i} className="insight-card">
+          <div className="alert-name">[!!] {name}</div>
+          <div className="card-explanation">
+            Sparse feature vector — likely a threshold-only rule. Review for contextual conditions.
+          </div>
         </div>
       ))}
     </div>
