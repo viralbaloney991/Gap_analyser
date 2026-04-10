@@ -1,1 +1,23 @@
 classifier/embeddings.pkl
+
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Go binaries
+backend/server
+backend/bin/
+
+# Debug / scratch
+backend/debug_alerts.json
+
+# Private / tooling
+.claude/
+.superpowers/
+
+# Misc
+"BOT Access Checklist.xlsx"

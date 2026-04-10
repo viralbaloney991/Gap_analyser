@@ -15,7 +15,7 @@ import (
 const (
 	mitreCacheTTL    = 7 * 24 * time.Hour
 	mitreWorkers     = 5
-	mitreCachePrefix = "mitre_v2:"
+	mitreCachePrefix = "mitre_v3:"
 )
 
 // MITRECacheStore is the subset of the cache.Store needed for per-alert caching.

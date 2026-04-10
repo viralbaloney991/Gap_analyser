@@ -52,7 +52,7 @@ def health():
 @app.post("/classify")
 def classify(req: ClassifyRequest):
     query_text = " ".join(filter(None, [req.name, req.app, req.subsystem, req.query]))
-    return search_index(query_text, index_entries, top_k=3)
+    return search_index(query_text, index_entries, top_k=5)
 
 
 if __name__ == "__main__":
