@@ -665,6 +665,17 @@ func computeInsightsCacheKey(clientName string, result *models.SimilarityResult)
 		if sr.Duplicates[i].Similarity != sr.Duplicates[j].Similarity {
 			return sr.Duplicates[i].Similarity > sr.Duplicates[j].Similarity
 		}
+		li := len(sr.Duplicates[i].AlertIDs)
+		lj := len(sr.Duplicates[j].AlertIDs)
+		if li == 0 && lj == 0 {
+			return false
+		}
+		if li == 0 {
+			return true
+		}
+		if lj == 0 {
+			return false
+		}
 		return sr.Duplicates[i].AlertIDs[0] < sr.Duplicates[j].AlertIDs[0]
 	})
 	sort.Slice(sr.MergeSuggestions, func(i, j int) bool {

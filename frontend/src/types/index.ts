@@ -86,7 +86,7 @@ export interface SimilarityResult {
   merge_suggestions: MergeSuggestion[];
   coverage_insights: string[];
   unique_detections: string[];
-  noise_alerts: string[];
+  noise_alerts?: string[];
 }
 
 export interface InsightsReport {
