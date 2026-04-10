@@ -86,6 +86,16 @@ export interface SimilarityResult {
   merge_suggestions: MergeSuggestion[];
   coverage_insights: string[];
   unique_detections: string[];
+  noise_alerts: string[];
+}
+
+export interface InsightsReport {
+  summary: string;
+  top_priority: string[];
+  strengths: string[];
+  recommendations: string[];
+  enriched_dups: string[];
+  enriched_gaps: string[];
 }
 
 export interface AnalyzeResponse {
@@ -93,6 +103,7 @@ export interface AnalyzeResponse {
   stats: AnalysisStats;
   mitre_coverage: MITRECoverageResult;
   alert_insights: SimilarityResult;
+  insights_report?: InsightsReport | null;
   cached: boolean;
 }
 

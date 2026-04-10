@@ -91,7 +91,7 @@ function App() {
         )}
 
         {view === 'insights' && data && (
-          <AlertInsights data={data.alert_insights} />
+          <AlertInsights data={data.alert_insights} report={data.insights_report ?? null} />
         )}
       </main>
     </div>
