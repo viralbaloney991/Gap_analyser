@@ -17,6 +17,7 @@ import (
 	"coralogix-alert-analyzer/internal/classifier"
 	"coralogix-alert-analyzer/internal/config"
 	"coralogix-alert-analyzer/internal/coralogix"
+	"coralogix-alert-analyzer/internal/insights"
 	"coralogix-alert-analyzer/internal/llm"
 	"coralogix-alert-analyzer/internal/merge"
 	"coralogix-alert-analyzer/internal/mitre"
@@ -200,6 +201,59 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	// Run similarity analysis.
 	alertInsights := similarity.Analyze(alerts)
 
+	// LLM insights enrichment — non-fatal.
+	var insightsReport *models.InsightsReport
+	{
+		var insightsCacheKey string
+		if h.cache != nil {
+			if key, err := computeInsightsCacheKey(req.Client, alertInsights); err == nil {
+				insightsCacheKey = key
+				if cached, ok := h.cache.GetString(ctx, key); ok {
+					var ir models.InsightsReport
+					if json.Unmarshal([]byte(cached), &ir) == nil {
+						insightsReport = &ir
+						log.Printf("INFO [analyze] insights cache HIT client=%s", req.Client)
+					}
+				}
+			}
+		}
+		if insightsReport == nil {
+			nvidiaKey := h.config.LLM.NvidiaAPIKey
+			if h.config.LLM.NvidiaSuggestionAPIKey != "" {
+				nvidiaKey = h.config.LLM.NvidiaSuggestionAPIKey
+			}
+			insightsProvider, providerErr := llm.NewClassifierProvider(
+				h.config.LLM.SuggestionProvider,
+				h.config.LLM.SuggestionModel,
+				llm.ProviderConfig{
+					AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+					ClaudeModel:     h.config.LLM.ClaudeModel,
+					NvidiaAPIKey:    nvidiaKey,
+					NvidiaModel:     h.config.LLM.NvidiaModel,
+					NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+					GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+					GeminiModel:     h.config.LLM.GeminiModel,
+				},
+			)
+			if providerErr != nil {
+				log.Printf("WARN [analyze] insights provider unavailable: %v", providerErr)
+			} else {
+				ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, insightsProvider)
+				if enrichErr != nil {
+					log.Printf("WARN [analyze] insights enrich client=%s: %v", req.Client, enrichErr)
+				}
+				if ir != nil {
+					insightsReport = ir
+					if enrichErr == nil && h.cache != nil && insightsCacheKey != "" {
+						if data, marshalErr := json.Marshal(ir); marshalErr == nil {
+							h.cache.SetString(ctx, insightsCacheKey, string(data), 24*time.Hour)
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Build integration info for response.
 	integrationInfos := make([]models.IntegrationInfo, len(matched))
 	withAlerts := 0
@@ -237,9 +291,10 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 			VendorCoveredAlerts:    vendorCoveredCount,
 			IntegrationsWithAlerts: withAlerts,
 		},
-		MITRECoverage: mitreCoverage,
-		AlertInsights: alertInsights,
-		Cached:        false,
+		MITRECoverage:  mitreCoverage,
+		AlertInsights:  alertInsights,
+		InsightsReport: insightsReport,
+		Cached:         false,
 	}
 
 	// Store in cache.
@@ -573,6 +628,62 @@ func mergeCachedSuggestions(rows []store.SuggestionRow) ([]models.AlertSuggestio
 		return strings.ToLower(merged[i].AlertName) < strings.ToLower(merged[j].AlertName)
 	})
 	return merged, latestProvider
+}
+
+// computeInsightsCacheKey returns a stable Redis key for the insights report,
+// derived from the SimilarityResult JSON content.
+// similarity.Analyze() does not guarantee a fully stable sort order for all
+// slices (e.g. UniqueDetections is unsorted; Families/Duplicates/MergeSuggestions
+// have tie-breaking gaps), so we normalise the result before hashing.
+func computeInsightsCacheKey(clientName string, result *models.SimilarityResult) (string, error) {
+	// Normalise slices so that tie-breaking variations don't produce different hashes.
+	type stableResult struct {
+		Families         []models.DetectionFamily
+		Duplicates       []models.DuplicateGroup
+		MergeSuggestions []models.MergeSuggestion
+		CoverageInsights []string
+		UniqueDetections []string
+		NoiseAlerts      []string
+	}
+
+	sr := stableResult{
+		Families:         append([]models.DetectionFamily(nil), result.Families...),
+		Duplicates:       append([]models.DuplicateGroup(nil), result.Duplicates...),
+		MergeSuggestions: append([]models.MergeSuggestion(nil), result.MergeSuggestions...),
+		CoverageInsights: append([]string(nil), result.CoverageInsights...),
+		UniqueDetections: append([]string(nil), result.UniqueDetections...),
+		NoiseAlerts:      append([]string(nil), result.NoiseAlerts...),
+	}
+
+	sort.Slice(sr.Families, func(i, j int) bool {
+		if len(sr.Families[i].AlertIDs) != len(sr.Families[j].AlertIDs) {
+			return len(sr.Families[i].AlertIDs) > len(sr.Families[j].AlertIDs)
+		}
+		return sr.Families[i].Name < sr.Families[j].Name
+	})
+	sort.Slice(sr.Duplicates, func(i, j int) bool {
+		if sr.Duplicates[i].Similarity != sr.Duplicates[j].Similarity {
+			return sr.Duplicates[i].Similarity > sr.Duplicates[j].Similarity
+		}
+		return sr.Duplicates[i].AlertIDs[0] < sr.Duplicates[j].AlertIDs[0]
+	})
+	sort.Slice(sr.MergeSuggestions, func(i, j int) bool {
+		if len(sr.MergeSuggestions[i].AlertIDs) != len(sr.MergeSuggestions[j].AlertIDs) {
+			return len(sr.MergeSuggestions[i].AlertIDs) > len(sr.MergeSuggestions[j].AlertIDs)
+		}
+		return sr.MergeSuggestions[i].Reason < sr.MergeSuggestions[j].Reason
+	})
+	sort.Strings(sr.UniqueDetections)
+
+	data, err := json.Marshal(sr)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(data)
+	// Replace colons to avoid ambiguous key segments (consistent with SimilarityResult
+	// slices being deterministically sorted by similarity.Analyze()).
+	safeName := strings.ReplaceAll(clientName, ":", "_")
+	return fmt.Sprintf("insights_v1:%s:%s", safeName, hex.EncodeToString(h[:])[:12]), nil
 }
 
 // fetchAlerts creates a Coralogix client, fetches active alerts, and closes the client.
