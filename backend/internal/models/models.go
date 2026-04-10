@@ -78,6 +78,7 @@ type SimilarityResult struct {
 	MergeSuggestions []MergeSuggestion   `json:"merge_suggestions"`
 	CoverageInsights []string            `json:"coverage_insights"`
 	UniqueDetections []string            `json:"unique_detections"`
+	NoiseAlerts      []string            `json:"noise_alerts"`
 }
 
 type DetectionFamily struct {
@@ -99,6 +100,16 @@ type MergeSuggestion struct {
 	Reason      string   `json:"reason"`
 }
 
+// InsightsReport is the LLM-generated analyst report for a SimilarityResult.
+type InsightsReport struct {
+	Summary         string   `json:"summary"`
+	TopPriority     []string `json:"top_priority"`
+	Strengths       []string `json:"strengths"`
+	Recommendations []string `json:"recommendations"`
+	EnrichedDups    []string `json:"enriched_dups"`
+	EnrichedGaps    []string `json:"enriched_gaps"`
+}
+
 type PairComparison struct {
 	AlertA      string  `json:"alert_a"`
 	AlertB      string  `json:"alert_b"`
@@ -114,11 +125,12 @@ type ClientAnalyzeRequest struct {
 }
 
 type AnalyzeResponse struct {
-	Integrations  []IntegrationInfo    `json:"integrations"`
-	Stats         AnalysisStats        `json:"stats"`
-	MITRECoverage *MITRECoverageResult `json:"mitre_coverage"`
-	AlertInsights *SimilarityResult    `json:"alert_insights"`
-	Cached        bool                 `json:"cached"`
+	Integrations   []IntegrationInfo    `json:"integrations"`
+	Stats          AnalysisStats        `json:"stats"`
+	MITRECoverage  *MITRECoverageResult `json:"mitre_coverage"`
+	AlertInsights  *SimilarityResult    `json:"alert_insights"`
+	InsightsReport *InsightsReport      `json:"insights_report,omitempty"`
+	Cached         bool                 `json:"cached"`
 }
 
 type IntegrationInfo struct {
