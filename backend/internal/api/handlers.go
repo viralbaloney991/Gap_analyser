@@ -22,6 +22,7 @@ import (
 	"coralogix-alert-analyzer/internal/merge"
 	"coralogix-alert-analyzer/internal/mitre"
 	"coralogix-alert-analyzer/internal/models"
+	"coralogix-alert-analyzer/internal/prewarm"
 	"coralogix-alert-analyzer/internal/monday"
 	"coralogix-alert-analyzer/internal/similarity"
 	"coralogix-alert-analyzer/internal/store"
@@ -29,20 +30,23 @@ import (
 
 // Handler holds dependencies for HTTP handlers.
 type Handler struct {
-	config       *config.Config
-	mondayClient *monday.Client
-	cache        *cache.Store
-	alertStore   *store.Store // NeonDB; nil if unavailable — falls back to live fetch
+	config         *config.Config
+	mondayClient   *monday.Client
+	cache          *cache.Store
+	alertStore     *store.Store // NeonDB; nil if unavailable — falls back to live fetch
+	prewarmWorker  *prewarm.Worker
+	prewarmCancels sync.Map // client string → context.CancelFunc
 }
 
 // NewHandler creates a new Handler.
 // redisStore and alertStore may each be nil if the respective service is unavailable.
-func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.Store) *Handler {
+func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.Store, prewarmWorker *prewarm.Worker) *Handler {
 	return &Handler{
-		config:       cfg,
-		mondayClient: monday.NewClient(cfg.MondayAPIToken, cfg.MondayBoardID),
-		cache:        redisStore,
-		alertStore:   alertStore,
+		config:        cfg,
+		mondayClient:  monday.NewClient(cfg.MondayAPIToken, cfg.MondayBoardID),
+		cache:         redisStore,
+		alertStore:    alertStore,
+		prewarmWorker: prewarmWorker,
 	}
 }
 
@@ -201,59 +205,6 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	// Run similarity analysis.
 	alertInsights := similarity.Analyze(alerts)
 
-	// LLM insights enrichment — non-fatal.
-	var insightsReport *models.InsightsReport
-	{
-		var insightsCacheKey string
-		if h.cache != nil {
-			if key, err := computeInsightsCacheKey(req.Client, alertInsights); err == nil {
-				insightsCacheKey = key
-				if cached, ok := h.cache.GetString(ctx, key); ok {
-					var ir models.InsightsReport
-					if json.Unmarshal([]byte(cached), &ir) == nil {
-						insightsReport = &ir
-						log.Printf("INFO [analyze] insights cache HIT client=%s", req.Client)
-					}
-				}
-			}
-		}
-		if insightsReport == nil {
-			nvidiaKey := h.config.LLM.NvidiaAPIKey
-			if h.config.LLM.NvidiaSuggestionAPIKey != "" {
-				nvidiaKey = h.config.LLM.NvidiaSuggestionAPIKey
-			}
-			insightsProvider, providerErr := llm.NewClassifierProvider(
-				h.config.LLM.SuggestionProvider,
-				"",
-				llm.ProviderConfig{
-					AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
-					ClaudeModel:     h.config.LLM.ClaudeModel,
-					NvidiaAPIKey:    nvidiaKey,
-					NvidiaModel:     h.config.LLM.NvidiaModel,
-					NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
-					GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
-					GeminiModel:     h.config.LLM.GeminiModel,
-				},
-			)
-			if providerErr != nil {
-				log.Printf("WARN [analyze] insights provider unavailable: %v", providerErr)
-			} else {
-				ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, insightsProvider)
-				if enrichErr != nil {
-					log.Printf("WARN [analyze] insights enrich client=%s: %v", req.Client, enrichErr)
-				}
-				if ir != nil {
-					insightsReport = ir
-					if enrichErr == nil && h.cache != nil && insightsCacheKey != "" {
-						if data, marshalErr := json.Marshal(ir); marshalErr == nil {
-							h.cache.SetString(ctx, insightsCacheKey, string(data), 24*time.Hour)
-						}
-					}
-				}
-			}
-		}
-	}
-
 	// Build integration info for response.
 	integrationInfos := make([]models.IntegrationInfo, len(matched))
 	withAlerts := 0
@@ -293,7 +244,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 		},
 		MITRECoverage:  mitreCoverage,
 		AlertInsights:  alertInsights,
-		InsightsReport: insightsReport,
+		InsightsReport: nil, // fetched separately via POST /api/insights
 		Cached:         false,
 	}
 
@@ -303,6 +254,18 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+
+	// Trigger background suggestion pre-warm (non-blocking).
+	// Cancels any in-flight pre-warm for this client first.
+	if h.prewarmWorker != nil && h.alertStore != nil {
+		if prev, ok := h.prewarmCancels.Load(req.Client); ok {
+			prev.(context.CancelFunc)()
+		}
+		prewarmCtx, cancel := context.WithCancel(context.Background())
+		h.prewarmCancels.Store(req.Client, cancel)
+		uncovered := mitre.GetUncoveredTechniques(alerts)
+		go h.prewarmWorker.Start(prewarmCtx, req.Client, clientCfg, uncovered)
+	}
 }
 
 // HandleHealth returns a simple health check response.
@@ -312,6 +275,120 @@ func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// HandleInsights runs LLM enrichment for alert insights, decoupled from the main
+// analyze pipeline so that the heavy Gemini/Claude call does not block the initial
+// page load. The frontend fires this asynchronously after analyzeClient returns.
+// POST /api/insights { "client": "X" }
+func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req models.ClientAnalyzeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	req.Client = strings.TrimSpace(req.Client)
+	if req.Client == "" {
+		writeError(w, http.StatusBadRequest, "missing required field: client")
+		return
+	}
+
+	clientCfg, ok := h.config.Clients[req.Client]
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown client: %s", req.Client))
+		return
+	}
+
+	ctx := r.Context()
+
+	// Load alerts — store-first, same strategy as HandleAnalyze.
+	var alerts []*models.AlertDef
+	if h.alertStore != nil {
+		stored, err := h.alertStore.LoadAlerts(ctx, req.Client)
+		if err == nil && len(stored) > 0 {
+			alerts = stored
+		}
+	}
+	if len(alerts) == 0 {
+		var err error
+		alerts, err = fetchAlerts(ctx, clientCfg.Region, clientCfg.APIKey)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("failed to fetch alerts: %v", err))
+			return
+		}
+	}
+
+	// Similarity analysis is fast (< 1s) and required for the cache key + LLM prompt.
+	alertInsights := similarity.Analyze(alerts)
+
+	// Check insights cache.
+	var insightsCacheKey string
+	if h.cache != nil {
+		if key, err := computeInsightsCacheKey(req.Client, alertInsights); err == nil {
+			insightsCacheKey = key
+			if cached, ok := h.cache.GetString(ctx, key); ok {
+				var ir models.InsightsReport
+				if json.Unmarshal([]byte(cached), &ir) == nil {
+					log.Printf("INFO [insights] cache HIT client=%s", req.Client)
+					writeJSON(w, http.StatusOK, &ir)
+					return
+				}
+			}
+		}
+	}
+
+	// Cache miss — run LLM enrichment.
+	insightsProviderName := h.config.LLM.InsightsProvider
+	if insightsProviderName == "" {
+		insightsProviderName = h.config.LLM.SuggestionProvider
+	}
+	insightsModel := h.config.LLM.InsightsModel
+	if insightsModel == "" {
+		insightsModel = h.config.LLM.NvidiaModel
+	}
+	// Insights uses the primary NVIDIA key (not the suggestion-specific key).
+	nvidiaKey := h.config.LLM.NvidiaAPIKey
+	insightsProvider, err := llm.NewClassifierProvider(
+		insightsProviderName,
+		"",
+		llm.ProviderConfig{
+			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+			ClaudeModel:     h.config.LLM.ClaudeModel,
+			NvidiaAPIKey:    nvidiaKey,
+			NvidiaModel:     insightsModel,
+			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
+		},
+	)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("insights provider unavailable: %v", err))
+		return
+	}
+
+	ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, insightsProvider)
+	if enrichErr != nil {
+		log.Printf("WARN [insights] enrich client=%s: %v", req.Client, enrichErr)
+		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("insights enrichment failed: %v", enrichErr))
+		return
+	}
+	if ir == nil {
+		writeError(w, http.StatusNoContent, "no insights generated")
+		return
+	}
+
+	if h.cache != nil && insightsCacheKey != "" {
+		if data, marshalErr := json.Marshal(ir); marshalErr == nil {
+			h.cache.SetString(ctx, insightsCacheKey, string(data), 24*time.Hour)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, ir)
 }
 
 // HandleSuggestions generates LLM-powered alert suggestions for a single uncovered technique.
@@ -373,7 +450,7 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		if providerName == "" {
 			providerName = h.config.LLM.DefaultProvider
 		}
-		provider, err = llm.NewClassifierProvider(providerName, "", llm.ProviderConfig{
+		provider, err = llm.NewClassifierProvider(providerName, h.config.LLM.SuggestionModel, llm.ProviderConfig{
 			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
 			ClaudeModel:     h.config.LLM.ClaudeModel,
 			NvidiaAPIKey:    nvidiaKey,
