@@ -31,8 +31,8 @@ func TestFindNoiseAlerts_returnsNoisyAlerts(t *testing.T) {
 	if len(noisy) != 1 {
 		t.Fatalf("expected 1 noisy alert, got %d: %v", len(noisy), noisy)
 	}
-	if noisy[0] != "Noisy" {
-		t.Errorf("expected \"Noisy\", got %q", noisy[0])
+	if noisy[0].Name != "Noisy" {
+		t.Errorf("expected \"Noisy\", got %q", noisy[0].Name)
 	}
 }
 
@@ -70,7 +70,7 @@ func TestFindNoiseAlerts_isSorted(t *testing.T) {
 	if len(noisy) != 2 {
 		t.Fatalf("expected 2 noisy alerts, got %d", len(noisy))
 	}
-	if noisy[0] != "AAlert" || noisy[1] != "ZAlert" {
+	if noisy[0].Name != "AAlert" || noisy[1].Name != "ZAlert" {
 		t.Errorf("expected sorted [AAlert, ZAlert], got %v", noisy)
 	}
 }

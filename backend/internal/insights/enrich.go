@@ -78,7 +78,11 @@ func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) str
 	sb.WriteString("\n")
 
 	sb.WriteString(fmt.Sprintf("- Coverage gaps: %s\n", strings.Join(result.CoverageInsights, "; ")))
-	sb.WriteString(fmt.Sprintf("- Noise alerts (sparse feature vectors): %s\n", strings.Join(result.NoiseAlerts, ", ")))
+	noiseNames := make([]string, len(result.NoiseAlerts))
+	for i, na := range result.NoiseAlerts {
+		noiseNames[i] = na.Name
+	}
+	sb.WriteString(fmt.Sprintf("- Noise alerts (sparse feature vectors): %s\n", strings.Join(noiseNames, ", ")))
 
 	sb.WriteString(`
 Respond with JSON only:
@@ -88,7 +92,8 @@ Respond with JSON only:
   "strengths": ["2-3 things well covered"],
   "recommendations": ["3-5 specific actionable items"],
   "enriched_dups": ["one sentence per duplicate pair explaining business impact"],
-  "enriched_gaps": ["one sentence per coverage gap explaining risk"]
+  "enriched_gaps": ["one sentence per coverage gap explaining risk"],
+  "noise_explanations": ["one sentence per noisy alert explaining specific gaps"]
 }`)
 
 	return sb.String()

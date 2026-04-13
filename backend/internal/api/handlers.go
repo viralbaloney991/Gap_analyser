@@ -224,7 +224,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 			}
 			insightsProvider, providerErr := llm.NewClassifierProvider(
 				h.config.LLM.SuggestionProvider,
-				h.config.LLM.SuggestionModel,
+				"",
 				llm.ProviderConfig{
 					AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
 					ClaudeModel:     h.config.LLM.ClaudeModel,
@@ -362,7 +362,7 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
 			ClaudeModel:     h.config.LLM.ClaudeModel,
 			NvidiaAPIKey:    nvidiaKey,
-			NvidiaModel:     h.config.LLM.SuggestionModel,
+			NvidiaModel:     h.config.LLM.NvidiaModel,
 			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
 			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
 			GeminiModel:     h.config.LLM.GeminiModel,
@@ -643,7 +643,7 @@ func computeInsightsCacheKey(clientName string, result *models.SimilarityResult)
 		MergeSuggestions []models.MergeSuggestion
 		CoverageInsights []string
 		UniqueDetections []string
-		NoiseAlerts      []string
+		NoiseAlerts      []models.NoiseAlert
 	}
 
 	sr := stableResult{
@@ -652,7 +652,7 @@ func computeInsightsCacheKey(clientName string, result *models.SimilarityResult)
 		MergeSuggestions: append([]models.MergeSuggestion(nil), result.MergeSuggestions...),
 		CoverageInsights: append([]string(nil), result.CoverageInsights...),
 		UniqueDetections: append([]string(nil), result.UniqueDetections...),
-		NoiseAlerts:      append([]string(nil), result.NoiseAlerts...),
+		NoiseAlerts:      append([]models.NoiseAlert(nil), result.NoiseAlerts...),
 	}
 
 	sort.Slice(sr.Families, func(i, j int) bool {

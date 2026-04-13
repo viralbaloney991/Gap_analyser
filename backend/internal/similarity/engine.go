@@ -32,12 +32,12 @@ type pairScore struct {
 
 // Similarity weights for each feature dimension.
 const (
-	// Existing dimensions scaled ×0.75 to make room for weightGroupBy.
+	// Weights sum to exactly 1.00.
 	weightDataSources = 0.15
-	weightEntities    = 0.11
+	weightEntities    = 0.10
 	weightActions     = 0.15
 	weightConditions  = 0.15
-	weightTechniques  = 0.11
+	weightTechniques  = 0.10
 	weightGroupBy     = 0.25
 	weightAlertType   = 0.10
 
@@ -830,7 +830,7 @@ func findUniqueDetections(vectors []featureVector, matrix [][]float64, n int) []
 			}
 		}
 		if maxSim < uniqueThreshold {
-			unique = append(unique, vectors[i].alertID)
+			unique = append(unique, vectors[i].alertName)
 		}
 	}
 	return unique
@@ -840,18 +840,40 @@ func findUniqueDetections(vectors []featureVector, matrix [][]float64, n int) []
 // Step 8: Noise Detection
 // ---------------------------------------------------------------------------
 
-// findNoiseAlerts returns names of alerts whose total unique feature token
-// count is below the noise threshold (sparse = likely threshold-only alert).
-func findNoiseAlerts(vectors []featureVector) []string {
+// findNoiseAlerts returns NoiseAlert entries for alerts whose total unique
+// feature token count is below the noise threshold (sparse = likely
+// threshold-only alert). Each entry includes the names of empty feature sets.
+func findNoiseAlerts(vectors []featureVector) []models.NoiseAlert {
 	const noiseThreshold = 3
-	var noisy []string
+	var noisy []models.NoiseAlert
 	for _, v := range vectors {
 		total := len(v.dataSources) + len(v.entities) + len(v.actions) +
 			len(v.conditions) + len(v.techniques)
 		if total < noiseThreshold {
-			noisy = append(noisy, v.alertName)
+			var missing []string
+			if len(v.dataSources) == 0 {
+				missing = append(missing, "data sources")
+			}
+			if len(v.entities) == 0 {
+				missing = append(missing, "entities")
+			}
+			if len(v.actions) == 0 {
+				missing = append(missing, "actions")
+			}
+			if len(v.conditions) == 0 {
+				missing = append(missing, "conditions")
+			}
+			if len(v.techniques) == 0 {
+				missing = append(missing, "techniques")
+			}
+			noisy = append(noisy, models.NoiseAlert{
+				Name:            v.alertName,
+				MissingFeatures: missing,
+			})
 		}
 	}
-	sort.Strings(noisy)
+	sort.Slice(noisy, func(i, j int) bool {
+		return noisy[i].Name < noisy[j].Name
+	})
 	return noisy
 }

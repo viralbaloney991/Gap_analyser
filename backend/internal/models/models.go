@@ -71,6 +71,12 @@ type TacticCoverage struct {
 	CoveredSubs int     `json:"covered_subs"`
 }
 
+// NoiseAlert represents a sparse alert with an explanation of its missing features.
+type NoiseAlert struct {
+	Name            string   `json:"name"`
+	MissingFeatures []string `json:"missing_features"`
+}
+
 // SimilarityResult is the response for alert insight analysis.
 type SimilarityResult struct {
 	Families         []DetectionFamily   `json:"families"`
@@ -78,7 +84,7 @@ type SimilarityResult struct {
 	MergeSuggestions []MergeSuggestion   `json:"merge_suggestions"`
 	CoverageInsights []string            `json:"coverage_insights"`
 	UniqueDetections []string            `json:"unique_detections"`
-	NoiseAlerts      []string            `json:"noise_alerts"`
+	NoiseAlerts      []NoiseAlert        `json:"noise_alerts"`
 }
 
 type DetectionFamily struct {
@@ -102,12 +108,13 @@ type MergeSuggestion struct {
 
 // InsightsReport is the LLM-generated analyst report for a SimilarityResult.
 type InsightsReport struct {
-	Summary         string   `json:"summary"`
-	TopPriority     []string `json:"top_priority"`
-	Strengths       []string `json:"strengths"`
-	Recommendations []string `json:"recommendations"`
-	EnrichedDups    []string `json:"enriched_dups"`
-	EnrichedGaps    []string `json:"enriched_gaps"`
+	Summary            string   `json:"summary"`
+	TopPriority        []string `json:"top_priority"`
+	Strengths          []string `json:"strengths"`
+	Recommendations    []string `json:"recommendations"`
+	EnrichedDups       []string `json:"enriched_dups"`
+	EnrichedGaps       []string `json:"enriched_gaps"`
+	NoiseExplanations  []string `json:"noise_explanations"`
 }
 
 type PairComparison struct {
