@@ -50,6 +50,10 @@ type LLMConfig struct {
 	// SuggestionProvider/Model: model used for gap alert suggestion generation.
 	SuggestionProvider string `yaml:"suggestion_provider"`
 	SuggestionModel    string `yaml:"suggestion_model"`
+
+	// InsightsProvider/Model: model used for alert insights enrichment (async, decoupled from analyze).
+	InsightsProvider string `yaml:"insights_provider"`
+	InsightsModel    string `yaml:"insights_model"`
 }
 
 // ClientConfig holds per-client settings.
