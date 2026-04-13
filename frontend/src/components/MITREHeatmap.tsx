@@ -8,13 +8,11 @@
  *                      physics engine; the built-in simulation is sufficient
  *                      for visualisation purposes.
  *
- * NOTE: d3 is NOT yet installed (not in package.json).  The force-graph view
- * uses a minimal Euler-integration spring simulation implemented here so the
- * component compiles and runs without any extra dependency.  When d3 is
- * available, replace `useForceSimulation` with d3-force for better physics.
+ * Force graph view uses d3-force for physics (Barnes-Hut repulsion, spring links).
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import * as d3 from 'd3';
 import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse } from '../types';
 import { fetchSuggestions } from '../services/api';
 
@@ -161,7 +159,7 @@ function buildForceGraph(techniques: NavigatorTechnique[], width: number, height
   return { nodes: [...tacticNodes, ...techniqueNodes], edges };
 }
 
-/** Very small spring simulation — no D3 required. */
+/** D3 force simulation hook. */
 function useForceSimulation(
   nodes: ForceNode[],
   edges: ForceEdge[],
@@ -170,8 +168,7 @@ function useForceSimulation(
   active: boolean,
 ): ForceNode[] {
   const [positions, setPositions] = useState<ForceNode[]>(nodes);
-  const rafRef = useRef<number>(0);
-  const stepsRef = useRef(0);
+  const simRef = useRef<d3.Simulation<ForceNode, d3.SimulationLinkDatum<ForceNode>> | null>(null);
 
   useEffect(() => {
     if (!active || nodes.length === 0) {
@@ -179,76 +176,37 @@ function useForceSimulation(
       return;
     }
 
-    // Work on a mutable copy
     const ns: ForceNode[] = nodes.map((n) => ({ ...n }));
-    stepsRef.current = 0;
+    // d3 forceLink resolves string IDs to node references — cast to satisfy types
+    const links = edges.map((e) => ({ ...e })) as unknown as d3.SimulationLinkDatum<ForceNode>[];
 
-    const nodeIndex: Record<string, ForceNode> = {};
-    for (const n of ns) nodeIndex[n.id] = n;
+    const pad = 24;
 
-    const tick = () => {
-      const alpha = Math.max(0.001, 0.3 * Math.exp(-stepsRef.current * 0.015));
-      stepsRef.current++;
-
-      // Repulsion between every pair
-      for (let i = 0; i < ns.length; i++) {
-        for (let j = i + 1; j < ns.length; j++) {
-          const a = ns[i], b = ns[j];
-          const dx = b.x - a.x || 0.01;
-          const dy = b.y - a.y || 0.01;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const minDist = a.radius + b.radius + 8;
-          if (dist < minDist * 3) {
-            const force = (alpha * 200) / (dist * dist);
-            const fx = (dx / dist) * force;
-            const fy = (dy / dist) * force;
-            a.vx -= fx; a.vy -= fy;
-            b.vx += fx; b.vy += fy;
-          }
+    const sim = d3.forceSimulation<ForceNode>(ns)
+      .force(
+        'link',
+        d3.forceLink<ForceNode, d3.SimulationLinkDatum<ForceNode>>(links)
+          .id((d) => d.id)
+          .distance((link) => {
+            const src = link.source as ForceNode;
+            return src.isTactic ? 110 : 55;
+          })
+          .strength(0.6),
+      )
+      .force('charge', d3.forceManyBody<ForceNode>().strength((d) => d.isTactic ? -300 : -80))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collision', d3.forceCollide<ForceNode>().radius((d) => d.radius + 5))
+      .alphaDecay(0.02)
+      .on('tick', () => {
+        for (const n of ns) {
+          n.x = Math.max(pad + n.radius, Math.min(width  - pad - n.radius, n.x ?? width  / 2));
+          n.y = Math.max(pad + n.radius, Math.min(height - pad - n.radius, n.y ?? height / 2));
         }
-      }
+        setPositions(ns.map((n) => ({ ...n })));
+      });
 
-      // Spring attraction along edges
-      for (const edge of edges) {
-        const src = nodeIndex[edge.source];
-        const tgt = nodeIndex[edge.target];
-        if (!src || !tgt) continue;
-        const dx = tgt.x - src.x;
-        const dy = tgt.y - src.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const idealLen = src.radius + tgt.radius + 40;
-        const stretch = (dist - idealLen) / dist;
-        const strength = alpha * 0.6;
-        src.vx += dx * stretch * strength;
-        src.vy += dy * stretch * strength;
-        tgt.vx -= dx * stretch * strength;
-        tgt.vy -= dy * stretch * strength;
-      }
-
-      // Gravity toward centre
-      for (const n of ns) {
-        n.vx += (width / 2 - n.x) * alpha * 0.04;
-        n.vy += (height / 2 - n.y) * alpha * 0.04;
-      }
-
-      // Integrate + dampen + clamp to bounds
-      const pad = 24;
-      for (const n of ns) {
-        n.vx *= 0.7;
-        n.vy *= 0.7;
-        n.x = Math.max(pad + n.radius, Math.min(width - pad - n.radius, n.x + n.vx));
-        n.y = Math.max(pad + n.radius, Math.min(height - pad - n.radius, n.y + n.vy));
-      }
-
-      setPositions(ns.map((n) => ({ ...n })));
-
-      if (stepsRef.current < 200 && alpha > 0.002) {
-        rafRef.current = requestAnimationFrame(tick);
-      }
-    };
-
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
+    simRef.current = sim;
+    return () => { sim.stop(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, width, height]);
 
