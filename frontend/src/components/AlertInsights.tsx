@@ -34,7 +34,7 @@ export default function AlertInsights({ data, report }: Props) {
 
           <div className="insights-panel-summary">
             {report ? (
-              report.summary
+              report.summary || 'Enrichment unavailable — check LLM provider configuration.'
             ) : (
               <>
                 <div className="insights-skeleton" style={{ width: '100%' }} />
@@ -79,6 +79,21 @@ export default function AlertInsights({ data, report }: Props) {
                 <div className="insights-skeleton" style={{ width: '75%' }} />
                 <div className="insights-skeleton" style={{ width: '65%' }} />
               </>
+            )}
+          </div>
+
+          <div className="insights-panel-section">
+            <div className="insights-panel-section-title">Recommendations</div>
+            {report ? (
+              report.recommendations?.length ? (
+                report.recommendations.map((r, i) => (
+                  <div key={i} className="insights-panel-item">• {r}</div>
+                ))
+              ) : (
+                <div className="insights-panel-item">No recommendations available.</div>
+              )
+            ) : (
+              <div className="insights-skeleton" style={{ width: '80%' }} />
             )}
           </div>
 

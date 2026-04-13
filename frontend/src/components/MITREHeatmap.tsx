@@ -3,15 +3,10 @@
  *
  * Layout: two modes toggled by the user.
  *   1. Heatmap grid  — the original tactic-column layout (default).
- *   2. Force graph   — a force-directed SVG graph built with a lightweight
- *                      custom simulation.  Install `d3` for a production-grade
- *                      physics engine; the built-in simulation is sufficient
- *                      for visualisation purposes.
- *
- * Force graph view uses d3-force for physics (Barnes-Hut repulsion, spring links).
+ *   2. Force graph   — D3 force-directed SVG graph (Barnes-Hut repulsion, spring links).
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import * as d3 from 'd3';
 import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse } from '../types';
 import { fetchSuggestions } from '../services/api';
@@ -133,14 +128,16 @@ function buildForceGraph(techniques: NavigatorTechnique[], width: number, height
     };
   });
 
-  // Technique nodes — scatter around their tactic parent
+  // Technique nodes — scatter deterministically around their tactic parent
   const techniqueNodes: ForceNode[] = techniques.map((t, i) => {
     const parentTactic = tacticNodes.find((n) => n.id === `tactic:${t.tactic}`);
-    const jitter = () => (Math.random() - 0.5) * 80;
+    // Deterministic jitter using index to avoid layout thrash on re-render
+    const angle = (i * 2.399) % (2 * Math.PI); // golden-angle spread
+    const r = 30 + (i % 3) * 15;
     return {
       id: `tech:${t.techniqueID}:${t.tactic}`,
-      x: (parentTactic?.x ?? cx) + jitter(),
-      y: (parentTactic?.y ?? cy) + jitter(),
+      x: (parentTactic?.x ?? cx) + r * Math.cos(angle),
+      y: (parentTactic?.y ?? cy) + r * Math.sin(angle),
       vx: 0, vy: 0,
       radius: 10,
       color: t.color ?? '#334',
@@ -149,7 +146,6 @@ function buildForceGraph(techniques: NavigatorTechnique[], width: number, height
       tactic: t.tactic,
       isTactic: false,
     };
-    void i; // suppress unused warning
   });
 
   const edges: ForceEdge[] = techniques
@@ -159,18 +155,20 @@ function buildForceGraph(techniques: NavigatorTechnique[], width: number, height
   return { nodes: [...tacticNodes, ...techniqueNodes], edges };
 }
 
-/** D3 force simulation hook. */
+/** D3 force simulation hook.
+ *  Accepts a stable `graphData` reference (from useMemo) so the simulation
+ *  restarts when `techniques` change (e.g., navigating between clients). */
 function useForceSimulation(
-  nodes: ForceNode[],
-  edges: ForceEdge[],
+  graphData: { nodes: ForceNode[]; edges: ForceEdge[] },
   width: number,
   height: number,
   active: boolean,
 ): ForceNode[] {
-  const [positions, setPositions] = useState<ForceNode[]>(nodes);
+  const [positions, setPositions] = useState<ForceNode[]>(graphData.nodes);
   const simRef = useRef<d3.Simulation<ForceNode, d3.SimulationLinkDatum<ForceNode>> | null>(null);
 
   useEffect(() => {
+    const { nodes, edges } = graphData;
     if (!active || nodes.length === 0) {
       setPositions(nodes);
       return;
@@ -207,8 +205,7 @@ function useForceSimulation(
 
     simRef.current = sim;
     return () => { sim.stop(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, width, height]);
+  }, [active, graphData, width, height]);
 
   return positions;
 }
@@ -239,8 +236,13 @@ function ForceGraph({
     return () => obs.disconnect();
   }, []);
 
-  const { nodes: initNodes, edges } = buildForceGraph(techniques, dims.width, dims.height);
-  const nodes = useForceSimulation(initNodes, edges, dims.width, dims.height, true);
+  const graphData = useMemo(
+    () => buildForceGraph(techniques, dims.width, dims.height),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [techniques, dims.width, dims.height],
+  );
+  const nodes = useForceSimulation(graphData, dims.width, dims.height, true);
+  const { edges } = graphData;
 
   const nodeIndex: Record<string, ForceNode> = {};
   for (const n of nodes) nodeIndex[n.id] = n;

@@ -2,6 +2,7 @@ package similarity
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"testing"
 
@@ -166,5 +167,45 @@ func TestAnalyze_oktaPairIsNotDuplicate(t *testing.T) {
 	}
 	if len(result.Duplicates) == 0 {
 		t.Error("expected at least some duplicates in the dataset (sanity check)")
+	}
+}
+
+func TestWeightsSumToOne(t *testing.T) {
+	const sum = weightDataSources + weightEntities + weightActions +
+		weightConditions + weightTechniques + weightGroupBy + weightAlertType
+	if math.Abs(sum-1.0) > 1e-9 {
+		t.Errorf("similarity weights sum to %.10f, want exactly 1.0", sum)
+	}
+}
+
+func TestFindNoiseAlerts_missingFeaturesPopulated(t *testing.T) {
+	// "Noisy" has only dataSources set — the other four dimensions are empty.
+	vectors := []featureVector{
+		{
+			alertName:   "Noisy",
+			dataSources: map[string]struct{}{"logs": {}},
+			entities:    map[string]struct{}{},
+			actions:     map[string]struct{}{},
+			conditions:  map[string]struct{}{},
+			techniques:  map[string]struct{}{},
+		},
+	}
+	noisy := findNoiseAlerts(vectors)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 noisy alert, got %d", len(noisy))
+	}
+	missing := noisy[0].MissingFeatures
+	want := []string{"entities", "actions", "conditions", "techniques"}
+	if len(missing) != len(want) {
+		t.Fatalf("MissingFeatures = %v, want %v", missing, want)
+	}
+	wantSet := map[string]bool{}
+	for _, w := range want {
+		wantSet[w] = true
+	}
+	for _, m := range missing {
+		if !wantSet[m] {
+			t.Errorf("unexpected MissingFeature %q", m)
+		}
 	}
 }

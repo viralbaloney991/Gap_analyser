@@ -373,7 +373,7 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		if providerName == "" {
 			providerName = h.config.LLM.DefaultProvider
 		}
-		provider, err = llm.NewClassifierProvider(providerName, h.config.LLM.SuggestionModel, llm.ProviderConfig{
+		provider, err = llm.NewClassifierProvider(providerName, "", llm.ProviderConfig{
 			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
 			ClaudeModel:     h.config.LLM.ClaudeModel,
 			NvidiaAPIKey:    nvidiaKey,
