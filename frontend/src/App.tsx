@@ -3,8 +3,8 @@ import ClientSelector from './components/ClientSelector';
 import IntegrationSummary from './components/IntegrationSummary';
 import MITREHeatmap from './components/MITREHeatmap';
 import AlertInsights from './components/AlertInsights';
-import { analyzeClient } from './services/api';
-import type { AnalyzeResponse } from './types';
+import { analyzeClient, fetchInsights } from './services/api';
+import type { AnalyzeResponse, InsightsReport } from './types';
 import './App.css';
 
 type View = 'form' | 'summary' | 'mitre' | 'insights';
@@ -15,15 +15,22 @@ function App() {
   const [error, setError] = useState('');
   const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [clientName, setClientName] = useState('');
+  const [insightsReport, setInsightsReport] = useState<InsightsReport | null>(null);
 
   const handleAnalyze = async (client: string, refresh = false) => {
     setLoading(true);
     setError('');
+    setInsightsReport(null);
     try {
       const result = await analyzeClient(client, refresh);
       setData(result);
       setClientName(client);
       setView('summary');
+      // Fire-and-forget: insights can take up to 90s (LLM enrichment).
+      // AlertInsights shows skeletons until this resolves.
+      fetchInsights(client)
+        .then(setInsightsReport)
+        .catch((e) => console.warn('[insights]', e));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Analysis failed');
     } finally {
@@ -38,6 +45,7 @@ function App() {
       setView('form');
       setData(null);
       setClientName('');
+      setInsightsReport(null);
     }
     setError('');
   };
@@ -46,6 +54,7 @@ function App() {
     setView('form');
     setData(null);
     setClientName('');
+    setInsightsReport(null);
     setError('');
   };
 
@@ -91,7 +100,7 @@ function App() {
         )}
 
         {view === 'insights' && data && (
-          <AlertInsights data={data.alert_insights} report={data.insights_report ?? null} />
+          <AlertInsights data={data.alert_insights} report={insightsReport} />
         )}
       </main>
     </div>

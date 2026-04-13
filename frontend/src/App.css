@@ -298,6 +298,14 @@ body {
   margin-bottom: 20px;
 }
 
+.slow-load-hint {
+  margin-top: 10px;
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  animation: blink 1.4s step-end infinite;
+}
+
 /* ── Integration Summary ─────────────────────────── */
 .integration-summary {
   height: calc(100vh - 53px - 64px);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fetchClients } from '../services/api';
 import type { ClientInfo } from '../types';
 
@@ -24,6 +24,18 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
   const [clients, setClients] = useState<ClientInfo[]>([]);
   const [selected, setSelected] = useState('');
   const [fetchError, setFetchError] = useState('');
+  const [slowLoad, setSlowLoad] = useState(false);
+  const slowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (loading) {
+      slowTimer.current = setTimeout(() => setSlowLoad(true), 4000);
+    } else {
+      if (slowTimer.current) clearTimeout(slowTimer.current);
+      setSlowLoad(false);
+    }
+    return () => { if (slowTimer.current) clearTimeout(slowTimer.current); };
+  }, [loading]);
 
   useEffect(() => {
     fetchClients()
@@ -145,6 +157,11 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
           >
             {loading ? 'ANALYZING...' : `[ ANALYZE ${selected} ]`}
           </button>
+        )}
+        {slowLoad && (
+          <p className="slow-load-hint">
+            Fetching live data — first run may take ~90s...
+          </p>
         )}
       </div>
     </div>

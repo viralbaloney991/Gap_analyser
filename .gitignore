@@ -20,4 +20,4 @@ backend/debug_alerts.json
 .superpowers/
 
 # Misc
-"BOT Access Checklist.xlsx"
+*.xlsx

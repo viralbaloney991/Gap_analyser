@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, ClientInfo, SuggestionsResponse } from '../types';
+import type { AnalyzeResponse, ClientInfo, InsightsReport, SuggestionsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -18,6 +18,19 @@ export async function analyzeClient(client: string, refresh = false): Promise<An
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Analysis failed' }));
     throw new Error(err.error || 'Analysis failed');
+  }
+  return res.json();
+}
+
+export async function fetchInsights(client: string): Promise<InsightsReport> {
+  const res = await fetch(`${API_BASE}/api/insights`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Insights failed' }));
+    throw new Error(err.error || 'Failed to fetch insights');
   }
   return res.json();
 }
