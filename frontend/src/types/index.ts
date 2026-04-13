@@ -80,13 +80,23 @@ export interface MergeSuggestion {
   reason: string;
 }
 
+/**
+ * A sparse alert flagged as likely noise.
+ * `missing_features` lists which feature dimensions (data sources, entities,
+ * actions, conditions, techniques) are empty for this alert.
+ */
+export interface NoiseAlert {
+  name: string;
+  missing_features: string[];
+}
+
 export interface SimilarityResult {
   families: DetectionFamily[];
   duplicates: DuplicateGroup[];
   merge_suggestions: MergeSuggestion[];
   coverage_insights: string[];
   unique_detections: string[];
-  noise_alerts?: string[];
+  noise_alerts?: NoiseAlert[];
 }
 
 export interface InsightsReport {
@@ -96,6 +106,7 @@ export interface InsightsReport {
   recommendations: string[];
   enriched_dups: string[];
   enriched_gaps: string[];
+  noise_explanations?: string[];
 }
 
 export interface AnalyzeResponse {

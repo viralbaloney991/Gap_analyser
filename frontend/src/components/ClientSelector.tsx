@@ -1,121 +1,139 @@
-import { useState, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
+import { useState, useEffect } from 'react';
 import { fetchClients } from '../services/api';
 import type { ClientInfo } from '../types';
 
-const GEO_URL = '/world-110m.json';
-
-const REGION_COORDS: Record<string, [number, number]> = {
-  eu1: [-8.2,   53.3],   // Dublin (EU1)
-  eu2: [18.1,   59.3],   // Stockholm (EU2)
-  us1: [-77.5,  37.8],   // Virginia (US1)
-  us2: [-122.8, 45.5],   // Oregon (US2)
-  ap1: [72.9,   19.1],   // Mumbai (AP1)
-  ap2: [103.8,   1.3],   // Singapore (AP2)
-  ap3: [139.7,  35.7],   // Tokyo (AP3)
+// Human-readable region labels and geographic groupings
+const REGION_META: Record<string, { label: string; city: string; group: string }> = {
+  eu1: { label: 'EU1', city: 'Dublin',    group: 'Europe'        },
+  eu2: { label: 'EU2', city: 'Stockholm', group: 'Europe'        },
+  us1: { label: 'US1', city: 'Virginia',  group: 'Americas'      },
+  us2: { label: 'US2', city: 'Oregon',    group: 'Americas'      },
+  ap1: { label: 'AP1', city: 'Mumbai',    group: 'Asia Pacific'  },
+  ap2: { label: 'AP2', city: 'Singapore', group: 'Asia Pacific'  },
+  ap3: { label: 'AP3', city: 'Tokyo',     group: 'Asia Pacific'  },
 };
+
+const GROUP_ORDER = ['Europe', 'Americas', 'Asia Pacific'];
 
 interface Props {
   onAnalyze: (client: string) => void;
   loading: boolean;
 }
 
-interface TooltipState {
-  name: string;
-  region: string;
-  x: number;
-  y: number;
-}
-
 export default function ClientSelector({ onAnalyze, loading }: Props) {
   const [clients, setClients] = useState<ClientInfo[]>([]);
   const [selected, setSelected] = useState('');
   const [fetchError, setFetchError] = useState('');
-  const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
   useEffect(() => {
     fetchClients()
-      .then((list) => {
-        setClients(list);
-      })
+      .then(setClients)
       .catch(() => setFetchError('Failed to load client list'));
-  }, []);
-
-  const handleDotClick = useCallback((name: string) => {
-    setSelected(name);
-    setTooltip(null);
   }, []);
 
   const handleAnalyze = () => {
     if (selected && !loading) onAnalyze(selected);
   };
 
+  // Group clients by geographic region group
+  const grouped: Record<string, ClientInfo[]> = {};
+  for (const client of clients) {
+    const meta = REGION_META[client.region];
+    const group = meta?.group ?? 'Other';
+    if (!grouped[group]) grouped[group] = [];
+    grouped[group].push(client);
+  }
+
   return (
     <div className="client-selector">
+      {/* Scanline grid background */}
       <div className="client-selector-grid" />
 
       <span className="client-selector-corner top-left">CX_ALERTS v2.1</span>
 
-      {fetchError && <div className="error-banner map-error">{fetchError}</div>}
-
-      <ComposableMap
-        className="world-map"
-        projection="geoEqualEarth"
-        projectionConfig={{ scale: 160 }}
-      >
-        <Geographies geography={GEO_URL}>
-          {({ geographies }) =>
-            geographies.map((geo) => (
-              <Geography
-                key={geo.rsmKey}
-                geography={geo}
-                className="map-geography"
-              />
-            ))
-          }
-        </Geographies>
-
-        {clients.map((client) => {
-          const coords = REGION_COORDS[client.region];
-          if (!coords) return null;
-          const isSelected = client.name === selected;
-          return (
-            <Marker
-              key={client.name}
-              coordinates={coords}
-              onClick={() => handleDotClick(client.name)}
-              onMouseEnter={(e: React.MouseEvent<SVGGElement>) =>
-                setTooltip({ name: client.name, region: client.region, x: e.clientX, y: e.clientY })
-              }
-              onMouseLeave={() => setTooltip(null)}
-            >
-              <circle
-                r={isSelected ? 7 : 5}
-                className={`map-dot${isSelected ? ' map-dot--selected' : ''}`}
-              />
-              <circle
-                r={isSelected ? 7 : 5}
-                className={`map-dot-ring${isSelected ? ' map-dot-ring--selected' : ''}`}
-              />
-            </Marker>
-          );
-        })}
-      </ComposableMap>
-
-      {tooltip && createPortal(
-        <div
-          className="map-tooltip"
-          style={{ left: tooltip.x, top: tooltip.y }}
-        >
-          {tooltip.name} · {tooltip.region.toUpperCase()}
-        </div>,
-        document.body
+      {fetchError && (
+        <div className="error-banner map-error">{fetchError}</div>
       )}
 
+      {/* Region cards grid */}
+      <div className="region-cards-wrap">
+        {GROUP_ORDER.map((group) => {
+          const groupClients = grouped[group];
+          if (!groupClients?.length) return null;
+          return (
+            <div key={group} className="region-group">
+              <div className="region-group-label">{group}</div>
+              <div className="region-group-cards">
+                {groupClients.map((client) => {
+                  const meta = REGION_META[client.region];
+                  const isSelected = client.name === selected;
+                  return (
+                    <button
+                      key={client.name}
+                      className={`region-card${isSelected ? ' region-card--selected' : ''}`}
+                      onClick={() => setSelected(isSelected ? '' : client.name)}
+                      disabled={loading}
+                      title={`${client.name} · ${meta?.city ?? client.region}`}
+                    >
+                      <span className="region-card-tag">
+                        {meta?.label ?? client.region.toUpperCase()}
+                      </span>
+                      <span className="region-card-name">{client.name}</span>
+                      {meta?.city && (
+                        <span className="region-card-city">{meta.city}</span>
+                      )}
+                      {isSelected && (
+                        <span className="region-card-indicator" aria-hidden="true" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Ungrouped fallback */}
+        {grouped['Other']?.length ? (
+          <div className="region-group">
+            <div className="region-group-label">Other</div>
+            <div className="region-group-cards">
+              {grouped['Other'].map((client) => {
+                const isSelected = client.name === selected;
+                return (
+                  <button
+                    key={client.name}
+                    className={`region-card${isSelected ? ' region-card--selected' : ''}`}
+                    onClick={() => setSelected(isSelected ? '' : client.name)}
+                    disabled={loading}
+                  >
+                    <span className="region-card-tag">
+                      {client.region.toUpperCase()}
+                    </span>
+                    <span className="region-card-name">{client.name}</span>
+                    {isSelected && (
+                      <span className="region-card-indicator" aria-hidden="true" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {clients.length === 0 && !fetchError && (
+          <div className="region-cards-loading">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="region-card region-card--skeleton" aria-hidden="true" />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom content block */}
       <div className="client-selector-content">
         <div className="selected-client-label">
-          {selected ? `[ ${selected} ]` : 'Select a client on the map'}
+          {selected ? `[ ${selected} ]` : 'Select a client above'}
         </div>
         <h2 className="landing-wordmark"><strong>Alert</strong> Analyzer</h2>
         <p className="landing-subtitle">Coralogix Integration Intelligence</p>
