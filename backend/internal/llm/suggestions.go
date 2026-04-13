@@ -131,12 +131,60 @@ func parseSuggestions(raw string) ([]Suggestion, error) {
 		cleaned = strings.TrimSpace(cleaned)
 	}
 
+	// Sanitize literal control characters inside JSON strings.
+	// Some models (e.g. minimax-m2.7) emit raw newlines/tabs inside string
+	// values, which json.Unmarshal rejects as invalid.
+	cleaned = sanitizeJSONStrings(cleaned)
+
 	var suggestions []Suggestion
 	if err := json.Unmarshal([]byte(cleaned), &suggestions); err != nil {
 		return nil, fmt.Errorf("JSON parse error: %w\nRaw response:\n%s", err, raw[:min(len(raw), 500)])
 	}
 
 	return suggestions, nil
+}
+
+// sanitizeJSONStrings replaces literal control characters inside JSON string
+// values with their JSON escape sequences. It uses a simple state machine and
+// only modifies characters that are inside a quoted string, leaving structural
+// whitespace (newlines between keys/values) untouched.
+func sanitizeJSONStrings(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inString := false
+	escaped := false
+	for _, c := range s {
+		if escaped {
+			b.WriteRune(c)
+			escaped = false
+			continue
+		}
+		if c == '\\' && inString {
+			b.WriteRune(c)
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+			b.WriteRune(c)
+			continue
+		}
+		if inString {
+			switch c {
+			case '\n':
+				b.WriteString(`\n`)
+			case '\r':
+				b.WriteString(`\r`)
+			case '\t':
+				b.WriteString(`\t`)
+			default:
+				b.WriteRune(c)
+			}
+			continue
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }
 
 func min(a, b int) int {
