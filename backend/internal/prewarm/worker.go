@@ -52,12 +52,13 @@ func (w *Worker) fetchLogSources(ctx context.Context, client string, clientCfg c
 		defer wg.Done()
 		if w.alertStore != nil {
 			stored, err := w.alertStore.LoadAlerts(ctx, client)
-			if err == nil && len(stored) > 0 {
+			if err != nil {
+				log.Printf("WARN [prewarm] store load client=%s: %v", client, err)
+			} else if len(stored) > 0 {
 				alerts = stored
-				return
 			}
 		}
-		// No live fetch here — prewarm uses cached data only to avoid duplicate API calls.
+		// No live fetch — prewarm uses NeonDB store only to avoid duplicate API calls.
 	}()
 	wg.Wait()
 
