@@ -14,6 +14,8 @@ import (
 	"coralogix-alert-analyzer/internal/api"
 	"coralogix-alert-analyzer/internal/cache"
 	"coralogix-alert-analyzer/internal/config"
+	"coralogix-alert-analyzer/internal/monday"
+	alertprewarm "coralogix-alert-analyzer/internal/prewarm"
 	alertstore "coralogix-alert-analyzer/internal/store"
 	alertsync "coralogix-alert-analyzer/internal/sync"
 )
@@ -76,12 +78,19 @@ func main() {
 		log.Printf("INFO: neon_dsn not configured — alert persistence disabled")
 	}
 
-	handler := api.NewHandler(cfg, redisStore, neonStore)
+	// Suggestion pre-warm worker — nil-safe if NeonDB is unavailable.
+	var prewarmWorker *alertprewarm.Worker
+	if neonStore != nil {
+		prewarmWorker = alertprewarm.New(cfg, neonStore, monday.NewClient(cfg.MondayAPIToken, cfg.MondayBoardID))
+	}
+
+	handler := api.NewHandler(cfg, redisStore, neonStore, prewarmWorker)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", handler.HandleHealth)
 	mux.HandleFunc("/api/clients", handler.HandleClients)
 	mux.HandleFunc("/api/analyze", handler.HandleAnalyze)
+	mux.HandleFunc("/api/insights", handler.HandleInsights)
 	mux.HandleFunc("/api/suggestions", handler.HandleSuggestions)
 
 	// Serve static frontend files in production.
