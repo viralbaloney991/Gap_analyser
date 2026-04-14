@@ -28,7 +28,7 @@ func Enrich(
 	prompt := buildPrompt(result, alerts)
 	raw, err := provider.Complete(ctx, llm.CompletionRequest{
 		UserMessage: prompt,
-		MaxTokens:   1024,
+		MaxTokens:   2048,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("insights LLM call: %w", err)
@@ -51,38 +51,54 @@ func Enrich(
 	return &report, nil
 }
 
+const (
+	maxPromptDuplicates = 30
+	maxPromptNoise      = 40
+	maxPromptFamilies   = 20
+)
+
 func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) string {
 	var sb strings.Builder
 
 	sb.WriteString("You are a security detection engineer reviewing a SIEM alert library.\n\n")
-	sb.WriteString(fmt.Sprintf("Alert library (%d alerts):\n", len(alerts)))
-	for _, a := range alerts {
-		sb.WriteString(fmt.Sprintf("- %s: sources=%v, actions=%v, techniques=%v\n",
-			a.Name, a.Features.DataSources, a.Features.Actions, a.Features.Techniques))
-	}
+	sb.WriteString(fmt.Sprintf("Alert library: %d alerts total.\n", len(alerts)))
 
 	sb.WriteString("\nSimilarity analysis results:\n")
 
-	sb.WriteString(fmt.Sprintf("- Duplicates (%d):", len(result.Duplicates)))
-	for _, d := range result.Duplicates {
+	dups := result.Duplicates
+	if len(dups) > maxPromptDuplicates {
+		dups = dups[:maxPromptDuplicates]
+	}
+	sb.WriteString(fmt.Sprintf("- Duplicates (%d total, showing top %d):", len(result.Duplicates), len(dups)))
+	for _, d := range dups {
 		if len(d.AlertNames) >= 2 {
 			sb.WriteString(fmt.Sprintf(" %s ≈ %s (%.0f%%),", d.AlertNames[0], d.AlertNames[1], d.Similarity*100))
 		}
 	}
 	sb.WriteString("\n")
 
+	families := result.Families
+	if len(families) > maxPromptFamilies {
+		families = families[:maxPromptFamilies]
+	}
 	sb.WriteString(fmt.Sprintf("- Detection families (%d):", len(result.Families)))
-	for _, f := range result.Families {
+	for _, f := range families {
 		sb.WriteString(fmt.Sprintf(" %s: %s;", f.Name, strings.Join(f.AlertNames, ", ")))
 	}
 	sb.WriteString("\n")
 
 	sb.WriteString(fmt.Sprintf("- Coverage gaps: %s\n", strings.Join(result.CoverageInsights, "; ")))
-	noiseNames := make([]string, len(result.NoiseAlerts))
-	for i, na := range result.NoiseAlerts {
+
+	noiseAlerts := result.NoiseAlerts
+	if len(noiseAlerts) > maxPromptNoise {
+		noiseAlerts = noiseAlerts[:maxPromptNoise]
+	}
+	noiseNames := make([]string, len(noiseAlerts))
+	for i, na := range noiseAlerts {
 		noiseNames[i] = na.Name
 	}
-	sb.WriteString(fmt.Sprintf("- Noise alerts (sparse feature vectors): %s\n", strings.Join(noiseNames, ", ")))
+	sb.WriteString(fmt.Sprintf("- Noise alerts (%d total, showing top %d): %s\n",
+		len(result.NoiseAlerts), len(noiseAlerts), strings.Join(noiseNames, ", ")))
 
 	sb.WriteString(`
 Respond with JSON only:
