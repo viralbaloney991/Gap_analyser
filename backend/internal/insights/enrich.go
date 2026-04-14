@@ -28,7 +28,7 @@ func Enrich(
 	prompt := buildPrompt(result, alerts)
 	raw, err := provider.Complete(ctx, llm.CompletionRequest{
 		UserMessage: prompt,
-		MaxTokens:   2048,
+		MaxTokens:   4096,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("insights LLM call: %w", err)
@@ -52,9 +52,9 @@ func Enrich(
 }
 
 const (
-	maxPromptDuplicates = 30
-	maxPromptNoise      = 40
-	maxPromptFamilies   = 20
+	maxPromptDuplicates = 15
+	maxPromptNoise      = 20
+	maxPromptFamilies   = 15
 )
 
 func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) string {
