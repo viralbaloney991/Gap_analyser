@@ -4,11 +4,12 @@ import type { SimilarityResult, InsightsReport, NoiseAlert } from '../types';
 interface Props {
   data: SimilarityResult;
   report: InsightsReport | null;
+  insightsError?: boolean;
 }
 
 type Tab = 'duplicates' | 'families' | 'merge' | 'coverage' | 'noise' | 'unique' | 'recommendations';
 
-export default function AlertInsights({ data, report }: Props) {
+export default function AlertInsights({ data, report, insightsError = false }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('duplicates');
 
   const noiseCount = data.noise_alerts?.length ?? 0;
@@ -35,6 +36,8 @@ export default function AlertInsights({ data, report }: Props) {
           <div className="insights-panel-summary">
             {report ? (
               report.summary || 'Enrichment unavailable — check LLM provider configuration.'
+            ) : insightsError ? (
+              <span className="insights-error">LLM enrichment failed — refresh to retry.</span>
             ) : (
               <>
                 <div className="insights-skeleton" style={{ width: '100%' }} />
@@ -56,6 +59,8 @@ export default function AlertInsights({ data, report }: Props) {
               ) : (
                 <div className="insights-panel-item">No priorities flagged.</div>
               )
+            ) : insightsError ? (
+              <div className="insights-panel-item insights-error">Unavailable</div>
             ) : (
               <>
                 <div className="insights-skeleton" style={{ width: '90%' }} />
@@ -74,6 +79,8 @@ export default function AlertInsights({ data, report }: Props) {
               ) : (
                 <div className="insights-panel-item">No strengths identified.</div>
               )
+            ) : insightsError ? (
+              <div className="insights-panel-item insights-error">Unavailable</div>
             ) : (
               <>
                 <div className="insights-skeleton" style={{ width: '75%' }} />
@@ -92,6 +99,8 @@ export default function AlertInsights({ data, report }: Props) {
               ) : (
                 <div className="insights-panel-item">No recommendations available.</div>
               )
+            ) : insightsError ? (
+              <div className="insights-panel-item insights-error">Unavailable</div>
             ) : (
               <div className="insights-skeleton" style={{ width: '80%' }} />
             )}

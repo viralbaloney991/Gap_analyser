@@ -16,11 +16,13 @@ function App() {
   const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [clientName, setClientName] = useState('');
   const [insightsReport, setInsightsReport] = useState<InsightsReport | null>(null);
+  const [insightsError, setInsightsError] = useState(false);
 
   const handleAnalyze = async (client: string, refresh = false) => {
     setLoading(true);
     setError('');
     setInsightsReport(null);
+    setInsightsError(false);
     try {
       const result = await analyzeClient(client, refresh);
       setData(result);
@@ -30,7 +32,7 @@ function App() {
       // AlertInsights shows skeletons until this resolves.
       fetchInsights(client)
         .then(setInsightsReport)
-        .catch((e) => console.warn('[insights]', e));
+        .catch((e) => { console.warn('[insights]', e); setInsightsError(true); });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Analysis failed');
     } finally {
@@ -46,6 +48,7 @@ function App() {
       setData(null);
       setClientName('');
       setInsightsReport(null);
+      setInsightsError(false);
     }
     setError('');
   };
@@ -55,6 +58,7 @@ function App() {
     setData(null);
     setClientName('');
     setInsightsReport(null);
+    setInsightsError(false);
     setError('');
   };
 
@@ -100,7 +104,7 @@ function App() {
         )}
 
         {view === 'insights' && data && (
-          <AlertInsights data={data.alert_insights} report={insightsReport} />
+          <AlertInsights data={data.alert_insights} report={insightsReport} insightsError={insightsError} />
         )}
       </main>
     </div>

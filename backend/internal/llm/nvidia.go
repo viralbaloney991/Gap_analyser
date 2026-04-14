@@ -103,7 +103,6 @@ func (n *nvidiaProvider) completeStreaming(ctx context.Context, messages []map[s
 		"top_p":                0.95,
 		"stream":               true,
 		"chat_template_kwargs": map[string]any{"enable_thinking": true},
-		"reasoning_budget":     maxTokens,
 	}
 	payload, _ := json.Marshal(body)
 
