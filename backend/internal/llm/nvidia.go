@@ -46,12 +46,13 @@ func (n *nvidiaProvider) Complete(ctx context.Context, req CompletionRequest) (s
 
 func (n *nvidiaProvider) completeNonStreaming(ctx context.Context, messages []map[string]string, maxTokens int) (string, error) {
 	body := map[string]any{
-		"model":       n.model,
-		"max_tokens":  maxTokens,
-		"messages":    messages,
-		"temperature": 0.6,
-		"top_p":       0.95,
-		"stream":      false,
+		"model":                n.model,
+		"max_tokens":           maxTokens,
+		"messages":             messages,
+		"temperature":          0.6,
+		"top_p":                0.95,
+		"stream":               false,
+		"chat_template_kwargs": map[string]any{"enable_thinking": false},
 	}
 	payload, _ := json.Marshal(body)
 
