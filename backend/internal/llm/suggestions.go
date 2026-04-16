@@ -52,7 +52,7 @@ Rules:
 - Be specific about what fields/events to look for in the log source
 - Keep alert names concise: "[LogSource] - [Behavior Description]"
 - Suggest DIFFERENT detection approaches (different log sources, different indicators) — do not repeat the same idea
-- If the technique CANNOT be detected with any available log source, return an empty array []
+- Only return an empty array [] if there is truly no log source that could detect any aspect of this technique — prefer suggesting an imperfect or partial alert over returning nothing
 - Return at most 6 suggestions, ordered by detection quality (best first)
 
 Respond ONLY with a JSON array. No markdown, no explanation, just the JSON array.
