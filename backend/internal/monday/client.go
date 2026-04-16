@@ -15,6 +15,7 @@ const apiURL = "https://api.monday.com/v2"
 type Client struct {
 	apiToken string
 	boardID  int64
+	baseURL  string // overrides apiURL constant; used in tests
 }
 
 // Integration represents a single onboarded log source from Monday.
@@ -122,7 +123,11 @@ func (c *Client) FetchIntegrations(ctx context.Context, groupID string) ([]Integ
 func (c *Client) graphql(ctx context.Context, query string) ([]byte, error) {
 	body, _ := json.Marshal(map[string]string{"query": query})
 
-	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(body))
+	url := apiURL
+	if c.baseURL != "" {
+		url = c.baseURL
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
