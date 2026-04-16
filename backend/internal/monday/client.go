@@ -27,6 +27,12 @@ type Integration struct {
 	AlertCount  int    `json:"alert_count"`
 }
 
+// Group represents a Monday.com board group.
+type Group struct {
+	ID    string
+	Title string
+}
+
 // NewClient creates a Monday.com API client.
 func NewClient(apiToken string, boardID int64) *Client {
 	return &Client{apiToken: apiToken, boardID: boardID}
@@ -118,6 +124,41 @@ func (c *Client) FetchIntegrations(ctx context.Context, groupID string) ([]Integ
 	}
 
 	return integrations, nil
+}
+
+// FetchGroups returns all groups on the configured board.
+func (c *Client) FetchGroups(ctx context.Context) ([]Group, error) {
+	query := fmt.Sprintf(`{ boards(ids: [%d]) { groups { id title } } }`, c.boardID)
+
+	resp, err := c.graphql(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Data struct {
+			Boards []struct {
+				Groups []struct {
+					ID    string `json:"id"`
+					Title string `json:"title"`
+				} `json:"groups"`
+			} `json:"boards"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, fmt.Errorf("parse monday groups: %w", err)
+	}
+
+	if len(result.Data.Boards) == 0 {
+		return nil, fmt.Errorf("board %d not found", c.boardID)
+	}
+
+	groups := make([]Group, 0, len(result.Data.Boards[0].Groups))
+	for _, g := range result.Data.Boards[0].Groups {
+		groups = append(groups, Group{ID: g.ID, Title: g.Title})
+	}
+	return groups, nil
 }
 
 func (c *Client) graphql(ctx context.Context, query string) ([]byte, error) {
