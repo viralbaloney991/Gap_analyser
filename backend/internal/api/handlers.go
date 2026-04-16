@@ -588,8 +588,9 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Append to persistent cache.
-	if h.alertStore != nil && cacheKey != "" {
+	// Append to persistent cache — skip empty results so future requests
+	// call the LLM fresh rather than returning a cached empty response.
+	if len(result.Suggestions) > 0 && h.alertStore != nil && cacheKey != "" {
 		sugsJSON, _ := json.Marshal(result.Suggestions)
 		appendErr := h.alertStore.AppendCachedSuggestions(ctx, store.SuggestionRow{
 			CacheKey:    cacheKey,
