@@ -386,7 +386,7 @@ function SuggestionsPanel({
           onChange={(e) => setProvider(e.target.value)}
           disabled={loading}
         >
-          <option value="">MiniMax M2.7 (default)</option>
+          <option value="">Mistral Small (default)</option>
           <option value="nvidia">NVIDIA (Qwen)</option>
           <option value="claude">Claude (Haiku)</option>
           <option value="gemini">Gemini 2.0 Flash</option>
