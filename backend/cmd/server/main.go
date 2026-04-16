@@ -45,13 +45,13 @@ func main() {
 	// Auto-resolve Monday group IDs for clients that don't have one configured.
 	{
 		resolveCtx, resolveCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer resolveCancel()
 		mondayResolver := monday.NewClient(cfg.MondayAPIToken, cfg.MondayBoardID)
 		if groups, err := mondayResolver.FetchGroups(resolveCtx); err != nil {
 			log.Printf("WARN [monday] could not fetch groups for auto-resolution: %v", err)
 		} else {
 			resolveGroupIDs(cfg, groups)
 		}
-		resolveCancel()
 	}
 
 	// Context cancelled on shutdown — used by sync worker.

@@ -144,10 +144,17 @@ func (c *Client) FetchGroups(ctx context.Context) ([]Group, error) {
 				} `json:"groups"`
 			} `json:"boards"`
 		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
 	}
 
 	if err := json.Unmarshal(resp, &result); err != nil {
 		return nil, fmt.Errorf("parse monday groups: %w", err)
+	}
+
+	if len(result.Errors) > 0 {
+		return nil, fmt.Errorf("monday API error: %s", result.Errors[0].Message)
 	}
 
 	if len(result.Data.Boards) == 0 {

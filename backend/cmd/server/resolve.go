@@ -20,7 +20,7 @@ func resolveGroupIDs(cfg *config.Config, groups []monday.Group) {
 		lName := strings.ToLower(name)
 		for _, g := range groups {
 			lTitle := strings.ToLower(g.Title)
-			if strings.Contains(lTitle, lName) || strings.Contains(lName, lTitle) {
+			if strings.Contains(lTitle, lName) || (len(lTitle) >= 3 && strings.Contains(lName, lTitle)) {
 				matches = append(matches, g)
 			}
 		}
