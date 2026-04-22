@@ -2,6 +2,7 @@ package pipeline_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"testing"
@@ -65,6 +66,9 @@ func TestSemaphore_ContextCancellation(t *testing.T) {
 	case err := <-done:
 		if err == nil {
 			t.Fatal("expected error from cancelled ctx, got nil")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("expected context.Canceled, got %v", err)
 		}
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Acquire did not return after ctx cancellation")

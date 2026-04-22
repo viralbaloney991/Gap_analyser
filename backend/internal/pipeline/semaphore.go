@@ -40,8 +40,13 @@ func (s *Semaphore) Acquire(ctx context.Context) error {
 }
 
 // Release returns a slot to the semaphore. Must be called once per successful Acquire.
+// Panics if called more times than Acquire, preventing a silent deadlock.
 func (s *Semaphore) Release() {
-	s.slots <- struct{}{}
+	select {
+	case s.slots <- struct{}{}:
+	default:
+		panic("pipeline: semaphore Release called without a matching Acquire")
+	}
 }
 
 // Cap returns the total capacity of the semaphore.

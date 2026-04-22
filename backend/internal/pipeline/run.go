@@ -45,6 +45,13 @@ func Run[T any](ctx context.Context, sem *Semaphore, inputs []T, batch int, fn f
 		go func() {
 			defer wg.Done()
 			for inp := range jobs {
+				// Short-circuit remaining items if context is cancelled.
+				if ctx.Err() != nil {
+					mu.Lock()
+					errs = append(errs, ctx.Err())
+					mu.Unlock()
+					continue
+				}
 				if err := sem.Acquire(ctx); err != nil {
 					mu.Lock()
 					errs = append(errs, err)
