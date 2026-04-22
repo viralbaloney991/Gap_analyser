@@ -273,7 +273,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	// Trigger background insights enrichment concurrently with pre-warm.
 	// Uses a detached context; semaphore ensures it doesn't crowd out pre-warm workers.
 	if h.sem != nil {
-		h.runInsightsBackground(req.Client, clientCfg, alerts)
+		h.runInsightsBackground(req.Client, alerts)
 	}
 }
 
@@ -289,7 +289,7 @@ func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 // runInsightsBackground runs LLM insights enrichment as a fire-and-forget goroutine.
 // Uses a detached context so that client disconnect does not abort the work.
 // Results are stored in Redis for /api/insights to serve.
-func (h *Handler) runInsightsBackground(client string, clientCfg config.ClientConfig, alerts []*models.AlertDef) {
+func (h *Handler) runInsightsBackground(client string, alerts []*models.AlertDef) {
 	bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	go func() {
 		defer cancel()
