@@ -3,11 +3,10 @@
  *
  * Layout: two modes toggled by the user.
  *   1. Heatmap grid  — the original tactic-column layout (default).
- *   2. Force graph   — D3 force-directed SVG graph (Barnes-Hut repulsion, spring links).
+ *   2. Force graph   — progressive disclosure: 14 tactic nodes, click to expand techniques.
  */
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import * as d3 from 'd3';
+import { useState } from 'react';
 import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse } from '../types';
 import { fetchSuggestions } from '../services/api';
 
@@ -83,260 +82,86 @@ function priorityColor(priority: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Minimal force-directed simulation (no D3 dependency)
+// Position helpers (pure — no simulation)
 // ---------------------------------------------------------------------------
 
-interface ForceNode {
-  id: string;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  radius: number;
-  color: string;
-  label: string;
-  score: number;
-  tactic: string;
-  isTactic: boolean;
-}
-
-interface ForceEdge {
-  source: string;
-  target: string;
-}
-
-function buildForceGraph(techniques: NavigatorTechnique[], width: number, height: number) {
-  const cx = width / 2;
-  const cy = height / 2;
-
-  // Tactic nodes arranged in a circle
-  const tacticSet = [...new Set(techniques.map((t) => t.tactic).filter(Boolean))];
-  const tacticNodes: ForceNode[] = tacticSet.map((tactic, i) => {
-    const angle = (i / tacticSet.length) * 2 * Math.PI - Math.PI / 2;
-    const r = Math.min(width, height) * 0.32;
-    return {
-      id: `tactic:${tactic}`,
-      x: cx + r * Math.cos(angle),
-      y: cy + r * Math.sin(angle),
-      vx: 0, vy: 0,
-      radius: 22,
-      color: '#00ff64',
-      label: TACTIC_LABELS[tactic] ?? tactic,
-      score: 0,
-      tactic,
-      isTactic: true,
-    };
-  });
-
-  // Technique nodes — scatter deterministically around their tactic parent
-  const techniqueNodes: ForceNode[] = techniques.map((t, i) => {
-    const parentTactic = tacticNodes.find((n) => n.id === `tactic:${t.tactic}`);
-    // Deterministic jitter using index to avoid layout thrash on re-render
-    const angle = (i * 2.399) % (2 * Math.PI); // golden-angle spread
-    const r = 30 + (i % 3) * 15;
-    return {
-      id: `tech:${t.techniqueID}:${t.tactic}`,
-      x: (parentTactic?.x ?? cx) + r * Math.cos(angle),
-      y: (parentTactic?.y ?? cy) + r * Math.sin(angle),
-      vx: 0, vy: 0,
-      radius: 10,
-      color: t.color ?? '#334',
-      label: t.techniqueID,
-      score: t.score,
-      tactic: t.tactic,
-      isTactic: false,
-    };
-  });
-
-  const edges: ForceEdge[] = techniques
-    .filter((t) => tacticSet.includes(t.tactic))
-    .map((t) => ({ source: `tactic:${t.tactic}`, target: `tech:${t.techniqueID}:${t.tactic}` }));
-
-  return { nodes: [...tacticNodes, ...techniqueNodes], edges };
-}
-
-/** D3 force simulation hook.
- *  Accepts a stable `graphData` reference (from useMemo) so the simulation
- *  restarts when `techniques` change (e.g., navigating between clients). */
-function useForceSimulation(
-  graphData: { nodes: ForceNode[]; edges: ForceEdge[] },
+/**
+ * Places `tactics` in a 7-column × 2-row grid, evenly spaced.
+ * Returns a map of tactic slug → { cx, cy } centre coordinates.
+ */
+function tacticGridPositions(
+  tactics: string[],
   width: number,
   height: number,
-  active: boolean,
-): ForceNode[] {
-  const [positions, setPositions] = useState<ForceNode[]>(graphData.nodes);
-  const simRef = useRef<d3.Simulation<ForceNode, d3.SimulationLinkDatum<ForceNode>> | null>(null);
-
-  useEffect(() => {
-    const { nodes, edges } = graphData;
-    if (!active || nodes.length === 0) {
-      setPositions(nodes);
-      return;
-    }
-
-    const ns: ForceNode[] = nodes.map((n) => ({ ...n }));
-    // d3 forceLink resolves string IDs to node references — cast to satisfy types
-    const links = edges.map((e) => ({ ...e })) as unknown as d3.SimulationLinkDatum<ForceNode>[];
-
-    const pad = 24;
-
-    const sim = d3.forceSimulation<ForceNode>(ns)
-      .force(
-        'link',
-        d3.forceLink<ForceNode, d3.SimulationLinkDatum<ForceNode>>(links)
-          .id((d) => d.id)
-          .distance((link) => {
-            const src = link.source as ForceNode;
-            return src.isTactic ? 110 : 55;
-          })
-          .strength(0.6),
-      )
-      .force('charge', d3.forceManyBody<ForceNode>().strength((d) => d.isTactic ? -300 : -80))
-      .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide<ForceNode>().radius((d) => d.radius + 5))
-      .alphaDecay(0.02)
-      .on('tick', () => {
-        for (const n of ns) {
-          n.x = Math.max(pad + n.radius, Math.min(width  - pad - n.radius, n.x ?? width  / 2));
-          n.y = Math.max(pad + n.radius, Math.min(height - pad - n.radius, n.y ?? height / 2));
-        }
-        setPositions(ns.map((n) => ({ ...n })));
-      });
-
-    simRef.current = sim;
-    return () => { sim.stop(); };
-  }, [active, graphData, width, height]);
-
-  return positions;
+): Record<string, { cx: number; cy: number }> {
+  const colCount = 7;
+  const rowCount = Math.ceil(tactics.length / colCount);
+  const colSpacing = width / (colCount + 1);
+  const rowSpacing = height / (rowCount + 1);
+  const result: Record<string, { cx: number; cy: number }> = {};
+  tactics.forEach((tactic, i) => {
+    result[tactic] = {
+      cx: colSpacing * ((i % colCount) + 1),
+      cy: rowSpacing * (Math.floor(i / colCount) + 1),
+    };
+  });
+  return result;
 }
+
+/**
+ * Fans `count` technique nodes evenly around a circle centred on (cx, cy).
+ * Radius = max(90, sqrt(count) * 30). Clamps nodes to stay within canvas bounds.
+ */
+function techniqueRadialPositions(
+  cx: number,
+  cy: number,
+  count: number,
+  canvasWidth: number,
+  canvasHeight: number,
+): Array<{ cx: number; cy: number }> {
+  if (count === 0) return [];
+  const pad = 20;
+  const nodeR = 16;
+  const radius = Math.max(90, Math.sqrt(count) * 30);
+  return Array.from({ length: count }, (_, i) => {
+    const angle = -Math.PI / 2 + (i / count) * 2 * Math.PI;
+    return {
+      cx: Math.max(pad + nodeR, Math.min(canvasWidth  - pad - nodeR, cx + radius * Math.cos(angle))),
+      cy: Math.max(pad + nodeR, Math.min(canvasHeight - pad - nodeR, cy + radius * Math.sin(angle))),
+    };
+  });
+}
+
+// Reference the helpers so they're not marked as unused (Task 2 will use these)
+void tacticGridPositions;
+void techniqueRadialPositions;
 
 // ---------------------------------------------------------------------------
 // Force Graph component
 // ---------------------------------------------------------------------------
 
 function ForceGraph({
-  techniques,
-  onSelectTechnique,
-  selectedId,
+  techniques: _techniques,
+  onSelectTechnique: _onSelectTechnique,
+  selectedId: _selectedId,
 }: {
   techniques: NavigatorTechnique[];
   onSelectTechnique: (t: NavigatorTechnique | null) => void;
   selectedId: string | null;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dims, setDims] = useState({ width: 800, height: 540 });
-
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const obs = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect;
-      setDims({ width: Math.max(400, width), height: Math.max(300, height) });
-    });
-    obs.observe(containerRef.current);
-    return () => obs.disconnect();
-  }, []);
-
-  const graphData = useMemo(
-    () => buildForceGraph(techniques, dims.width, dims.height),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [techniques, dims.width, dims.height],
-  );
-  const nodes = useForceSimulation(graphData, dims.width, dims.height, true);
-  const { edges } = graphData;
-
-  const nodeIndex: Record<string, ForceNode> = {};
-  for (const n of nodes) nodeIndex[n.id] = n;
-
-  const handleNodeClick = useCallback((node: ForceNode) => {
-    if (node.isTactic) return;
-    const techId = node.id.replace(/^tech:/, '').split(':')[0];
-    const tactic = node.tactic;
-    const technique = techniques.find(
-      (t) => t.techniqueID === techId && t.tactic === tactic,
-    );
-    if (technique) {
-      onSelectTechnique(selectedId === node.id ? null : technique);
-    }
-  }, [techniques, selectedId, onSelectTechnique]);
-
   return (
-    <div ref={containerRef} className="force-graph-container">
-      <svg
-        width={dims.width}
-        height={dims.height}
-        className="force-graph-svg"
-        role="img"
-        aria-label="MITRE technique force graph"
-      >
-        {/* Edges */}
-        <g className="force-edges">
-          {edges.map((edge, i) => {
-            const src = nodeIndex[edge.source];
-            const tgt = nodeIndex[edge.target];
-            if (!src || !tgt) return null;
-            return (
-              <line
-                key={i}
-                x1={src.x} y1={src.y}
-                x2={tgt.x} y2={tgt.y}
-                stroke="rgba(0,255,100,0.12)"
-                strokeWidth={1}
-              />
-            );
-          })}
-        </g>
-
-        {/* Nodes */}
-        <g className="force-nodes">
-          {nodes.map((node) => {
-            const isSelected = selectedId === node.id;
-            return (
-              <g
-                key={node.id}
-                transform={`translate(${node.x},${node.y})`}
-                className={`force-node${node.isTactic ? ' force-node--tactic' : ''}${isSelected ? ' force-node--selected' : ''}`}
-                onClick={() => handleNodeClick(node)}
-                style={{ cursor: node.isTactic ? 'default' : 'pointer' }}
-                role={node.isTactic ? undefined : 'button'}
-                aria-label={node.label}
-              >
-                <circle
-                  r={node.radius}
-                  fill={node.isTactic ? 'rgba(0,255,100,0.15)' : node.color}
-                  stroke={isSelected ? '#fff' : (node.isTactic ? '#00ff64' : 'rgba(0,255,100,0.3)')}
-                  strokeWidth={isSelected ? 2 : 1}
-                />
-                <text
-                  dy="0.35em"
-                  textAnchor="middle"
-                  fontSize={node.isTactic ? 6 : 5.5}
-                  fill={node.isTactic ? '#00ff64' : 'rgba(0,0,0,0.75)'}
-                  fontFamily="'IBM Plex Mono', monospace"
-                  fontWeight={node.isTactic ? '600' : '400'}
-                  style={{ pointerEvents: 'none', userSelect: 'none' }}
-                >
-                  {node.label.length > 12
-                    ? node.isTactic
-                      ? node.label.split(' ').map((w, i) => (
-                          <tspan key={i} x={0} dy={i === 0 ? `-${(node.label.split(' ').length - 1) * 3}` : '6'}>
-                            {w}
-                          </tspan>
-                        ))
-                      : node.label
-                    : node.label}
-                </text>
-              </g>
-            );
-          })}
-        </g>
+    <div className="force-graph-container">
+      <svg width={800} height={540} className="force-graph-svg">
+        <text
+          x={400} y={270}
+          textAnchor="middle"
+          fill="#00ff6466"
+          fontSize={14}
+          fontFamily="'IBM Plex Mono', monospace"
+        >
+          Loading graph...
+        </text>
       </svg>
-
-      <div className="force-graph-legend">
-        <span className="force-legend-item force-legend-item--tactic">Tactic</span>
-        <span className="force-legend-item force-legend-item--covered">Covered</span>
-        <span className="force-legend-item force-legend-item--partial">Partial</span>
-        <span className="force-legend-item force-legend-item--uncovered">Uncovered</span>
-      </div>
     </div>
   );
 }
