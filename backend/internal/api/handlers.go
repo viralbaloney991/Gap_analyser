@@ -186,7 +186,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 			}
 			log.Printf("INFO [analyze] MITRE pipeline: %d/%d alerts need classification", len(inputs), len(alerts))
 			if len(inputs) > 0 {
-				llmMappings = llm.BatchClassifyAndValidate(ctx, classifierClient, validatorProvider, h.cache, inputs)
+				llmMappings = llm.BatchClassifyAndValidate(ctx, classifierClient, validatorProvider, h.cache, h.sem, inputs)
 			}
 		}
 	} else {
