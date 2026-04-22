@@ -6,7 +6,7 @@
  *   2. Force graph   — progressive disclosure: 14 tactic nodes, click to expand techniques.
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse } from '../types';
 import { fetchSuggestions } from '../services/api';
 
@@ -159,16 +159,30 @@ function ForceGraph({
     return () => obs.disconnect();
   }, []);
 
-  // Group techniques by tactic
-  const tacticMap: Record<string, NavigatorTechnique[]> = {};
-  for (const t of techniques) {
-    if (!t.tactic) continue;
-    if (!tacticMap[t.tactic]) tacticMap[t.tactic] = [];
-    tacticMap[t.tactic].push(t);
-  }
+  useEffect(() => {
+    setExpandedTactic(null);
+  }, [techniques]);
 
-  const activeTactics = TACTICS_ORDER.filter((tac) => tacticMap[tac] !== undefined);
-  const gridPos = tacticGridPositions(activeTactics, dims.width, dims.height);
+  // Group techniques by tactic
+  const tacticMap = useMemo(() => {
+    const map: Record<string, NavigatorTechnique[]> = {};
+    for (const t of techniques) {
+      if (!t.tactic) continue;
+      if (!map[t.tactic]) map[t.tactic] = [];
+      map[t.tactic].push(t);
+    }
+    return map;
+  }, [techniques]);
+
+  const activeTactics = useMemo(
+    () => TACTICS_ORDER.filter((tac) => tacticMap[tac] !== undefined),
+    [tacticMap],
+  );
+
+  const gridPos = useMemo(
+    () => tacticGridPositions(activeTactics, dims.width, dims.height),
+    [activeTactics, dims.width, dims.height],
+  );
 
   // Positions for the currently expanded tactic's techniques
   const expandedTechs = expandedTactic ? (tacticMap[expandedTactic] ?? []) : [];
@@ -224,7 +238,7 @@ function ForceGraph({
           if (!pos) return null;
           return (
             <line
-              key={i}
+              key={`edge:${expandedTechs[i].techniqueID}:${expandedTechs[i].tactic}`}
               x1={expandedCenter.cx} y1={expandedCenter.cy}
               x2={pos.cx}           y2={pos.cy}
               stroke="rgba(0,255,100,0.3)"
