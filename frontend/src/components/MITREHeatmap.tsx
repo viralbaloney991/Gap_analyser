@@ -6,7 +6,7 @@
  *   2. Force graph   — progressive disclosure: 14 tactic nodes, click to expand techniques.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse } from '../types';
 import { fetchSuggestions } from '../services/api';
 
@@ -149,9 +149,15 @@ function ForceGraph({
   onSelectTechnique: (t: NavigatorTechnique | null) => void;
   selectedId: string | null;
 }) {
+  // Task 2: Placeholder refs/effects for force graph implementation
+  const _svgRef = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    // Task 2: Implement force graph simulation here
+  }, []);
+
   return (
     <div className="force-graph-container">
-      <svg width={800} height={540} className="force-graph-svg">
+      <svg ref={_svgRef} width={800} height={540} className="force-graph-svg">
         <text
           x={400} y={270}
           textAnchor="middle"
