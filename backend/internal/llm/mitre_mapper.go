@@ -66,9 +66,7 @@ func BatchClassifyAndValidate(
 		if val, ok := store.GetString(ctx, key); ok {
 			var techs []string
 			if err := json.Unmarshal([]byte(val), &techs); err == nil {
-				mu.Lock()
-				result[inp.ID] = techs
-				mu.Unlock()
+				result[inp.ID] = techs // single-threaded loop; no mutex needed
 				continue
 			}
 		}
