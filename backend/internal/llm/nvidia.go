@@ -82,6 +82,9 @@ func (n *nvidiaProvider) Complete(ctx context.Context, req CompletionRequest) (s
 		if !ok {
 			return "", err
 		}
+		if attempt == nvidiaMaxRetries-1 {
+			break // last attempt — skip sleep, fall through to error
+		}
 		log.Printf("WARN [nvidia] rate limited (attempt %d/%d), retrying in %s", attempt+1, nvidiaMaxRetries, re.wait)
 		select {
 		case <-time.After(re.wait):
@@ -118,10 +121,12 @@ func (n *nvidiaProvider) completeNonStreaming(ctx context.Context, messages []ma
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	// Check for rate limit before reading body (header is sufficient)
 	if resp.StatusCode == http.StatusTooManyRequests {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return "", &rateLimitError{wait: parseRetryAfter(resp.Header)}
 	}
+	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("nvidia NIM API returned %d: %s", resp.StatusCode, string(respBody))
 	}
@@ -173,6 +178,7 @@ func (n *nvidiaProvider) completeStreaming(ctx context.Context, messages []map[s
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusTooManyRequests {
+		_, _ = io.Copy(io.Discard, resp.Body)
 		return "", &rateLimitError{wait: parseRetryAfter(resp.Header)}
 	}
 	if resp.StatusCode != 200 {
