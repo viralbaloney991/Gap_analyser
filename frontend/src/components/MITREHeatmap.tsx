@@ -6,7 +6,7 @@
  *   2. Force graph   — progressive disclosure: 14 tactic nodes, click to expand techniques.
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState } from 'react';
 import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse } from '../types';
 import { fetchSuggestions } from '../services/api';
 
@@ -82,61 +82,6 @@ function priorityColor(priority: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Position helpers (pure — no simulation)
-// ---------------------------------------------------------------------------
-
-/**
- * Places `tactics` in a 7-column × 2-row grid, evenly spaced.
- * Returns a map of tactic slug → { cx, cy } centre coordinates.
- */
-function tacticGridPositions(
-  tactics: string[],
-  width: number,
-  height: number,
-): Record<string, { cx: number; cy: number }> {
-  const colCount = 7;
-  const rowCount = Math.ceil(tactics.length / colCount);
-  const colSpacing = width / (colCount + 1);
-  const rowSpacing = height / (rowCount + 1);
-  const result: Record<string, { cx: number; cy: number }> = {};
-  tactics.forEach((tactic, i) => {
-    result[tactic] = {
-      cx: colSpacing * ((i % colCount) + 1),
-      cy: rowSpacing * (Math.floor(i / colCount) + 1),
-    };
-  });
-  return result;
-}
-
-/**
- * Fans `count` technique nodes evenly around a circle centred on (cx, cy).
- * Radius = max(90, sqrt(count) * 30). Clamps nodes to stay within canvas bounds.
- */
-function techniqueRadialPositions(
-  cx: number,
-  cy: number,
-  count: number,
-  canvasWidth: number,
-  canvasHeight: number,
-): Array<{ cx: number; cy: number }> {
-  if (count === 0) return [];
-  const pad = 20;
-  const nodeR = 16;
-  const radius = Math.max(90, Math.sqrt(count) * 30);
-  return Array.from({ length: count }, (_, i) => {
-    const angle = -Math.PI / 2 + (i / count) * 2 * Math.PI;
-    return {
-      cx: Math.max(pad + nodeR, Math.min(canvasWidth  - pad - nodeR, cx + radius * Math.cos(angle))),
-      cy: Math.max(pad + nodeR, Math.min(canvasHeight - pad - nodeR, cy + radius * Math.sin(angle))),
-    };
-  });
-}
-
-// Reference the helpers so they're not marked as unused (Task 2 will use these)
-void tacticGridPositions;
-void techniqueRadialPositions;
-
-// ---------------------------------------------------------------------------
 // Force Graph component
 // ---------------------------------------------------------------------------
 
@@ -149,15 +94,9 @@ function ForceGraph({
   onSelectTechnique: (t: NavigatorTechnique | null) => void;
   selectedId: string | null;
 }) {
-  // Task 2: Placeholder refs/effects for force graph implementation
-  const _svgRef = useRef<SVGSVGElement>(null);
-  useEffect(() => {
-    // Task 2: Implement force graph simulation here
-  }, []);
-
   return (
     <div className="force-graph-container">
-      <svg ref={_svgRef} width={800} height={540} className="force-graph-svg">
+      <svg width={800} height={540} className="force-graph-svg">
         <text
           x={400} y={270}
           textAnchor="middle"
