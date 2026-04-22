@@ -22,6 +22,7 @@ import (
 	"coralogix-alert-analyzer/internal/merge"
 	"coralogix-alert-analyzer/internal/mitre"
 	"coralogix-alert-analyzer/internal/models"
+	"coralogix-alert-analyzer/internal/pipeline"
 	"coralogix-alert-analyzer/internal/prewarm"
 	"coralogix-alert-analyzer/internal/monday"
 	"coralogix-alert-analyzer/internal/similarity"
@@ -36,17 +37,19 @@ type Handler struct {
 	alertStore     *store.Store // NeonDB; nil if unavailable — falls back to live fetch
 	prewarmWorker  *prewarm.Worker
 	prewarmCancels sync.Map // client string → context.CancelFunc
+	sem            *pipeline.Semaphore
 }
 
 // NewHandler creates a new Handler.
 // redisStore and alertStore may each be nil if the respective service is unavailable.
-func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.Store, prewarmWorker *prewarm.Worker) *Handler {
+func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.Store, prewarmWorker *prewarm.Worker, sem *pipeline.Semaphore) *Handler {
 	return &Handler{
 		config:        cfg,
 		mondayClient:  monday.NewClient(cfg.MondayAPIToken, cfg.MondayBoardID),
 		cache:         redisStore,
 		alertStore:    alertStore,
 		prewarmWorker: prewarmWorker,
+		sem:           sem,
 	}
 }
 

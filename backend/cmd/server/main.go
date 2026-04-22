@@ -15,6 +15,7 @@ import (
 	"coralogix-alert-analyzer/internal/cache"
 	"coralogix-alert-analyzer/internal/config"
 	"coralogix-alert-analyzer/internal/monday"
+	"coralogix-alert-analyzer/internal/pipeline"
 	alertprewarm "coralogix-alert-analyzer/internal/prewarm"
 	alertstore "coralogix-alert-analyzer/internal/store"
 	alertsync "coralogix-alert-analyzer/internal/sync"
@@ -41,6 +42,10 @@ func main() {
 		log.Fatalf("failed to load config: %v", err)
 	}
 	log.Printf("loaded config: %d clients", len(cfg.Clients))
+
+	// Pipeline semaphore — global cap on concurrent LLM calls across all stages.
+	sem := pipeline.NewSemaphore(cfg.LLM.PipelineGlobalCap)
+	log.Printf("INFO [pipeline] semaphore cap=%d batch=%d", cfg.LLM.PipelineGlobalCap, cfg.LLM.PipelineBatchSize)
 
 	// Auto-resolve Monday group IDs for clients that don't have one configured.
 	{
@@ -93,10 +98,10 @@ func main() {
 	// Suggestion pre-warm worker — nil-safe if NeonDB is unavailable.
 	var prewarmWorker *alertprewarm.Worker
 	if neonStore != nil {
-		prewarmWorker = alertprewarm.New(cfg, neonStore, monday.NewClient(cfg.MondayAPIToken, cfg.MondayBoardID))
+		prewarmWorker = alertprewarm.New(cfg, neonStore, monday.NewClient(cfg.MondayAPIToken, cfg.MondayBoardID), sem)
 	}
 
-	handler := api.NewHandler(cfg, redisStore, neonStore, prewarmWorker)
+	handler := api.NewHandler(cfg, redisStore, neonStore, prewarmWorker, sem)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", handler.HandleHealth)

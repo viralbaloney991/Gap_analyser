@@ -49,9 +49,3 @@ func TestBuildCacheKey_MatchesHandlerLogic(t *testing.T) {
 		t.Errorf("buildCacheKey = %s, want %s", got, expected)
 	}
 }
-
-func TestPrewarmWorkers_Constant(t *testing.T) {
-	if prewarmWorkers != 3 {
-		t.Errorf("prewarmWorkers = %d, want 3", prewarmWorkers)
-	}
-}
