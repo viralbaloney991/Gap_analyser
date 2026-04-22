@@ -272,8 +272,8 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 
 	// Trigger background insights enrichment concurrently with pre-warm.
 	// Uses a detached context; semaphore ensures it doesn't crowd out pre-warm workers.
-	if h.sem != nil {
-		h.runInsightsBackground(req.Client, alerts)
+	if h.sem != nil && h.cache != nil {
+		h.runInsightsBackground(req.Client, alertInsights, alerts)
 	}
 }
 
@@ -289,12 +289,10 @@ func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 // runInsightsBackground runs LLM insights enrichment as a fire-and-forget goroutine.
 // Uses a detached context so that client disconnect does not abort the work.
 // Results are stored in Redis for /api/insights to serve.
-func (h *Handler) runInsightsBackground(client string, alerts []*models.AlertDef) {
+func (h *Handler) runInsightsBackground(client string, alertInsights *models.SimilarityResult, alerts []*models.AlertDef) {
 	bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	go func() {
 		defer cancel()
-
-		alertInsights := similarity.Analyze(alerts)
 
 		insightsProviderName := h.config.LLM.InsightsProvider
 		if insightsProviderName == "" {
@@ -326,8 +324,8 @@ func (h *Handler) runInsightsBackground(client string, alerts []*models.AlertDef
 			log.Printf("WARN [insights-bg] client=%s semaphore acquire: %v", client, err)
 			return
 		}
+		defer h.sem.Release()
 		ir, enrichErr := insights.Enrich(bgCtx, alertInsights, alerts, insightsProvider)
-		h.sem.Release()
 
 		if enrichErr != nil {
 			log.Printf("WARN [insights-bg] client=%s enrich: %v", client, enrichErr)
