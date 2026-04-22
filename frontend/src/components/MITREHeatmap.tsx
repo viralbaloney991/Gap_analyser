@@ -6,7 +6,7 @@
  *   2. Force graph   — progressive disclosure: 14 tactic nodes, click to expand techniques.
  */
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse } from '../types';
 import { fetchSuggestions } from '../services/api';
 
@@ -82,31 +82,260 @@ function priorityColor(priority: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Position helpers (pure — no simulation)
+// ---------------------------------------------------------------------------
+
+/**
+ * Places `tactics` in a 7-column × 2-row grid, evenly spaced.
+ * Returns a map of tactic slug → { cx, cy } centre coordinates.
+ */
+function tacticGridPositions(
+  tactics: string[],
+  width: number,
+  height: number,
+): Record<string, { cx: number; cy: number }> {
+  const colCount = 7;
+  const rowCount = Math.ceil(tactics.length / colCount);
+  const colSpacing = width / (colCount + 1);
+  const rowSpacing = height / (rowCount + 1);
+  const result: Record<string, { cx: number; cy: number }> = {};
+  tactics.forEach((tactic, i) => {
+    result[tactic] = {
+      cx: colSpacing * ((i % colCount) + 1),
+      cy: rowSpacing * (Math.floor(i / colCount) + 1),
+    };
+  });
+  return result;
+}
+
+/**
+ * Fans `count` technique nodes evenly around a circle centred on (cx, cy).
+ * Radius = max(90, sqrt(count) * 30). Clamps nodes to stay within canvas bounds.
+ */
+function techniqueRadialPositions(
+  cx: number,
+  cy: number,
+  count: number,
+  canvasWidth: number,
+  canvasHeight: number,
+): Array<{ cx: number; cy: number }> {
+  if (count === 0) return [];
+  const pad = 20;
+  const nodeR = 16;
+  const radius = Math.max(90, Math.sqrt(count) * 30);
+  return Array.from({ length: count }, (_, i) => {
+    const angle = -Math.PI / 2 + (i / count) * 2 * Math.PI;
+    return {
+      cx: Math.max(pad + nodeR, Math.min(canvasWidth  - pad - nodeR, cx + radius * Math.cos(angle))),
+      cy: Math.max(pad + nodeR, Math.min(canvasHeight - pad - nodeR, cy + radius * Math.sin(angle))),
+    };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Force Graph component
 // ---------------------------------------------------------------------------
 
 function ForceGraph({
-  techniques: _techniques,
-  onSelectTechnique: _onSelectTechnique,
-  selectedId: _selectedId,
+  techniques,
+  onSelectTechnique,
+  selectedId,
 }: {
   techniques: NavigatorTechnique[];
   onSelectTechnique: (t: NavigatorTechnique | null) => void;
   selectedId: string | null;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dims, setDims] = useState({ width: 800, height: 540 });
+  const [expandedTactic, setExpandedTactic] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const obs = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setDims({ width: Math.max(400, width), height: Math.max(300, height) });
+    });
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  // Group techniques by tactic
+  const tacticMap: Record<string, NavigatorTechnique[]> = {};
+  for (const t of techniques) {
+    if (!t.tactic) continue;
+    if (!tacticMap[t.tactic]) tacticMap[t.tactic] = [];
+    tacticMap[t.tactic].push(t);
+  }
+
+  const activeTactics = TACTICS_ORDER.filter((tac) => tacticMap[tac] !== undefined);
+  const gridPos = tacticGridPositions(activeTactics, dims.width, dims.height);
+
+  // Positions for the currently expanded tactic's techniques
+  const expandedTechs = expandedTactic ? (tacticMap[expandedTactic] ?? []) : [];
+  const expandedCenter = expandedTactic ? gridPos[expandedTactic] : null;
+  const techPos = expandedCenter
+    ? techniqueRadialPositions(
+        expandedCenter.cx,
+        expandedCenter.cy,
+        expandedTechs.length,
+        dims.width,
+        dims.height,
+      )
+    : [];
+
+  const handleTacticClick = (tactic: string) => {
+    if ((tacticMap[tactic]?.length ?? 0) === 0) return;
+    setExpandedTactic((prev) => (prev === tactic ? null : tactic));
+    onSelectTechnique(null);
+  };
+
+  if (techniques.length === 0) {
+    return (
+      <div ref={containerRef} className="force-graph-container">
+        <svg width={dims.width} height={dims.height} className="force-graph-svg">
+          <text
+            x={dims.width / 2}
+            y={dims.height / 2}
+            textAnchor="middle"
+            fill="#00ff6466"
+            fontSize={14}
+            fontFamily="'IBM Plex Mono', monospace"
+          >
+            No technique data
+          </text>
+        </svg>
+      </div>
+    );
+  }
+
   return (
-    <div className="force-graph-container">
-      <svg width={800} height={540} className="force-graph-svg">
-        <text
-          x={400} y={270}
-          textAnchor="middle"
-          fill="#00ff6466"
-          fontSize={14}
-          fontFamily="'IBM Plex Mono', monospace"
-        >
-          Loading graph...
-        </text>
+    <div ref={containerRef} className="force-graph-container">
+      <svg
+        width={dims.width}
+        height={dims.height}
+        className="force-graph-svg"
+        role="img"
+        aria-label="MITRE technique force graph"
+        onClick={() => setExpandedTactic(null)}
+      >
+        {/* Edges: expanded tactic → its techniques */}
+        {expandedCenter && expandedTechs.map((_, i) => {
+          const pos = techPos[i];
+          if (!pos) return null;
+          return (
+            <line
+              key={i}
+              x1={expandedCenter.cx} y1={expandedCenter.cy}
+              x2={pos.cx}           y2={pos.cy}
+              stroke="rgba(0,255,100,0.3)"
+              strokeWidth={1}
+              style={{ pointerEvents: 'none' }}
+            />
+          );
+        })}
+
+        {/* Technique nodes — only for the expanded tactic */}
+        {expandedTechs.map((t, i) => {
+          const pos = techPos[i];
+          if (!pos) return null;
+          const nodeId = `tech:${t.techniqueID}:${t.tactic}`;
+          const isSelected = selectedId === nodeId;
+          // White text on red/orange (score ≤ 50), black on yellow/green
+          const textFill = t.score <= 50 ? '#fff' : '#000';
+          return (
+            <g
+              key={nodeId}
+              transform={`translate(${pos.cx},${pos.cy})`}
+              onClick={(e) => { e.stopPropagation(); onSelectTechnique(isSelected ? null : t); }}
+              style={{ cursor: 'pointer' }}
+              className={`force-node${isSelected ? ' force-node--selected' : ''}`}
+              role="button"
+              aria-label={t.techniqueID}
+            >
+              <circle
+                r={16}
+                fill={t.color}
+                stroke={isSelected ? '#fff' : 'rgba(0,255,100,0.5)'}
+                strokeWidth={isSelected ? 2 : 1.5}
+              />
+              <text
+                dy="0.35em"
+                textAnchor="middle"
+                fontSize={7.5}
+                fill={textFill}
+                fontFamily="'IBM Plex Mono', monospace"
+                fontWeight="600"
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                {t.techniqueID}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Tactic nodes — always visible, dimmed when another is expanded */}
+        {activeTactics.map((tactic) => {
+          const pos = gridPos[tactic];
+          if (!pos) return null;
+          const techs   = tacticMap[tactic] ?? [];
+          const covered = techs.filter((t) => t.score > 0).length;
+          const total   = techs.length;
+          const pct     = total > 0 ? (covered / total) * 100 : 0;
+          const isExpanded = expandedTactic === tactic;
+          const isDimmed   = expandedTactic !== null && !isExpanded;
+          const label  = TACTIC_LABELS[tactic] ?? tactic;
+          const words  = label.split(' ');
+          const lineH  = 10;
+          // Vertically centre the word stack, then add coverage line below
+          const startDy = -(words.length - 1) * lineH / 2;
+
+          return (
+            <g
+              key={tactic}
+              transform={`translate(${pos.cx},${pos.cy})`}
+              onClick={(e) => { e.stopPropagation(); handleTacticClick(tactic); }}
+              style={{
+                cursor: total > 0 ? 'pointer' : 'default',
+                opacity: isDimmed ? 0.3 : 1,
+                transition: 'opacity 0.2s ease',
+              }}
+              className="force-node force-node--tactic"
+              aria-label={`${label}: ${covered} of ${total} covered`}
+            >
+              <circle
+                r={34}
+                fill={isExpanded ? 'rgba(0,255,100,0.15)' : 'rgba(0,255,100,0.08)'}
+                stroke="#00ff64"
+                strokeWidth={isExpanded ? 2 : 1.5}
+              />
+              <text
+                textAnchor="middle"
+                fontFamily="'IBM Plex Mono', monospace"
+                fontWeight="600"
+                fontSize={8}
+                fill="#00ff64"
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                {words.map((w, wi) => (
+                  <tspan key={wi} x={0} dy={wi === 0 ? startDy : lineH}>
+                    {w}
+                  </tspan>
+                ))}
+                <tspan x={0} dy={lineH} fontSize={6.5} fill={coverageColor(pct)} fontWeight="400">
+                  {covered}/{total}
+                </tspan>
+              </text>
+            </g>
+          );
+        })}
       </svg>
+
+      <div className="force-graph-legend">
+        <span className="force-legend-item force-legend-item--tactic">Tactic</span>
+        <span className="force-legend-item force-legend-item--covered">Covered</span>
+        <span className="force-legend-item force-legend-item--partial">Partial</span>
+        <span className="force-legend-item force-legend-item--uncovered">Uncovered</span>
+      </div>
     </div>
   );
 }
