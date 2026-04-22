@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"coralogix-alert-analyzer/internal/classifier"
+	"coralogix-alert-analyzer/internal/pipeline"
 )
 
 const (
 	mitreCacheTTL    = 7 * 24 * time.Hour
-	mitreWorkers     = 5
 	mitreCachePrefix = "mitre_v3:"
 )
 
@@ -53,28 +53,24 @@ func BatchClassifyAndValidate(
 	classifierClient ClassifierClientIface,
 	validatorProvider Provider,
 	store MITRECacheStore,
+	sem *pipeline.Semaphore,
 	inputs []AlertInput,
 ) map[string][]string {
 	result := make(map[string][]string, len(inputs))
 	var mu sync.Mutex
 
-	type work struct {
-		input    AlertInput
-		cacheKey string
-	}
-
 	// Check cache first.
-	var uncached []work
+	var uncached []AlertInput
 	for _, inp := range inputs {
 		key := mitreCachePrefix + alertHash(inp.Name, inp.Query, inp.App, inp.Subsystem)
 		if val, ok := store.GetString(ctx, key); ok {
 			var techs []string
 			if err := json.Unmarshal([]byte(val), &techs); err == nil {
-				result[inp.ID] = techs
+				result[inp.ID] = techs // single-threaded loop; no mutex needed
 				continue
 			}
 		}
-		uncached = append(uncached, work{input: inp, cacheKey: key})
+		uncached = append(uncached, inp)
 	}
 
 	log.Printf("INFO [classifier] total=%d cached=%d to_map=%d", len(inputs), len(inputs)-len(uncached), len(uncached))
@@ -83,29 +79,18 @@ func BatchClassifyAndValidate(
 		return result
 	}
 
-	jobs := make(chan work, len(uncached))
-	for _, w := range uncached {
-		jobs <- w
-	}
-	close(jobs)
+	pipeline.Run(ctx, sem, uncached, 1, func(ctx context.Context, inp AlertInput) error {
+		key := mitreCachePrefix + alertHash(inp.Name, inp.Query, inp.App, inp.Subsystem)
+		techs := classifyAndValidateSingle(ctx, classifierClient, validatorProvider, inp)
+		if data, err := json.Marshal(techs); err == nil {
+			store.SetString(ctx, key, string(data), mitreCacheTTL)
+		}
+		mu.Lock()
+		result[inp.ID] = techs
+		mu.Unlock()
+		return nil
+	})
 
-	var wg sync.WaitGroup
-	for i := 0; i < mitreWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for w := range jobs {
-				techs := classifyAndValidateSingle(ctx, classifierClient, validatorProvider, w.input)
-				if data, err := json.Marshal(techs); err == nil {
-					store.SetString(ctx, w.cacheKey, string(data), mitreCacheTTL)
-				}
-				mu.Lock()
-				result[w.input.ID] = techs
-				mu.Unlock()
-			}
-		}()
-	}
-	wg.Wait()
 	return result
 }
 

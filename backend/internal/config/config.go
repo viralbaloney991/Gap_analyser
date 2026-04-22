@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"coralogix-alert-analyzer/internal/models"
@@ -54,6 +55,14 @@ type LLMConfig struct {
 	// InsightsProvider/Model: model used for alert insights enrichment (async, decoupled from analyze).
 	InsightsProvider string `yaml:"insights_provider"`
 	InsightsModel    string `yaml:"insights_model"`
+
+	// PipelineGlobalCap is the max number of concurrent LLM calls across all pipeline stages.
+	// Default: 20. Increase for paid API tiers.
+	PipelineGlobalCap int `yaml:"pipeline_global_cap"`
+	// PipelineBatchSize is the target number of inputs per worker for adaptive sizing.
+	// workers = clamp(len(inputs)/PipelineBatchSize, 2, PipelineGlobalCap)
+	// Default: 10.
+	PipelineBatchSize int `yaml:"pipeline_batch_size"`
 }
 
 // ClientConfig holds per-client settings.
@@ -108,8 +117,24 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("NEON_DSN"); v != "" {
 		cfg.NeonDSN = v
 	}
+	if v := os.Getenv("PIPELINE_GLOBAL_CAP"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.LLM.PipelineGlobalCap = n
+		}
+	}
+	if v := os.Getenv("PIPELINE_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.LLM.PipelineBatchSize = n
+		}
+	}
 	if cfg.LLM.DefaultProvider == "" {
 		cfg.LLM.DefaultProvider = "claude"
+	}
+	if cfg.LLM.PipelineGlobalCap <= 0 {
+		cfg.LLM.PipelineGlobalCap = 20
+	}
+	if cfg.LLM.PipelineBatchSize <= 0 {
+		cfg.LLM.PipelineBatchSize = 10
 	}
 
 	if cfg.Classifier.Endpoint == "" {

@@ -9,11 +9,37 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
 
 var llmHTTPClient = &http.Client{Timeout: 180 * time.Second}
+
+const (
+	nvidiaMaxRetries       = 3
+	nvidiaDefaultRetryWait = 5 * time.Second
+)
+
+// rateLimitError is returned by completeNonStreaming/completeStreaming on HTTP 429.
+type rateLimitError struct {
+	wait time.Duration
+}
+
+func (e *rateLimitError) Error() string {
+	return fmt.Sprintf("rate limited, retry after %s", e.wait)
+}
+
+// parseRetryAfter reads the Retry-After header and returns the wait duration.
+// Defaults to nvidiaDefaultRetryWait if the header is absent or unparseable.
+func parseRetryAfter(h http.Header) time.Duration {
+	if v := h.Get("Retry-After"); v != "" {
+		if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	return nvidiaDefaultRetryWait
+}
 
 type nvidiaProvider struct {
 	apiKey   string
@@ -38,10 +64,35 @@ func (n *nvidiaProvider) Complete(ctx context.Context, req CompletionRequest) (s
 	}
 	messages = append(messages, map[string]string{"role": "user", "content": req.UserMessage})
 
-	if req.FastMode {
-		return n.completeNonStreaming(ctx, messages, maxTokens)
+	var lastErr error
+	for attempt := 0; attempt < nvidiaMaxRetries; attempt++ {
+		var text string
+		var err error
+		if req.FastMode {
+			text, err = n.completeNonStreaming(ctx, messages, maxTokens)
+		} else {
+			text, err = n.completeStreaming(ctx, messages, maxTokens)
+		}
+		if err == nil {
+			return text, nil
+		}
+		lastErr = err
+		// Only retry on rate-limit errors; fail fast on everything else.
+		re, ok := err.(*rateLimitError)
+		if !ok {
+			return "", err
+		}
+		if attempt == nvidiaMaxRetries-1 {
+			break // last attempt — skip sleep, fall through to error
+		}
+		log.Printf("WARN [nvidia] rate limited (attempt %d/%d), retrying in %s", attempt+1, nvidiaMaxRetries, re.wait)
+		select {
+		case <-time.After(re.wait):
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}
-	return n.completeStreaming(ctx, messages, maxTokens)
+	return "", fmt.Errorf("nvidia NIM: max retries exceeded: %w", lastErr)
 }
 
 func (n *nvidiaProvider) completeNonStreaming(ctx context.Context, messages []map[string]string, maxTokens int) (string, error) {
@@ -70,6 +121,11 @@ func (n *nvidiaProvider) completeNonStreaming(ctx context.Context, messages []ma
 	}
 	defer resp.Body.Close()
 
+	// Check for rate limit before reading body (header is sufficient)
+	if resp.StatusCode == http.StatusTooManyRequests {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", &rateLimitError{wait: parseRetryAfter(resp.Header)}
+	}
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("nvidia NIM API returned %d: %s", resp.StatusCode, string(respBody))
@@ -121,6 +177,10 @@ func (n *nvidiaProvider) completeStreaming(ctx context.Context, messages []map[s
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusTooManyRequests {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return "", &rateLimitError{wait: parseRetryAfter(resp.Header)}
+	}
 	if resp.StatusCode != 200 {
 		respBody, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("nvidia NIM API returned %d: %s", resp.StatusCode, string(respBody))

@@ -22,6 +22,7 @@ import (
 	"coralogix-alert-analyzer/internal/merge"
 	"coralogix-alert-analyzer/internal/mitre"
 	"coralogix-alert-analyzer/internal/models"
+	"coralogix-alert-analyzer/internal/pipeline"
 	"coralogix-alert-analyzer/internal/prewarm"
 	"coralogix-alert-analyzer/internal/monday"
 	"coralogix-alert-analyzer/internal/similarity"
@@ -36,17 +37,19 @@ type Handler struct {
 	alertStore     *store.Store // NeonDB; nil if unavailable — falls back to live fetch
 	prewarmWorker  *prewarm.Worker
 	prewarmCancels sync.Map // client string → context.CancelFunc
+	sem            *pipeline.Semaphore
 }
 
 // NewHandler creates a new Handler.
 // redisStore and alertStore may each be nil if the respective service is unavailable.
-func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.Store, prewarmWorker *prewarm.Worker) *Handler {
+func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.Store, prewarmWorker *prewarm.Worker, sem *pipeline.Semaphore) *Handler {
 	return &Handler{
 		config:        cfg,
 		mondayClient:  monday.NewClient(cfg.MondayAPIToken, cfg.MondayBoardID),
 		cache:         redisStore,
 		alertStore:    alertStore,
 		prewarmWorker: prewarmWorker,
+		sem:           sem,
 	}
 }
 
@@ -186,7 +189,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 			}
 			log.Printf("INFO [analyze] MITRE pipeline: %d/%d alerts need classification", len(inputs), len(alerts))
 			if len(inputs) > 0 {
-				llmMappings = llm.BatchClassifyAndValidate(ctx, classifierClient, validatorProvider, h.cache, inputs)
+				llmMappings = llm.BatchClassifyAndValidate(ctx, classifierClient, validatorProvider, h.cache, h.sem, inputs)
 			}
 		}
 	} else {
@@ -266,6 +269,12 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 		uncovered := mitre.GetUncoveredTechniques(alerts)
 		go h.prewarmWorker.Start(prewarmCtx, req.Client, clientCfg, uncovered)
 	}
+
+	// Trigger background insights enrichment concurrently with pre-warm.
+	// Uses a detached context; semaphore ensures it doesn't crowd out pre-warm workers.
+	if h.sem != nil && h.cache != nil {
+		h.runInsightsBackground(req.Client, alertInsights, alerts)
+	}
 }
 
 // HandleHealth returns a simple health check response.
@@ -275,6 +284,66 @@ func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// runInsightsBackground runs LLM insights enrichment as a fire-and-forget goroutine.
+// Uses a detached context so that client disconnect does not abort the work.
+// Results are stored in Redis for /api/insights to serve.
+func (h *Handler) runInsightsBackground(client string, alertInsights *models.SimilarityResult, alerts []*models.AlertDef) {
+	bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	go func() {
+		defer cancel()
+
+		insightsProviderName := h.config.LLM.InsightsProvider
+		if insightsProviderName == "" {
+			insightsProviderName = h.config.LLM.SuggestionProvider
+		}
+		insightsModel := h.config.LLM.InsightsModel
+		if insightsModel == "" {
+			insightsModel = h.config.LLM.NvidiaModel
+		}
+		insightsProvider, err := llm.NewClassifierProvider(
+			insightsProviderName, "",
+			llm.ProviderConfig{
+				AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+				ClaudeModel:     h.config.LLM.ClaudeModel,
+				NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
+				NvidiaModel:     insightsModel,
+				NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+				GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+				GeminiModel:     h.config.LLM.GeminiModel,
+			},
+		)
+		if err != nil {
+			log.Printf("WARN [insights-bg] client=%s provider init failed: %v", client, err)
+			return
+		}
+
+		// Acquire one semaphore slot for the single insights LLM call.
+		if err := h.sem.Acquire(bgCtx); err != nil {
+			log.Printf("WARN [insights-bg] client=%s semaphore acquire: %v", client, err)
+			return
+		}
+		defer h.sem.Release()
+		ir, enrichErr := insights.Enrich(bgCtx, alertInsights, alerts, insightsProvider)
+
+		if enrichErr != nil {
+			log.Printf("WARN [insights-bg] client=%s enrich: %v", client, enrichErr)
+			return
+		}
+		if ir == nil {
+			return
+		}
+
+		if h.cache != nil {
+			if key, err := computeInsightsCacheKey(client, alertInsights); err == nil {
+				if data, marshalErr := json.Marshal(ir); marshalErr == nil {
+					h.cache.SetString(bgCtx, key, string(data), 24*time.Hour)
+					log.Printf("INFO [insights-bg] client=%s cached insights", client)
+				}
+			}
+		}
+	}()
 }
 
 // HandleInsights runs LLM enrichment for alert insights, decoupled from the main
