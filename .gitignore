@@ -21,3 +21,4 @@ backend/debug_alerts.json
 
 # Misc
 *.xlsx
+.worktrees/
