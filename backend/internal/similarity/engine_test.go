@@ -399,3 +399,47 @@ func TestBuildIDF_rareTokenHigherWeight(t *testing.T) {
 		t.Errorf("IDF(common) = %.6f, want %.6f", commonW, want)
 	}
 }
+
+func TestWeightedJaccard_identicalSetsScoreOne(t *testing.T) {
+	// Identical sets always score 1.0 regardless of IDF weights.
+	idf := map[string]float64{"a": 0.1, "b": 5.0, "c": 2.3}
+	s := map[string]struct{}{"a": {}, "b": {}, "c": {}}
+	score := weightedJaccard(s, s, idf)
+	if math.Abs(score-1.0) > 1e-9 {
+		t.Errorf("identical sets: got %.6f, want 1.0", score)
+	}
+}
+
+func TestWeightedJaccard_rareTokenDominates(t *testing.T) {
+	// Set A = {common, rare_a}
+	// Set B = {common, rare_b}
+	// With high IDF on rare tokens, the intersection (just "common") has low
+	// relative weight — weighted Jaccard should be much lower than flat Jaccard.
+	idf := map[string]float64{
+		"common": 0.1,  // appears in almost every document
+		"rare_a": 10.0, // appears in 1 document
+		"rare_b": 10.0, // appears in 1 document
+	}
+	a := map[string]struct{}{"common": {}, "rare_a": {}}
+	b := map[string]struct{}{"common": {}, "rare_b": {}}
+
+	weighted := weightedJaccard(a, b, idf)
+	flat := jaccard(a, b) // flat = 1/3 ≈ 0.333
+
+	if weighted >= flat {
+		t.Errorf("weighted Jaccard (%.4f) should be < flat Jaccard (%.4f) when rare tokens differ", weighted, flat)
+	}
+	// Manual: intersection weight = 0.1; union weight = 0.1 + 10.0 + 10.0 = 20.1
+	// weighted = 0.1 / 20.1 ≈ 0.00498
+	want := 0.1 / 20.1
+	if math.Abs(weighted-want) > 1e-6 {
+		t.Errorf("weighted Jaccard = %.6f, want %.6f", weighted, want)
+	}
+}
+
+func TestWeightedJaccard_bothEmptySetsReturnZero(t *testing.T) {
+	score := weightedJaccard(nil, nil, nil)
+	if score != 0.0 {
+		t.Errorf("both empty: got %.6f, want 0.0", score)
+	}
+}

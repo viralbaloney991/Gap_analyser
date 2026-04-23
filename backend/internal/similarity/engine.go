@@ -432,6 +432,45 @@ func jaccard(a, b map[string]struct{}) float64 {
 	return float64(inter) / float64(union)
 }
 
+// weightedJaccard computes an IDF-weighted Jaccard (Tanimoto) coefficient.
+// Each token's contribution to intersection and union is scaled by its IDF weight,
+// so rare tokens matter more than common ones.
+// Returns 0 when both sets are empty (consistent with jaccard).
+func weightedJaccard(a, b map[string]struct{}, idf map[string]float64) float64 {
+	if len(a) == 0 && len(b) == 0 {
+		return 0.0
+	}
+	var intersection, union float64
+	for t := range a {
+		w := idfWeight(t, idf)
+		if _, inB := b[t]; inB {
+			intersection += w
+		}
+		union += w
+	}
+	for t := range b {
+		if _, inA := a[t]; !inA {
+			union += idfWeight(t, idf)
+		}
+	}
+	if union == 0 {
+		return 0.0
+	}
+	return intersection / union
+}
+
+// idfWeight returns the IDF weight for token t from the given table.
+// Falls back to 1.0 (neutral weight) for tokens not present in the table,
+// so scorePair degrades gracefully to flat Jaccard when called with an empty idfTable.
+func idfWeight(t string, idf map[string]float64) float64 {
+	if idf != nil {
+		if w, ok := idf[t]; ok {
+			return w
+		}
+	}
+	return 1.0
+}
+
 // ---------------------------------------------------------------------------
 // Step 3: Family Grouping (single-linkage clustering)
 // ---------------------------------------------------------------------------
