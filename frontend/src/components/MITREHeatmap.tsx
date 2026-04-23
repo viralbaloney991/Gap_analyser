@@ -400,7 +400,7 @@ function SuggestionsPanel({
           disabled={loading}
         >
           <option value="">Mistral Small (default)</option>
-          <option value="nvidia">NVIDIA (Qwen)</option>
+          <option value="nvidia">NVIDIA (Nemotron)</option>
           <option value="claude">Claude (Haiku)</option>
           <option value="gemini">Gemini 2.0 Flash</option>
         </select>

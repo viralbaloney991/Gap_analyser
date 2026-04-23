@@ -17,6 +17,9 @@ stop() {
   # Belt-and-suspenders: kill by pattern too
   pkill -f "go run ./cmd/server" 2>/dev/null || true
   pkill -f "vite"                2>/dev/null || true
+  # Force-free ports in case any process is still bound
+  lsof -ti :8080 2>/dev/null | xargs kill -9 2>/dev/null || true
+  lsof -ti :5173 2>/dev/null | xargs kill -9 2>/dev/null || true
   echo "Servers stopped."
 }
 
