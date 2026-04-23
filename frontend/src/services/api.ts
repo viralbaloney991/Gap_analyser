@@ -22,11 +22,13 @@ export async function analyzeClient(client: string, refresh = false): Promise<An
   return res.json();
 }
 
-export async function fetchInsights(client: string): Promise<InsightsReport> {
+export async function fetchInsights(client: string, model?: string): Promise<InsightsReport> {
+  const body: Record<string, string> = { client };
+  if (model) body.model = model;
   const res = await fetch(`${API_BASE}/api/insights`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Insights failed' }));

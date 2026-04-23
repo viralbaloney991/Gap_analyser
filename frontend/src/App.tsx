@@ -104,7 +104,12 @@ function App() {
         )}
 
         {view === 'insights' && data && (
-          <AlertInsights data={data.alert_insights} report={insightsReport} insightsError={insightsError} />
+          <AlertInsights
+            data={data.alert_insights}
+            report={insightsReport}
+            insightsError={insightsError}
+            client={clientName}
+          />
         )}
       </main>
     </div>

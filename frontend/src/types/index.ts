@@ -88,6 +88,7 @@ export interface MergeSuggestion {
 export interface NoiseAlert {
   name: string;
   missing_features: string[];
+  reason?: string;
 }
 
 export interface SimilarityResult {
@@ -100,6 +101,7 @@ export interface SimilarityResult {
 }
 
 export interface InsightsReport {
+  model?: string;
   summary: string;
   top_priority: string[];
   strengths: string[];
