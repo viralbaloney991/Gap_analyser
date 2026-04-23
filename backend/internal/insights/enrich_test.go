@@ -3,6 +3,7 @@ package insights
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"coralogix-alert-analyzer/internal/llm"
@@ -103,5 +104,30 @@ func TestEnrich_markdownFence_stripped(t *testing.T) {
 	}
 	if report == nil || report.Summary != "ok" {
 		t.Errorf("expected summary \"ok\", got %v", report)
+	}
+}
+
+func TestBuildPrompt_includesNoiseReason(t *testing.T) {
+	result := &models.SimilarityResult{
+		Duplicates: []models.DuplicateGroup{
+			{AlertNames: []string{"A", "B"}, Similarity: 0.92},
+		},
+		NoiseAlerts: []models.NoiseAlert{
+			{
+				Name:            "SparseAlert",
+				MissingFeatures: []string{"entities", "actions"},
+				Reason:          "No monitored entity. No behavioral signal.",
+			},
+		},
+	}
+	prompt := buildPrompt(result, nil)
+	if !strings.Contains(prompt, "SparseAlert") {
+		t.Error("prompt should contain noise alert name")
+	}
+	if !strings.Contains(prompt, "No monitored entity") {
+		t.Error("prompt should contain noise reason")
+	}
+	if !strings.Contains(prompt, "entities") {
+		t.Error("prompt should contain missing features")
 	}
 }

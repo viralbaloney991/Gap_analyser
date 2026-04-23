@@ -52,65 +52,77 @@ func Enrich(
 }
 
 const (
-	maxPromptDuplicates = 15
-	maxPromptNoise      = 20
-	maxPromptFamilies   = 15
+	maxPromptDuplicates = 10 // reduced from 15
+	maxPromptFamilies   = 8  // reduced from 15
+	maxPromptNoise      = 12 // reduced from 20
 )
 
 func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) string {
 	var sb strings.Builder
 
-	sb.WriteString("You are a security detection engineer reviewing a SIEM alert library.\n\n")
-	sb.WriteString(fmt.Sprintf("Alert library: %d alerts total.\n", len(alerts)))
+	sb.WriteString("Role: Senior detection engineer. Task: Analyze alert library quality.\n\n")
+	sb.WriteString(fmt.Sprintf("Library: %d alerts | %d duplicates | %d families | %d noisy alerts\n\n",
+		len(alerts), len(result.Duplicates), len(result.Families), len(result.NoiseAlerts)))
 
-	sb.WriteString("\nSimilarity analysis results:\n")
-
+	// Duplicates section.
 	dups := result.Duplicates
 	if len(dups) > maxPromptDuplicates {
 		dups = dups[:maxPromptDuplicates]
 	}
-	sb.WriteString(fmt.Sprintf("- Duplicates (%d total, showing top %d):", len(result.Duplicates), len(dups)))
-	for _, d := range dups {
-		if len(d.AlertNames) >= 2 {
-			sb.WriteString(fmt.Sprintf(" %s ≈ %s (%.0f%%),", d.AlertNames[0], d.AlertNames[1], d.Similarity*100))
+	if len(dups) > 0 {
+		sb.WriteString("Duplicates:\n")
+		for _, d := range dups {
+			if len(d.AlertNames) >= 2 {
+				sb.WriteString(fmt.Sprintf("- %s ≈ %s (%.0f%%)\n", d.AlertNames[0], d.AlertNames[1], d.Similarity*100))
+			}
 		}
+		sb.WriteString("\n")
 	}
-	sb.WriteString("\n")
 
+	// Families section.
 	families := result.Families
 	if len(families) > maxPromptFamilies {
 		families = families[:maxPromptFamilies]
 	}
-	sb.WriteString(fmt.Sprintf("- Detection families (%d):", len(result.Families)))
-	for _, f := range families {
-		sb.WriteString(fmt.Sprintf(" %s: %s;", f.Name, strings.Join(f.AlertNames, ", ")))
+	if len(families) > 0 {
+		sb.WriteString("Families: ")
+		parts := make([]string, len(families))
+		for i, f := range families {
+			parts[i] = fmt.Sprintf("%s (%s)", f.Name, strings.Join(f.AlertNames, ", "))
+		}
+		sb.WriteString(strings.Join(parts, " | "))
+		sb.WriteString("\n\n")
 	}
-	sb.WriteString("\n")
 
-	sb.WriteString(fmt.Sprintf("- Coverage gaps: %s\n", strings.Join(result.CoverageInsights, "; ")))
+	// Coverage gaps section.
+	if len(result.CoverageInsights) > 0 {
+		sb.WriteString("Coverage gaps: ")
+		sb.WriteString(strings.Join(result.CoverageInsights, "; "))
+		sb.WriteString("\n\n")
+	}
 
+	// Noisy alerts section — includes missing features and reason.
 	noiseAlerts := result.NoiseAlerts
 	if len(noiseAlerts) > maxPromptNoise {
 		noiseAlerts = noiseAlerts[:maxPromptNoise]
 	}
-	noiseNames := make([]string, len(noiseAlerts))
-	for i, na := range noiseAlerts {
-		noiseNames[i] = na.Name
+	if len(noiseAlerts) > 0 {
+		sb.WriteString("Noisy alerts:\n")
+		for _, na := range noiseAlerts {
+			line := fmt.Sprintf("- %s", na.Name)
+			if len(na.MissingFeatures) > 0 {
+				line += fmt.Sprintf(": no %s", strings.Join(na.MissingFeatures, ", no "))
+			}
+			if na.Reason != "" {
+				line += fmt.Sprintf(" — %s", na.Reason)
+			}
+			sb.WriteString(line + "\n")
+		}
+		sb.WriteString("\n")
 	}
-	sb.WriteString(fmt.Sprintf("- Noise alerts (%d total, showing top %d): %s\n",
-		len(result.NoiseAlerts), len(noiseAlerts), strings.Join(noiseNames, ", ")))
 
-	sb.WriteString(`
-Respond with JSON only:
-{
-  "summary": "2-3 sentence overview of the detection posture",
-  "top_priority": ["ordered list of 3-5 most important actions"],
-  "strengths": ["2-3 things well covered"],
-  "recommendations": ["3-5 specific actionable items"],
-  "enriched_dups": ["one sentence per duplicate pair explaining business impact"],
-  "enriched_gaps": ["one sentence per coverage gap explaining risk"],
-  "noise_explanations": ["one sentence per noisy alert explaining specific gaps"]
-}`)
+	sb.WriteString(`Return JSON only — no prose, no markdown:
+{"summary":"<2-3 sentences>","top_priority":["<3-5 items>"],"strengths":["<2-3 items>"],"recommendations":["<3-5 items>"],"enriched_dups":["<1 sentence each>"],"enriched_gaps":["<1 sentence each>"],"noise_explanations":["<1 sentence each>"]}`)
 
 	return sb.String()
 }
