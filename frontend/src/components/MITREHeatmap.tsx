@@ -644,7 +644,7 @@ export default function MITREHeatmap({ data, clientName }: Props) {
                         <div
                           key={`${t.techniqueID}-${t.tactic}`}
                           className={`tech-cell${isActive ? ' tech-cell--selected' : ''}`}
-                          style={{ background: t.color }}
+                          style={{ background: coverageColor(t.score * 100) }}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleSelectTechnique(isActive ? null : t);
