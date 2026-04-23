@@ -164,7 +164,7 @@ func Analyze(alerts []*models.AlertDef) *models.SimilarityResult {
 	uniqueDetections := findUniqueDetections(vectors, matrix, n)
 
 	// Step 8: Noise detection.
-	noiseAlerts := findNoiseAlerts(vectors)
+	noiseAlerts := findNoiseAlerts(vectors, alerts)
 
 	return &models.SimilarityResult{
 		Families:         families,
@@ -941,35 +941,74 @@ func findUniqueDetections(vectors []featureVector, matrix [][]float64, n int) []
 
 // findNoiseAlerts returns NoiseAlert entries for alerts whose total unique
 // feature token count is below the noise threshold (sparse = likely
-// threshold-only alert). Each entry includes the names of empty feature sets.
-func findNoiseAlerts(vectors []featureVector) []models.NoiseAlert {
+// threshold-only alert). Each entry includes the names of empty feature sets
+// and a human-readable Reason explaining the most significant gaps.
+// Broad-scope alerts (no app/subsystem filter) are excluded — they are
+// intentionally global monitors, not misconfigured rules.
+// alerts is parallel to vectors (same order as buildFeatureVectors input);
+// pass nil in tests that don't need broad-scope detection.
+func findNoiseAlerts(vectors []featureVector, alerts []*models.AlertDef) []models.NoiseAlert {
 	const noiseThreshold = 3
 	var noisy []models.NoiseAlert
-	for _, v := range vectors {
+	for i, v := range vectors {
 		total := len(v.dataSources) + len(v.entities) + len(v.actions) +
 			len(v.conditions) + len(v.techniques)
-		if total < noiseThreshold {
-			var missing []string
-			if len(v.dataSources) == 0 {
-				missing = append(missing, "data sources")
-			}
-			if len(v.entities) == 0 {
-				missing = append(missing, "entities")
-			}
-			if len(v.actions) == 0 {
-				missing = append(missing, "actions")
-			}
-			if len(v.conditions) == 0 {
-				missing = append(missing, "conditions")
-			}
-			if len(v.techniques) == 0 {
-				missing = append(missing, "techniques")
-			}
-			noisy = append(noisy, models.NoiseAlert{
-				Name:            v.alertName,
-				MissingFeatures: missing,
-			})
+		if total >= noiseThreshold {
+			continue
 		}
+
+		// Exclude broad-scope alerts (intentional global monitors).
+		if alerts != nil && i < len(alerts) && alerts[i] != nil {
+			app, sub := coralogix.ExtractAppSubsystem(alerts[i].TypeDef)
+			if app == "" && sub == "" {
+				continue
+			}
+		}
+
+		var missing []string
+		if len(v.dataSources) == 0 {
+			missing = append(missing, "data sources")
+		}
+		if len(v.entities) == 0 {
+			missing = append(missing, "entities")
+		}
+		if len(v.actions) == 0 {
+			missing = append(missing, "actions")
+		}
+		if len(v.conditions) == 0 {
+			missing = append(missing, "conditions")
+		}
+		if len(v.techniques) == 0 {
+			missing = append(missing, "techniques")
+		}
+
+		// Build a specific Reason from the highest-priority gaps (up to two).
+		var reasons []string
+		if len(v.dataSources) == 0 {
+			reasons = append(reasons, "No log source identified — alert may fire across unintended data sources.")
+		}
+		if len(v.entities) == 0 {
+			reasons = append(reasons, "No monitored entity (user, IP, host) — cannot scope blast radius or owner.")
+		}
+		if len(v.actions) == 0 && len(v.conditions) == 0 {
+			reasons = append(reasons, "No behavioral signal — likely a generic threshold with no attack-pattern context.")
+		}
+		if len(v.techniques) == 0 {
+			reasons = append(reasons, "No MITRE technique mapped — coverage gap, hard to classify threat type.")
+		}
+		reason := ""
+		if len(reasons) > 0 {
+			if len(reasons) > 2 {
+				reasons = reasons[:2]
+			}
+			reason = strings.Join(reasons, " ")
+		}
+
+		noisy = append(noisy, models.NoiseAlert{
+			Name:            v.alertName,
+			MissingFeatures: missing,
+			Reason:          reason,
+		})
 	}
 	sort.Slice(noisy, func(i, j int) bool {
 		return noisy[i].Name < noisy[j].Name
