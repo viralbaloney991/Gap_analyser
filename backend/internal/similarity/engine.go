@@ -177,21 +177,41 @@ func Analyze(alerts []*models.AlertDef) *models.SimilarityResult {
 }
 
 // tokenizeLucene splits a Lucene query string into a lowercase token set.
-// Splits on whitespace and Lucene operators: `:()[]{}+-!"`.
-// Single-character tokens are dropped (noise).
+//
+// Two-pass approach:
+//  1. Extract field:value pairs as atomic tokens (e.g. record_type:"AAAA" → record_type:aaaa).
+//     This preserves discriminating field values that would otherwise be split or dropped.
+//  2. Tokenise the remainder (query with atoms stripped) on Lucene operators and whitespace.
+//     Single-character standalone tokens are dropped as noise.
 func tokenizeLucene(q string) map[string]struct{} {
 	if q == "" {
 		return nil
 	}
-	re := regexp.MustCompile(`[:()\[\]{}\s+\-!"]+`)
-	parts := re.Split(strings.ToLower(q), -1)
+	lower := strings.ToLower(q)
 	s := make(map[string]struct{})
-	for _, t := range parts {
+
+	// Pass 1: extract field:value atoms.
+	// Matches word chars (including dots) followed by : and a value.
+	// Value can be quoted ("...") or unquoted (non-whitespace, non-operator chars).
+	atomRe := regexp.MustCompile(`[\w.]+:(?:"[^"]*"|[^\s()\[\]{}+\-!"]+)`)
+	normRe := regexp.MustCompile(`["\s]+`)
+	for _, atom := range atomRe.FindAllString(lower, -1) {
+		norm := normRe.ReplaceAllString(atom, "")
+		if len(norm) > 2 { // skip trivially short atoms like "a:b"
+			s[norm] = struct{}{}
+		}
+	}
+
+	// Pass 2: strip atoms from query, tokenise remainder.
+	remainder := atomRe.ReplaceAllString(lower, " ")
+	splitRe := regexp.MustCompile(`[:()\[\]{}\s+\-!"]+`)
+	for _, t := range splitRe.Split(remainder, -1) {
 		t = strings.TrimSpace(t)
 		if len(t) > 1 {
 			s[t] = struct{}{}
 		}
 	}
+
 	if len(s) == 0 {
 		return nil
 	}

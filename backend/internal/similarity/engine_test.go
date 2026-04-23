@@ -255,11 +255,9 @@ func TestScorePair_salesforcePairIsNotDuplicate(t *testing.T) {
 func TestTokenizeLucene_basic(t *testing.T) {
 	tokens := tokenizeLucene("eventType:GuestUserAnomalyEvent AND coralogix.metadata.applicationName:salesforce")
 	want := map[string]struct{}{
-		"eventtype":                          {},
-		"guestuseranomalyevent":              {},
-		"and":                                {},
-		"coralogix.metadata.applicationname": {},
-		"salesforce":                         {},
+		"eventtype:guestuseranomalyevent":               {},
+		"and":                                           {},
+		"coralogix.metadata.applicationname:salesforce": {},
 	}
 	if len(tokens) != len(want) {
 		t.Errorf("tokenizeLucene returned %d tokens, want %d: %v", len(tokens), len(want), tokens)
@@ -268,6 +266,28 @@ func TestTokenizeLucene_basic(t *testing.T) {
 		if _, ok := tokens[k]; !ok {
 			t.Errorf("expected token %q not found in %v", k, tokens)
 		}
+	}
+}
+
+func TestTokenizeLucene_fieldValuePreserved(t *testing.T) {
+	// field:value pairs must be kept as one atomic token.
+	tokens := tokenizeLucene(`record_type:"AAAA" AND source:"dns"`)
+	if _, ok := tokens["record_type:aaaa"]; !ok {
+		t.Errorf("expected atomic token \"record_type:aaaa\", got tokens: %v", tokens)
+	}
+	if _, ok := tokens["record_type"]; ok {
+		t.Errorf("\"record_type\" should not appear as a bare token: %v", tokens)
+	}
+	if _, ok := tokens["aaaa"]; ok {
+		t.Errorf("\"aaaa\" should not appear as a bare token: %v", tokens)
+	}
+}
+
+func TestTokenizeLucene_singleCharPreserved(t *testing.T) {
+	// Single-char values inside field:value atoms must NOT be dropped.
+	tokens := tokenizeLucene(`record_type:"A"`)
+	if _, ok := tokens["record_type:a"]; !ok {
+		t.Errorf("expected atom \"record_type:a\" for single-char value, got tokens: %v", tokens)
 	}
 }
 
