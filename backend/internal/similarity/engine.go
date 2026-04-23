@@ -89,6 +89,14 @@ var commonCategories = []string{
 	"insider threat",
 }
 
+// Package-level regex variables for tokenizeLucene.
+// These are compiled once at startup instead of on every tokenizeLucene call.
+var (
+	luceneAtomRe  = regexp.MustCompile(`[\w.]+:(?:"[^"]*"|[^\s()\[\]{}+\-!"]+)`)
+	luceneNormRe  = regexp.MustCompile(`["\s]+`)
+	luceneSplitRe = regexp.MustCompile(`[:()\[\]{}\s+\-!"]+`)
+)
+
 // tacticLabels maps MITRE ATT&CK tactic slugs to human-readable names.
 var tacticLabels = map[string]string{
 	"initial-access":       "Initial Access",
@@ -193,19 +201,16 @@ func tokenizeLucene(q string) map[string]struct{} {
 	// Pass 1: extract field:value atoms.
 	// Matches word chars (including dots) followed by : and a value.
 	// Value can be quoted ("...") or unquoted (non-whitespace, non-operator chars).
-	atomRe := regexp.MustCompile(`[\w.]+:(?:"[^"]*"|[^\s()\[\]{}+\-!"]+)`)
-	normRe := regexp.MustCompile(`["\s]+`)
-	for _, atom := range atomRe.FindAllString(lower, -1) {
-		norm := normRe.ReplaceAllString(atom, "")
-		if len(norm) > 2 { // skip trivially short atoms like "a:b"
+	for _, atom := range luceneAtomRe.FindAllString(lower, -1) {
+		norm := luceneNormRe.ReplaceAllString(atom, "")
+		if len(norm) > 2 { // skip trivially short atoms (≤2 chars total)
 			s[norm] = struct{}{}
 		}
 	}
 
 	// Pass 2: strip atoms from query, tokenise remainder.
-	remainder := atomRe.ReplaceAllString(lower, " ")
-	splitRe := regexp.MustCompile(`[:()\[\]{}\s+\-!"]+`)
-	for _, t := range splitRe.Split(remainder, -1) {
+	remainder := luceneAtomRe.ReplaceAllString(lower, " ")
+	for _, t := range luceneSplitRe.Split(remainder, -1) {
 		t = strings.TrimSpace(t)
 		if len(t) > 1 {
 			s[t] = struct{}{}
