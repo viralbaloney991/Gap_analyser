@@ -678,10 +678,10 @@ html, body, #root {
 
 /* Heatmap scroll */
 .heatmap-scroll-wrap { flex: 1; overflow-x: auto; overflow-y: hidden; display: flex; }
-.heatmap-columns     { display: flex; flex: 1; }
+.heatmap-columns     { display: flex; min-width: max-content; }
 
 /* Tactic columns */
-.tactic-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); min-width: 110px; flex: 1; overflow: hidden; }
+.tactic-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); width: 130px; flex-shrink: 0; overflow: hidden; }
 .tactic-col:last-child { border-right: none; }
 
 .tactic-header { padding: 10px 10px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; }
