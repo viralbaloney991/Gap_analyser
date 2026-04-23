@@ -58,26 +58,20 @@ const TACTIC_LABELS: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 function coverageColor(percent: number): string {
-  if (percent === 0)   return '#ff0000';
-  if (percent <= 50)  return '#ff8c00';
-  if (percent <= 75)  return '#ffd700';
-  return '#00cc00';
+  if (percent === 0)  return '#1e2535';  // --cov-none
+  if (percent < 25)  return '#7c2d12';  // --cov-low
+  if (percent < 50)  return '#92400e';  // --cov-partial
+  if (percent < 75)  return '#065f46';  // --cov-good
+  return '#10b981';                      // --cov-full
 }
 
-function coverageLabel(percent: number): string {
-  if (percent === 0)   return 'Not Covered';
-  if (percent <= 50)  return 'Low Coverage';
-  if (percent <= 75)  return 'Moderate Coverage';
-  return 'Good Coverage';
-}
 
 function priorityColor(priority: string): string {
   switch (priority) {
-    case 'critical': return '#ff0000';
-    case 'high':     return '#ff8c00';
-    case 'medium':   return '#ffd700';
-    case 'low':      return '#888888';
-    default:         return '#aaaaaa';
+    case 'critical': return 'var(--danger)';
+    case 'high':     return 'var(--warn)';
+    case 'medium':   return 'var(--accent)';
+    default:         return 'var(--text-dim)';
   }
 }
 
@@ -413,7 +407,15 @@ function SuggestionsPanel({
         </button>
       </div>
 
-      {error && <div className="suggestions-error">{error}</div>}
+      {error && (
+        <div className="state-error" style={{ marginBottom: 10 }}>
+          <span className="state-error__icon">⚠</span>
+          <div>
+            <div className="state-error__title">Query generation failed</div>
+            <div className="state-error__body">The provider returned an error. Try a different provider.</div>
+          </div>
+        </div>
+      )}
 
       {suggestions && (
         <div className="suggestions-list">
@@ -477,41 +479,22 @@ function TechniqueDetailPanel({
 }) {
   return (
     <div
-      className="technique-detail-panel"
+      className="detail-panel"
       onClick={(e) => e.stopPropagation()}
     >
       <div className="detail-panel-header">
-        <strong>
-          {technique.techniqueID} &mdash; {technique.name || technique.techniqueID}
-        </strong>
-        <button className="detail-close" onClick={onClose} aria-label="Close detail panel">
-          x
-        </button>
+        <div>
+          <div className="detail-tech-id">{technique.techniqueID}</div>
+          <div className="detail-tech-name">{technique.name || technique.techniqueID}</div>
+          <div className="detail-tactic">{TACTIC_LABELS[technique.tactic] ?? technique.tactic}</div>
+        </div>
+        <button className="detail-close" onClick={onClose} aria-label="Close detail panel">×</button>
       </div>
 
       <div className="detail-panel-body">
-        <div className="detail-row">
-          <span className="detail-label">Tactic</span>
-          <span className="detail-value">
-            {TACTIC_LABELS[technique.tactic] ?? technique.tactic}
-          </span>
-        </div>
-        <div className="detail-row">
-          <span className="detail-label">Score</span>
-          <span className="detail-value" style={{ color: coverageColor(technique.score) }}>
-            {technique.score}% &mdash; {coverageLabel(technique.score)}
-          </span>
-        </div>
-        {technique.comment && (
-          <div className="detail-row detail-row-comment">
-            <span className="detail-label">Alerts</span>
-            <span className="detail-value">{technique.comment}</span>
-          </div>
-        )}
-
-        {technique.score === 0 && (
+        <div className="detail-suggestion-bar">
           <SuggestionsPanel technique={technique} clientName={clientName} />
-        )}
+        </div>
       </div>
     </div>
   );
@@ -525,8 +508,8 @@ type ViewMode = 'heatmap' | 'graph';
 
 export default function MITREHeatmap({ data, clientName }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('heatmap');
-  const [selectedTactic, setSelectedTactic] = useState<string | null>(null);
   const [selectedTechnique, setSelectedTechnique] = useState<NavigatorTechnique | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
   const { summary, navigator_layer: layer } = data;
 
@@ -564,130 +547,131 @@ export default function MITREHeatmap({ data, clientName }: Props) {
 
   return (
     <div className="mitre-heatmap">
-      {/* Header */}
-      <div className="mitre-header">
-        <h2>MITRE ATT&amp;CK Coverage</h2>
-        <div className="mitre-header-actions">
+      {/* Toolbar */}
+      <div className="mitre-toolbar">
+        <div className="mitre-stats">
+          <div className="mitre-stat">
+            <div className="mitre-stat-val mitre-stat-val--accent">
+              {summary?.coverage_percent != null
+                ? `${Math.round(summary.coverage_percent)}%`
+                : '—'}
+            </div>
+            <div className="mitre-stat-label">Overall</div>
+          </div>
+          <div className="mitre-stat-divider" />
+          <div className="mitre-stat">
+            <div className="mitre-stat-val">{summary?.total_techniques ?? '—'}</div>
+            <div className="mitre-stat-label">Techniques</div>
+          </div>
+          <div className="mitre-stat-divider" />
+          <div className="mitre-stat">
+            <div className="mitre-stat-val mitre-stat-val--warn">
+              {summary?.total_techniques != null && summary?.covered_techniques != null
+                ? summary.total_techniques - summary.covered_techniques
+                : '—'}
+            </div>
+            <div className="mitre-stat-label">Uncovered</div>
+          </div>
+          <div className="mitre-stat-divider" />
+          <div className="mitre-stat">
+            <div className="mitre-stat-val">{summary?.total_sub_techniques ?? '—'}</div>
+            <div className="mitre-stat-label">Sub-techniques</div>
+          </div>
+        </div>
+
+        <div className="mitre-toolbar-right">
+          <div className="mitre-legend">
+            {(['None','Low','Partial','Good','Full'] as const).map((lbl, i) => {
+              const colors = ['#1e2535','#7c2d12','#92400e','#065f46','#10b981'];
+              return (
+                <div key={lbl} className="mitre-legend-item">
+                  <div className="mitre-legend-dot" style={{ background: colors[i] }} />
+                  <span className="mitre-legend-label">{lbl}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mitre-stat-divider" />
           <div className="view-toggle">
             <button
-              className={`view-toggle-btn${viewMode === 'heatmap' ? ' active' : ''}`}
+              className={`view-toggle-btn${viewMode === 'heatmap' ? ' view-toggle-btn--active' : ''}`}
               onClick={() => setViewMode('heatmap')}
             >
               Heatmap
             </button>
             <button
-              className={`view-toggle-btn${viewMode === 'graph' ? ' active' : ''}`}
+              className={`view-toggle-btn${viewMode === 'graph' ? ' view-toggle-btn--active' : ''}`}
               onClick={() => setViewMode('graph')}
             >
-              Force Graph
+              Graph
             </button>
           </div>
-          <button className="btn btn-small" onClick={downloadLayer}>
-            Download Layer
+          <button className="mitre-download-btn" onClick={downloadLayer}>
+            ↓ ATT&CK Layer
           </button>
         </div>
       </div>
 
-      {/* Summary Bar */}
-      <div className="coverage-summary">
-        <div className="summary-stat">
-          <span className="stat-value">{summary.covered_techniques}</span>
-          <span className="stat-label">/ {summary.total_techniques} Techniques</span>
-        </div>
-        <div className="summary-stat">
-          <span className="stat-value">{summary.covered_sub_techniques}</span>
-          <span className="stat-label">/ {summary.total_sub_techniques} Sub-techniques</span>
-        </div>
-        <div className="summary-stat">
-          <span
-            className="stat-value"
-            style={{ color: coverageColor(summary.coverage_percent) }}
-          >
-            {summary.coverage_percent.toFixed(1)}%
-          </span>
-          <span className="stat-label">Overall Coverage</span>
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div className="legend">
-        {layer.legendItems?.map((item) => (
-          <div key={item.label} className="legend-item">
-            <span className="legend-color" style={{ backgroundColor: item.color }} />
-            <span>{item.label}</span>
-          </div>
-        ))}
-      </div>
-
       {/* ── Heatmap view ── */}
       {viewMode === 'heatmap' && (
-        <div className="tactic-grid">
-          {TACTICS_ORDER.map((tactic) => {
-            const tacticData = summary.tactic_breakdown[tactic];
-            const techniques = techniquesByTactic[tactic] || [];
-            const isSelected = selectedTactic === tactic;
-            const pct = tacticData?.percent ?? 0;
+        <div className="heatmap-scroll-wrap">
+          <div className="heatmap-columns">
+            {TACTICS_ORDER.map((tactic) => {
+              const tacticData = summary.tactic_breakdown[tactic];
+              const techniques = techniquesByTactic[tactic] || [];
+              const pct = tacticData?.percent ?? 0;
 
-            return (
-              <div
-                key={tactic}
-                className={`tactic-column${isSelected ? ' selected' : ''}`}
-                onClick={() => setSelectedTactic(isSelected ? null : tactic)}
-              >
-                <div
-                  className="tactic-header"
-                  style={{ borderTopColor: coverageColor(pct) }}
-                >
-                  <div className="tactic-name">
-                    {TACTIC_LABELS[tactic] ?? tactic}
-                  </div>
+              return (
+                <div key={tactic} className="tactic-col">
                   <div
-                    className="tactic-coverage"
-                    style={{ color: coverageColor(pct) }}
+                    className="tactic-header"
+                    style={{ '--cov-color': coverageColor(pct) } as React.CSSProperties}
                   >
-                    {tacticData
-                      ? `${tacticData.covered}/${tacticData.total}`
-                      : '0/0'}
-                  </div>
-                  {tacticData && tacticData.total_subs > 0 && (
-                    <div className="tactic-subs">
-                      {tacticData.covered_subs}/{tacticData.total_subs} subs
+                    <div className="tactic-name">{TACTIC_LABELS[tactic] ?? tactic}</div>
+                    <div className={`tactic-count${tacticData?.covered === 0 ? ' tactic-count--zero' : ''}`}>
+                      <em>{tacticData?.covered ?? 0}</em>/{tacticData?.total ?? 0} covered
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                <div className="technique-cells">
-                  {techniques.map((t) => {
-                    const isActive =
-                      selectedTechnique?.techniqueID === t.techniqueID &&
-                      selectedTechnique?.tactic === t.tactic;
-                    return (
-                      <div
-                        key={`${t.techniqueID}-${t.tactic}`}
-                        className={`technique-cell${isActive ? ' active' : ''}`}
-                        style={{ backgroundColor: t.color }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSelectTechnique(isActive ? null : t);
-                        }}
-                        title={`${t.techniqueID} — ${t.name || t.techniqueID}`}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
+                  <div className="tactic-techniques">
+                    {techniques.map((t) => {
+                      const isActive =
+                        selectedTechnique?.techniqueID === t.techniqueID &&
+                        selectedTechnique?.tactic === t.tactic;
+                      return (
+                        <div
+                          key={`${t.techniqueID}-${t.tactic}`}
+                          className={`tech-cell${isActive ? ' tech-cell--selected' : ''}`}
+                          style={{ background: t.color }}
+                          onClick={(e) => {
+                            e.stopPropagation();
                             handleSelectTechnique(isActive ? null : t);
-                          }
-                        }}
-                      >
-                        <span className="technique-id">{t.techniqueID}</span>
-                      </div>
-                    );
-                  })}
+                          }}
+                          onMouseEnter={(e) => setTooltip({
+                            x: e.clientX + 12,
+                            y: e.clientY - 8,
+                            text: `${t.techniqueID} · ${t.name ?? t.techniqueID}`,
+                          })}
+                          onMouseLeave={() => setTooltip(null)}
+                        >
+                          <span className="tech-id">{t.techniqueID}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {tooltip && (
+        <div
+          className="tech-tooltip"
+          style={{ left: tooltip.x, top: tooltip.y }}
+        >
+          {tooltip.text}
         </div>
       )}
 
