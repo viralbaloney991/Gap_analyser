@@ -75,6 +75,7 @@ type TacticCoverage struct {
 type NoiseAlert struct {
 	Name            string   `json:"name"`
 	MissingFeatures []string `json:"missing_features"`
+	Reason          string   `json:"reason,omitempty"`
 }
 
 // SimilarityResult is the response for alert insight analysis.
@@ -108,6 +109,7 @@ type MergeSuggestion struct {
 
 // InsightsReport is the LLM-generated analyst report for a SimilarityResult.
 type InsightsReport struct {
+	Model              string   `json:"model,omitempty"`
 	Summary            string   `json:"summary"`
 	TopPriority        []string `json:"top_priority"`
 	Strengths          []string `json:"strengths"`
