@@ -450,18 +450,18 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		},
 	)
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("insights provider unavailable: %v", err))
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("insights provider unavailable: %v", err))
 		return
 	}
 
 	ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, insightsProvider)
 	if enrichErr != nil {
 		log.Printf("WARN [insights] enrich client=%s: %v", req.Client, enrichErr)
-		writeError(w, http.StatusServiceUnavailable, fmt.Sprintf("insights enrichment failed: %v", enrichErr))
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("insights enrichment failed: %v", enrichErr))
 		return
 	}
 	if ir == nil {
-		writeError(w, http.StatusNoContent, "no insights generated")
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 	ir.Model = modelLabel
