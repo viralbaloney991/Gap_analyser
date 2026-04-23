@@ -443,3 +443,14 @@ func TestWeightedJaccard_bothEmptySetsReturnZero(t *testing.T) {
 		t.Errorf("both empty: got %.6f, want 0.0", score)
 	}
 }
+
+func TestWeightedJaccard_disjointSetsReturnZero(t *testing.T) {
+	// Completely disjoint sets share no tokens — intersection weight = 0 → score = 0.
+	idf := map[string]float64{"a": 5.0, "b": 3.0}
+	setA := map[string]struct{}{"a": {}}
+	setB := map[string]struct{}{"b": {}}
+	score := weightedJaccard(setA, setB, idf)
+	if score != 0.0 {
+		t.Errorf("disjoint sets: got %.6f, want 0.0", score)
+	}
+}
