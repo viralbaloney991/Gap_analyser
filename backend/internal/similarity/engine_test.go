@@ -368,3 +368,34 @@ func TestFindNoiseAlerts_broadScopeExcluded(t *testing.T) {
 		t.Errorf("broad-scope alert should be excluded from noise list, got %v", noisy)
 	}
 }
+
+func TestBuildIDF_rareTokenHigherWeight(t *testing.T) {
+	// Corpus: 10 vectors. "common" appears in all 10; "rare" appears in only 1.
+	// IDF("rare") must be strictly greater than IDF("common").
+	vectors := make([]featureVector, 10)
+	for i := range vectors {
+		vectors[i] = featureVector{
+			actions: map[string]struct{}{"common": {}},
+		}
+	}
+	vectors[0].actions["rare"] = struct{}{}
+
+	tbl := buildIDF(vectors)
+
+	commonW, ok1 := tbl.actions["common"]
+	rareW, ok2 := tbl.actions["rare"]
+	if !ok1 {
+		t.Fatal("expected IDF weight for \"common\" token")
+	}
+	if !ok2 {
+		t.Fatal("expected IDF weight for \"rare\" token")
+	}
+	if rareW <= commonW {
+		t.Errorf("rare token IDF (%.4f) should be > common token IDF (%.4f)", rareW, commonW)
+	}
+	// Sanity: IDF("common") = log(1 + 10/10) = log(2) ≈ 0.693
+	want := math.Log(2.0)
+	if math.Abs(commonW-want) > 1e-9 {
+		t.Errorf("IDF(common) = %.6f, want %.6f", commonW, want)
+	}
+}

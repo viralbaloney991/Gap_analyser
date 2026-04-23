@@ -35,6 +35,66 @@ type pairScore struct {
 	score float64
 }
 
+// idfTable holds per-dimension inverse-document-frequency weights for the corpus.
+// idf(t) = log(1 + N/df(t)) where N = number of alerts and df(t) = number of
+// alerts that contain token t in the given dimension.
+type idfTable struct {
+	dataSources map[string]float64
+	entities    map[string]float64
+	actions     map[string]float64
+	conditions  map[string]float64
+	techniques  map[string]float64
+	groupBy     map[string]float64
+	luceneQuery map[string]float64
+}
+
+// buildIDF computes an idfTable from the full set of feature vectors.
+// Each dimension is scored independently. Runs in O(n × avg_tokens_per_alert).
+func buildIDF(vectors []featureVector) idfTable {
+	n := float64(len(vectors))
+	if n == 0 {
+		return idfTable{}
+	}
+
+	tbl := idfTable{
+		dataSources: make(map[string]float64),
+		entities:    make(map[string]float64),
+		actions:     make(map[string]float64),
+		conditions:  make(map[string]float64),
+		techniques:  make(map[string]float64),
+		groupBy:     make(map[string]float64),
+		luceneQuery: make(map[string]float64),
+	}
+
+	type dimDef struct {
+		get func(featureVector) map[string]struct{}
+		out map[string]float64
+	}
+	dims := []dimDef{
+		{func(v featureVector) map[string]struct{} { return v.dataSources }, tbl.dataSources},
+		{func(v featureVector) map[string]struct{} { return v.entities }, tbl.entities},
+		{func(v featureVector) map[string]struct{} { return v.actions }, tbl.actions},
+		{func(v featureVector) map[string]struct{} { return v.conditions }, tbl.conditions},
+		{func(v featureVector) map[string]struct{} { return v.techniques }, tbl.techniques},
+		{func(v featureVector) map[string]struct{} { return v.groupByCategories }, tbl.groupBy},
+		{func(v featureVector) map[string]struct{} { return v.luceneQuery }, tbl.luceneQuery},
+	}
+
+	for _, dim := range dims {
+		df := make(map[string]int)
+		for _, v := range vectors {
+			for t := range dim.get(v) {
+				df[t]++
+			}
+		}
+		for t, count := range df {
+			dim.out[t] = math.Log(1 + n/float64(count))
+		}
+	}
+
+	return tbl
+}
+
 // Similarity weights for each feature dimension.
 const (
 	// Weights sum to exactly 1.00.
