@@ -97,7 +97,7 @@ func TestScorePair_oktaPairIsNotDuplicate(t *testing.T) {
 		techniques:  map[string]struct{}{"t1110": {}},
 		groupByCategories: normalizeGroupByKeys([]string{"okta.client.ipAddress"}),
 	}
-	score := scorePair(forAccount, fromSource)
+	score := scorePair(forAccount, fromSource, idfTable{})
 	if score >= duplicateThreshold {
 		t.Errorf("Okta pair should NOT be duplicates: score=%.4f >= threshold=%.2f", score, duplicateThreshold)
 	}
@@ -118,7 +118,7 @@ func TestScorePair_identicalAlertSamePivotIsDuplicate(t *testing.T) {
 	}
 	b := a
 	b.alertName = "Alert B"
-	score := scorePair(a, b)
+	score := scorePair(a, b, idfTable{})
 	if score < duplicateThreshold {
 		t.Errorf("identical alert with same pivot should be duplicate: score=%.4f < threshold=%.2f", score, duplicateThreshold)
 	}
@@ -141,7 +141,7 @@ func TestScorePair_identicalAlertNoPivotIsDuplicate(t *testing.T) {
 	}
 	b := a
 	b.alertName = "Alert B"
-	score := scorePair(a, b)
+	score := scorePair(a, b, idfTable{})
 	if score < duplicateThreshold {
 		t.Errorf("identical alert with no pivot should still be duplicate: score=%.4f < threshold=%.2f", score, duplicateThreshold)
 	}
@@ -246,7 +246,7 @@ func TestScorePair_salesforcePairIsNotDuplicate(t *testing.T) {
 		luceneQuery:       tokenizeLucene("eventType:ApiAnomalyEvent AND coralogix.metadata.applicationName:salesforce"),
 		timeWindow:        "5m",
 	}
-	score := scorePair(guestUser, apiEvent)
+	score := scorePair(guestUser, apiEvent, idfTable{})
 	if score >= duplicateThreshold {
 		t.Errorf("distinct Salesforce event types should NOT be duplicates: score=%.4f >= threshold=%.2f", score, duplicateThreshold)
 	}
@@ -452,5 +452,63 @@ func TestWeightedJaccard_disjointSetsReturnZero(t *testing.T) {
 	score := weightedJaccard(setA, setB, idf)
 	if score != 0.0 {
 		t.Errorf("disjoint sets: got %.6f, want 0.0", score)
+	}
+}
+
+func TestScorePair_dnsAvsAAAA_notDuplicate(t *testing.T) {
+	// DNS A-record and AAAA-record alerts differ only in the record_type Lucene token.
+	// With IDF weighting, the rare record_type atom dominates and the pair scores
+	// below the duplicate threshold.
+
+	commonLucene := map[string]struct{}{
+		"dns:query": {}, "threshold": {}, "source.ip:10.0.0.1": {},
+	}
+	makeQuery := func(recordType string) map[string]struct{} {
+		m := make(map[string]struct{}, len(commonLucene)+1)
+		for k, v := range commonLucene {
+			m[k] = v
+		}
+		m["record_type:"+recordType] = struct{}{}
+		return m
+	}
+
+	aRecord := featureVector{
+		alertName:         "DNS A Record Query Spike",
+		alertType:         "logs_threshold",
+		dataSources:       map[string]struct{}{"dns": {}},
+		entities:          map[string]struct{}{"host": {}},
+		actions:           map[string]struct{}{"query": {}},
+		conditions:        map[string]struct{}{"threshold": {}},
+		techniques:        map[string]struct{}{"t1071": {}},
+		groupByCategories: normalizeGroupByKeys([]string{"event.hostname"}),
+		luceneQuery:       makeQuery("a"),
+		timeWindow:        "5m",
+	}
+	aaaaRecord := featureVector{
+		alertName:         "DNS AAAA Record Query Spike",
+		alertType:         "logs_threshold",
+		dataSources:       map[string]struct{}{"dns": {}},
+		entities:          map[string]struct{}{"host": {}},
+		actions:           map[string]struct{}{"query": {}},
+		conditions:        map[string]struct{}{"threshold": {}},
+		techniques:        map[string]struct{}{"t1071": {}},
+		groupByCategories: normalizeGroupByKeys([]string{"clientip"}),
+		luceneQuery:       makeQuery("aaaa"),
+		timeWindow:        "5m",
+	}
+
+	// Build a corpus where common Lucene tokens appear in many alerts (low IDF)
+	// and record_type atoms appear in only 1 alert each (high IDF).
+	corpus := []featureVector{aRecord, aaaaRecord}
+	for i := 0; i < 8; i++ {
+		corpus = append(corpus, featureVector{
+			luceneQuery: map[string]struct{}{"dns:query": {}, "threshold": {}, "source.ip:10.0.0.1": {}},
+		})
+	}
+	idf := buildIDF(corpus) // N=10; record_type:a df=1 → high IDF; dns:query df=10 → low IDF
+
+	score := scorePair(aRecord, aaaaRecord, idf)
+	if score >= duplicateThreshold {
+		t.Errorf("DNS A vs AAAA should NOT be duplicates with IDF weighting: score=%.4f >= threshold=%.2f", score, duplicateThreshold)
 	}
 }

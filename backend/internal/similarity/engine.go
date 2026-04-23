@@ -202,9 +202,13 @@ func Analyze(alerts []*models.AlertDef) *models.SimilarityResult {
 	// Step 1: Build feature vectors.
 	vectors := buildFeatureVectors(alerts)
 
+	// Step 1b: Build IDF table for the corpus — used by scorePair to weight
+	// rare tokens more heavily than common ones.
+	idf := buildIDF(vectors)
+
 	// Step 2: Compute pairwise similarity scores.
 	n := len(vectors)
-	scores := computePairwiseScores(vectors, n)
+	scores := computePairwiseScores(vectors, n, idf)
 
 	// Build a quick-lookup matrix (symmetric).
 	matrix := make([][]float64, n)
@@ -329,7 +333,7 @@ func toSet(items []string) map[string]struct{} {
 // computePairwiseScores calculates the weighted Jaccard similarity for every
 // unique pair (i < j). When the alert count exceeds parallelThreshold, the
 // work is distributed across a goroutine worker pool.
-func computePairwiseScores(vectors []featureVector, n int) []pairScore {
+func computePairwiseScores(vectors []featureVector, n int, idf idfTable) []pairScore {
 	totalPairs := n * (n - 1) / 2
 	if totalPairs == 0 {
 		return nil
@@ -342,7 +346,7 @@ func computePairwiseScores(vectors []featureVector, n int) []pairScore {
 		idx := 0
 		for i := 0; i < n; i++ {
 			for j := i + 1; j < n; j++ {
-				results[idx] = pairScore{i: i, j: j, score: scorePair(vectors[i], vectors[j])}
+				results[idx] = pairScore{i: i, j: j, score: scorePair(vectors[i], vectors[j], idf)}
 				idx++
 			}
 		}
@@ -371,7 +375,7 @@ func computePairwiseScores(vectors []featureVector, n int) []pairScore {
 				results[p.destIdx] = pairScore{
 					i:     p.i,
 					j:     p.j,
-					score: scorePair(vectors[p.i], vectors[p.j]),
+					score: scorePair(vectors[p.i], vectors[p.j], idf),
 				}
 			}
 		}()
@@ -390,16 +394,19 @@ func computePairwiseScores(vectors []featureVector, n int) []pairScore {
 	return results
 }
 
-// scorePair computes the weighted Jaccard similarity between two feature vectors.
-func scorePair(a, b featureVector) float64 {
+// scorePair computes the weighted IDF-Jaccard similarity between two feature vectors.
+// The idf table scales each token's contribution by its corpus-wide rarity — rare
+// tokens discriminate more than common ones. Pass idfTable{} to get flat-Jaccard
+// behaviour (all weights default to 1.0 via idfWeight).
+func scorePair(a, b featureVector, idf idfTable) float64 {
 	score := 0.0
-	score += weightDataSources * jaccard(a.dataSources, b.dataSources)
-	score += weightEntities * jaccard(a.entities, b.entities)
-	score += weightActions * jaccard(a.actions, b.actions)
-	score += weightConditions * jaccard(a.conditions, b.conditions)
-	score += weightTechniques * jaccard(a.techniques, b.techniques)
-	score += weightGroupBy * jaccardGroupBy(a.groupByCategories, b.groupByCategories)
-	score += weightLuceneQuery * jaccard(a.luceneQuery, b.luceneQuery)
+	score += weightDataSources * weightedJaccard(a.dataSources, b.dataSources, idf.dataSources)
+	score += weightEntities * weightedJaccard(a.entities, b.entities, idf.entities)
+	score += weightActions * weightedJaccard(a.actions, b.actions, idf.actions)
+	score += weightConditions * weightedJaccard(a.conditions, b.conditions, idf.conditions)
+	score += weightTechniques * weightedJaccard(a.techniques, b.techniques, idf.techniques)
+	score += weightGroupBy * weightedJaccard(a.groupByCategories, b.groupByCategories, idf.groupBy)
+	score += weightLuceneQuery * weightedJaccard(a.luceneQuery, b.luceneQuery, idf.luceneQuery)
 
 	if a.alertType == b.alertType && a.alertType != "" {
 		score += weightAlertType
