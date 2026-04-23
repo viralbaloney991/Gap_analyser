@@ -1,16 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { fetchClients } from '../services/api';
 import type { ClientInfo } from '../types';
 
-// Human-readable region labels and geographic groupings
 const REGION_META: Record<string, { label: string; city: string; group: string }> = {
-  eu1: { label: 'EU1', city: 'Dublin',    group: 'Europe'        },
-  eu2: { label: 'EU2', city: 'Stockholm', group: 'Europe'        },
-  us1: { label: 'US1', city: 'Virginia',  group: 'Americas'      },
-  us2: { label: 'US2', city: 'Oregon',    group: 'Americas'      },
-  ap1: { label: 'AP1', city: 'Mumbai',    group: 'Asia Pacific'  },
-  ap2: { label: 'AP2', city: 'Singapore', group: 'Asia Pacific'  },
-  ap3: { label: 'AP3', city: 'Tokyo',     group: 'Asia Pacific'  },
+  eu1: { label: 'EU1', city: 'Dublin',    group: 'Europe'       },
+  eu2: { label: 'EU2', city: 'Stockholm', group: 'Europe'       },
+  us1: { label: 'US1', city: 'Virginia',  group: 'Americas'     },
+  us2: { label: 'US2', city: 'Oregon',    group: 'Americas'     },
+  ap1: { label: 'AP1', city: 'Mumbai',    group: 'Asia Pacific' },
+  ap2: { label: 'AP2', city: 'Singapore', group: 'Asia Pacific' },
+  ap3: { label: 'AP3', city: 'Tokyo',     group: 'Asia Pacific' },
 };
 
 const GROUP_ORDER = ['Europe', 'Americas', 'Asia Pacific'];
@@ -21,21 +20,10 @@ interface Props {
 }
 
 export default function ClientSelector({ onAnalyze, loading }: Props) {
-  const [clients, setClients] = useState<ClientInfo[]>([]);
-  const [selected, setSelected] = useState('');
-  const [fetchError, setFetchError] = useState('');
-  const [slowLoad, setSlowLoad] = useState(false);
-  const slowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (loading) {
-      slowTimer.current = setTimeout(() => setSlowLoad(true), 4000);
-    } else {
-      if (slowTimer.current) clearTimeout(slowTimer.current);
-      setSlowLoad(false);
-    }
-    return () => { if (slowTimer.current) clearTimeout(slowTimer.current); };
-  }, [loading]);
+  const [clients, setClients]         = useState<ClientInfo[]>([]);
+  const [selected, setSelected]       = useState('');
+  const [fetchError, setFetchError]   = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     fetchClients()
@@ -43,33 +31,73 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
       .catch(() => setFetchError('Failed to load client list'));
   }, []);
 
-  const handleAnalyze = () => {
-    if (selected && !loading) onAnalyze(selected);
-  };
+  // Filter clients by search query (case-insensitive, matches name or region)
+  const filteredClients = searchQuery.trim()
+    ? clients.filter((c) =>
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.region.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : clients;
 
-  // Group clients by geographic region group
+  // Group filtered clients
   const grouped: Record<string, ClientInfo[]> = {};
-  for (const client of clients) {
+  for (const client of filteredClients) {
     const meta = REGION_META[client.region];
     const group = meta?.group ?? 'Other';
     if (!grouped[group]) grouped[group] = [];
     grouped[group].push(client);
   }
 
+  const allGroups = [...GROUP_ORDER, 'Other'].filter((g) => grouped[g]?.length);
+  const totalVisible = filteredClients.length;
+  const hasNoResults = searchQuery.trim() !== '' && totalVisible === 0;
+
   return (
     <div className="client-selector">
-      {/* Scanline grid background */}
-      <div className="client-selector-grid" />
+      {/* Hero */}
+      <div className="cs-hero">
+        <div className="cs-eyebrow">Alert Analysis Engine</div>
+        <h1 className="cs-title">Select a <em>client</em></h1>
+        <p className="cs-subtitle">Analyze detection coverage, identify gaps, and reduce alert fatigue.</p>
+      </div>
 
-      <span className="client-selector-corner top-left">CX_ALERTS v2.1</span>
+      {/* Search bar */}
+      <div className="cs-search">
+        <span className="cs-search__icon">⌕</span>
+        <input
+          className="cs-search__input"
+          type="text"
+          placeholder="Filter clients..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          autoComplete="off"
+        />
+        <span className="cs-search__count">
+          {clients.length === 0 ? 'Loading...' : `${totalVisible} client${totalVisible !== 1 ? 's' : ''}`}
+        </span>
+      </div>
 
       {fetchError && (
         <div className="error-banner map-error">{fetchError}</div>
       )}
 
-      {/* Region cards grid */}
-      <div className="region-cards-wrap">
-        {GROUP_ORDER.map((group) => {
+      {/* Region groups */}
+      <div className="cs-content">
+        {clients.length === 0 && !fetchError && (
+          <div className="cs-skeletons">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="region-card region-card--skeleton skeleton" aria-hidden="true" />
+            ))}
+          </div>
+        )}
+
+        {hasNoResults && (
+          <div className="cs-empty">
+            No clients match &ldquo;{searchQuery}&rdquo;
+          </div>
+        )}
+
+        {allGroups.map((group) => {
           const groupClients = grouped[group];
           if (!groupClients?.length) return null;
           return (
@@ -85,18 +113,13 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
                       className={`region-card${isSelected ? ' region-card--selected' : ''}`}
                       onClick={() => setSelected(isSelected ? '' : client.name)}
                       disabled={loading}
-                      title={`${client.name} · ${meta?.city ?? client.region}`}
                     >
-                      <span className="region-card-tag">
-                        {meta?.label ?? client.region.toUpperCase()}
-                      </span>
-                      <span className="region-card-name">{client.name}</span>
-                      {meta?.city && (
-                        <span className="region-card-city">{meta.city}</span>
-                      )}
-                      {isSelected && (
-                        <span className="region-card-indicator" aria-hidden="true" />
-                      )}
+                      {isSelected && <span className="region-card__dot" aria-hidden="true" />}
+                      <div className="region-card__name">{client.name}</div>
+                      <div className="region-card__meta">
+                        <span>{meta?.city ?? client.region}</span>
+                        <span>{meta?.label ?? client.region.toUpperCase()}</span>
+                      </div>
                     </button>
                   );
                 })}
@@ -104,65 +127,18 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
             </div>
           );
         })}
-
-        {/* Ungrouped fallback */}
-        {grouped['Other']?.length ? (
-          <div className="region-group">
-            <div className="region-group-label">Other</div>
-            <div className="region-group-cards">
-              {grouped['Other'].map((client) => {
-                const isSelected = client.name === selected;
-                return (
-                  <button
-                    key={client.name}
-                    className={`region-card${isSelected ? ' region-card--selected' : ''}`}
-                    onClick={() => setSelected(isSelected ? '' : client.name)}
-                    disabled={loading}
-                  >
-                    <span className="region-card-tag">
-                      {client.region.toUpperCase()}
-                    </span>
-                    <span className="region-card-name">{client.name}</span>
-                    {isSelected && (
-                      <span className="region-card-indicator" aria-hidden="true" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-
-        {clients.length === 0 && !fetchError && (
-          <div className="region-cards-loading">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="region-card region-card--skeleton" aria-hidden="true" />
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* Bottom content block */}
-      <div className="client-selector-content">
-        <div className="selected-client-label">
-          {selected ? `[ ${selected} ]` : 'Select a client above'}
-        </div>
-        <h2 className="landing-wordmark"><strong>Alert</strong> Analyzer</h2>
-        <p className="landing-subtitle">Coralogix Integration Intelligence</p>
-        {selected && (
-          <button
-            className="btn btn-primary"
-            onClick={handleAnalyze}
-            disabled={loading || !selected}
-          >
-            {loading ? 'ANALYZING...' : `[ ANALYZE ${selected} ]`}
-          </button>
-        )}
-        {slowLoad && (
-          <p className="slow-load-hint">
-            Fetching live data — first run may take ~90s...
-          </p>
-        )}
+      {/* Sticky CTA — only visible when a client is selected */}
+      <div className={`cs-cta${selected ? ' cs-cta--visible' : ''}`}>
+        <span className="cs-cta__hint">{selected} selected</span>
+        <button
+          className="cs-cta__btn"
+          onClick={() => { if (selected && !loading) onAnalyze(selected); }}
+          disabled={loading || !selected}
+        >
+          {loading ? 'Analyzing...' : `Analyze ${selected} →`}
+        </button>
       </div>
     </div>
   );
