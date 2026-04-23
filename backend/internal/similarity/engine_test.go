@@ -270,3 +270,38 @@ func TestTokenizeLucene_basic(t *testing.T) {
 		}
 	}
 }
+
+func TestDeriveFamilyName_usesMitreTactic(t *testing.T) {
+	vectors := []featureVector{
+		{tactics: []string{"privilege-escalation"}, actions: map[string]struct{}{"grant": {}}},
+		{tactics: []string{"privilege-escalation"}, actions: map[string]struct{}{"sudo": {}}},
+	}
+	name := deriveFamilyName(vectors, []int{0, 1}, 1)
+	if name != "Privilege Escalation Detections" {
+		t.Errorf("expected \"Privilege Escalation Detections\", got %q", name)
+	}
+}
+
+func TestDeriveFamilyName_usesActionCategory(t *testing.T) {
+	// No tactics set — should fall back to action→category map.
+	vectors := []featureVector{
+		{tactics: nil, actions: map[string]struct{}{"remove": {}}},
+		{tactics: nil, actions: map[string]struct{}{"delete": {}}},
+	}
+	name := deriveFamilyName(vectors, []int{0, 1}, 1)
+	if name != "Tampering Detections" {
+		t.Errorf("expected \"Tampering Detections\", got %q", name)
+	}
+}
+
+func TestDeriveFamilyName_fallsBackToRawToken(t *testing.T) {
+	// No tactics, no matching action category — raw token fallback.
+	vectors := []featureVector{
+		{tactics: nil, actions: map[string]struct{}{"frobnicate": {}}},
+		{tactics: nil, actions: map[string]struct{}{"frobnicate": {}}},
+	}
+	name := deriveFamilyName(vectors, []int{0, 1}, 1)
+	if name != "Frobnicate Detections" {
+		t.Errorf("expected \"Frobnicate Detections\", got %q", name)
+	}
+}

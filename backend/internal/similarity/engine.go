@@ -89,6 +89,40 @@ var commonCategories = []string{
 	"insider threat",
 }
 
+// tacticLabels maps MITRE ATT&CK tactic slugs to human-readable names.
+var tacticLabels = map[string]string{
+	"initial-access":       "Initial Access",
+	"execution":            "Execution",
+	"persistence":          "Persistence",
+	"privilege-escalation": "Privilege Escalation",
+	"defense-evasion":      "Defense Evasion",
+	"credential-access":    "Credential Access",
+	"discovery":            "Discovery",
+	"lateral-movement":     "Lateral Movement",
+	"collection":           "Collection",
+	"exfiltration":         "Exfiltration",
+	"command-and-control":  "Command & Control",
+	"impact":               "Impact",
+	"reconnaissance":       "Reconnaissance",
+	"resource-development": "Resource Development",
+}
+
+// actionCategories maps action keyword prefixes to security category labels.
+// Order matters: first match wins.
+var actionCategories = []struct {
+	keywords []string
+	category string
+}{
+	{[]string{"remove", "delete", "revoke", "wipe"}, "Tampering"},
+	{[]string{"login", "authenticate", "signin", "logon"}, "Authentication"},
+	{[]string{"escalat", "grant", "privilege", "sudo"}, "Privilege Escalation"},
+	{[]string{"exfiltrat", "download", "upload", "transfer"}, "Exfiltration"},
+	{[]string{"scan", "enumerat", "discover", "recon"}, "Discovery"},
+	{[]string{"execute", "run", "inject", "spawn"}, "Execution"},
+	{[]string{"persist", "install", "schedule", "startup"}, "Persistence"},
+	{[]string{"encrypt", "ransom", "destroy"}, "Impact"},
+}
+
 // Analyze performs full similarity analysis on a set of alert definitions and
 // returns families, duplicates, merge suggestions, coverage insights and
 // unique-detection identifiers.
@@ -389,19 +423,52 @@ func groupFamilies(vectors []featureVector, matrix [][]float64, n int) []models.
 	return families
 }
 
-// deriveFamilyName picks the most frequent technique or action across the
-// cluster members and builds a human-readable family name.
+// deriveFamilyName builds a human-readable family name using a 3-tier strategy:
+// Tier 1: most frequent MITRE tactic → human label
+// Tier 2: action tokens matched against semantic category map
+// Tier 3: most frequent technique or action token (original behaviour)
 func deriveFamilyName(vectors []featureVector, members []int, fallbackNum int) string {
-	freq := make(map[string]int)
+	// Tier 1: most frequent MITRE tactic across cluster members.
+	tacticFreq := make(map[string]int)
+	for _, idx := range members {
+		for _, tac := range vectors[idx].tactics {
+			tacticFreq[strings.ToLower(tac)]++
+		}
+	}
+	if len(tacticFreq) > 0 {
+		bestTactic, bestCount := "", 0
+		for tac, count := range tacticFreq {
+			if count > bestCount || (count == bestCount && tac < bestTactic) {
+				bestTactic = tac
+				bestCount = count
+			}
+		}
+		if label, ok := tacticLabels[bestTactic]; ok {
+			return label + " Detections"
+		}
+	}
 
-	// Count technique tokens first (higher signal).
+	// Tier 2: action tokens matched against semantic category map.
+	for _, idx := range members {
+		for action := range vectors[idx].actions {
+			lower := strings.ToLower(action)
+			for _, entry := range actionCategories {
+				for _, kw := range entry.keywords {
+					if strings.Contains(lower, kw) {
+						return entry.category + " Detections"
+					}
+				}
+			}
+		}
+	}
+
+	// Tier 3: most frequent technique or action token (original behaviour).
+	freq := make(map[string]int)
 	for _, idx := range members {
 		for t := range vectors[idx].techniques {
 			freq[t]++
 		}
 	}
-
-	// If no techniques, fall back to actions.
 	if len(freq) == 0 {
 		for _, idx := range members {
 			for a := range vectors[idx].actions {
@@ -409,12 +476,9 @@ func deriveFamilyName(vectors []featureVector, members []int, fallbackNum int) s
 			}
 		}
 	}
-
 	if len(freq) == 0 {
 		return fmt.Sprintf("Detection Family %d", fallbackNum)
 	}
-
-	// Find the most common token.
 	bestToken := ""
 	bestCount := 0
 	for tok, count := range freq {
@@ -423,8 +487,6 @@ func deriveFamilyName(vectors []featureVector, members []int, fallbackNum int) s
 			bestCount = count
 		}
 	}
-
-	// Title-case the token for readability.
 	return toTitle(bestToken) + " Detections"
 }
 
