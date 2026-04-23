@@ -154,6 +154,8 @@ function ForceGraph({
   }, []);
 
   useEffect(() => {
+    // Reset expanded tactic when the technique dataset changes (e.g. client switch)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpandedTactic(null);
   }, [techniques]);
 
