@@ -78,10 +78,7 @@ func normalizeGroupByKeys(keys []string) map[string]struct{} {
 }
 
 // jaccardGroupBy computes Jaccard similarity for pivot category sets.
-// Unlike jaccard(), two empty sets return 1.0 — both unspecified means compatible.
+// Two empty sets return 0.0 — no groupBy keys means no common groupBy signal.
 func jaccardGroupBy(a, b map[string]struct{}) float64 {
-	if len(a) == 0 && len(b) == 0 {
-		return 1.0
-	}
 	return jaccard(a, b)
 }

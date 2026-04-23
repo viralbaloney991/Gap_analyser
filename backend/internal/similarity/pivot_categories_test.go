@@ -78,8 +78,9 @@ func TestNormalizeGroupByKeys_deduplicatesCategories(t *testing.T) {
 }
 
 func TestJaccardGroupBy_bothEmpty(t *testing.T) {
-	if score := jaccardGroupBy(nil, nil); score != 1.0 {
-		t.Errorf("expected 1.0 for both empty (compatible), got %f", score)
+	// Two alerts with no groupBy keys have nothing in common on this dimension.
+	if score := jaccardGroupBy(nil, nil); score != 0.0 {
+		t.Errorf("expected 0.0 for both empty (no common keys), got %f", score)
 	}
 }
 
