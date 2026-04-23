@@ -356,7 +356,10 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req models.ClientAnalyzeRequest
+	var req struct {
+		Client string `json:"client"`
+		Model  string `json:"model"` // "mistral" | "gemma" | "" (default = mistral)
+	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
@@ -364,6 +367,11 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	req.Client = strings.TrimSpace(req.Client)
 	if req.Client == "" {
 		writeError(w, http.StatusBadRequest, "missing required field: client")
+		return
+	}
+	req.Model = strings.TrimSpace(strings.ToLower(req.Model))
+	if req.Model != "" && req.Model != "mistral" && req.Model != "gemma" {
+		writeError(w, http.StatusBadRequest, "unknown insights model: use \"mistral\" or \"gemma\"")
 		return
 	}
 
@@ -395,9 +403,10 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	// Similarity analysis is fast (< 1s) and required for the cache key + LLM prompt.
 	alertInsights := similarity.Analyze(alerts)
 
-	// Check insights cache.
+	// Check insights cache — skip when model is explicitly specified so the user
+	// can switch models without being served a stale cached response.
 	var insightsCacheKey string
-	if h.cache != nil {
+	if h.cache != nil && req.Model == "" {
 		if key, err := computeInsightsCacheKey(req.Client, alertInsights); err == nil {
 			insightsCacheKey = key
 			if cached, ok := h.cache.GetString(ctx, key); ok {
@@ -411,7 +420,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Cache miss — run LLM enrichment.
+	// Resolve model: explicit request overrides config default.
 	insightsProviderName := h.config.LLM.InsightsProvider
 	if insightsProviderName == "" {
 		insightsProviderName = h.config.LLM.SuggestionProvider
@@ -419,6 +428,11 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	insightsModel := h.config.LLM.InsightsModel
 	if insightsModel == "" {
 		insightsModel = h.config.LLM.NvidiaModel
+	}
+	modelLabel := "Mistral Small" // human-readable name shown in UI
+	if req.Model == "gemma" {
+		insightsModel = "google/gemma-3-27b-it"
+		modelLabel = "Gemma 3 27B"
 	}
 	// Insights uses the primary NVIDIA key (not the suggestion-specific key).
 	nvidiaKey := h.config.LLM.NvidiaAPIKey
@@ -450,6 +464,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNoContent, "no insights generated")
 		return
 	}
+	ir.Model = modelLabel
 
 	if h.cache != nil && insightsCacheKey != "" {
 		if data, marshalErr := json.Marshal(ir); marshalErr == nil {
