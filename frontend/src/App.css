@@ -677,11 +677,11 @@ html, body, #root {
 .view-toggle-btn--active { background: var(--accent-dim); color: var(--accent); }
 
 /* Heatmap scroll */
-.heatmap-scroll-wrap { flex: 1; overflow-x: auto; overflow-y: hidden; display: flex; }
-.heatmap-columns     { display: flex; min-width: max-content; }
+.heatmap-scroll-wrap { flex: 1; min-height: 0; overflow: auto; }
+.heatmap-columns     { display: flex; min-height: 100%; }
 
 /* Tactic columns */
-.tactic-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); width: 130px; flex-shrink: 0; overflow: hidden; }
+.tactic-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); flex: 0 0 130px; min-height: 0; }
 .tactic-col:last-child { border-right: none; }
 
 .tactic-header { padding: 10px 10px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; }
@@ -694,7 +694,7 @@ html, body, #root {
 .tactic-count--zero em { color: var(--danger); }
 
 /* Technique cells */
-.tactic-techniques { flex: 1; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; }
+.tactic-techniques { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; }
 
 .tech-cell { height: 26px; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.1s; position: relative; }
 .tech-cell:hover          { opacity: 0.75; }
