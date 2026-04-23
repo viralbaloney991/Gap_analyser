@@ -3,11 +3,13 @@ package similarity
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
 
+	"coralogix-alert-analyzer/internal/coralogix"
 	"coralogix-alert-analyzer/internal/models"
 )
 
@@ -22,6 +24,9 @@ type featureVector struct {
 	conditions        map[string]struct{}
 	techniques        map[string]struct{}
 	groupByCategories map[string]struct{}
+	luceneQuery       map[string]struct{} // tokenised Lucene query — actual detection logic
+	timeWindow        string              // from AlertFeatures.TimeWindow
+	tactics           []string            // from AlertFeatures.Tactics — used by deriveFamilyName
 }
 
 // pairScore stores the similarity score between two alerts.
@@ -33,13 +38,16 @@ type pairScore struct {
 // Similarity weights for each feature dimension.
 const (
 	// Weights sum to exactly 1.00.
-	weightDataSources = 0.15
-	weightEntities    = 0.10
-	weightActions     = 0.15
-	weightConditions  = 0.15
-	weightTechniques  = 0.10
-	weightGroupBy     = 0.25
-	weightAlertType   = 0.10
+	// 9-dimension model: Lucene query and TimeWindow added in 2026-04.
+	weightDataSources  = 0.15
+	weightEntities     = 0.10
+	weightActions      = 0.15
+	weightConditions   = 0.10 // reduced: less signal than Lucene query
+	weightTechniques   = 0.10
+	weightGroupBy      = 0.15 // reduced: was over-dominant
+	weightAlertType    = 0.05 // reduced: binary, low signal
+	weightLuceneQuery  = 0.15 // new: actual detection logic
+	weightTimeWindow   = 0.05 // new: binary equality bonus
 
 	duplicateThreshold = 0.85
 	familyThreshold    = 0.60
@@ -134,6 +142,28 @@ func Analyze(alerts []*models.AlertDef) *models.SimilarityResult {
 	}
 }
 
+// tokenizeLucene splits a Lucene query string into a lowercase token set.
+// Splits on whitespace and Lucene operators: `:()[]{}+-!"`.
+// Single-character tokens are dropped (noise).
+func tokenizeLucene(q string) map[string]struct{} {
+	if q == "" {
+		return nil
+	}
+	re := regexp.MustCompile(`[:()\[\]{}\s+\-!"]+`)
+	parts := re.Split(strings.ToLower(q), -1)
+	s := make(map[string]struct{})
+	for _, t := range parts {
+		t = strings.TrimSpace(t)
+		if len(t) > 1 {
+			s[t] = struct{}{}
+		}
+	}
+	if len(s) == 0 {
+		return nil
+	}
+	return s
+}
+
 // ---------------------------------------------------------------------------
 // Step 1: Feature Vector Creation
 // ---------------------------------------------------------------------------
@@ -153,6 +183,9 @@ func buildFeatureVectors(alerts []*models.AlertDef) []featureVector {
 			conditions:        toSet(a.Features.Conditions),
 			techniques:        toSet(a.Features.Techniques),
 			groupByCategories: normalizeGroupByKeys(a.GroupByKeys),
+			luceneQuery:       tokenizeLucene(coralogix.ExtractLuceneQuery(a.TypeDef)),
+			timeWindow:        a.Features.TimeWindow,
+			tactics:           a.Features.Tactics,
 		}
 	}
 	return vectors
@@ -247,9 +280,13 @@ func scorePair(a, b featureVector) float64 {
 	score += weightConditions * jaccard(a.conditions, b.conditions)
 	score += weightTechniques * jaccard(a.techniques, b.techniques)
 	score += weightGroupBy * jaccardGroupBy(a.groupByCategories, b.groupByCategories)
+	score += weightLuceneQuery * jaccard(a.luceneQuery, b.luceneQuery)
 
 	if a.alertType == b.alertType && a.alertType != "" {
 		score += weightAlertType
+	}
+	if a.timeWindow == b.timeWindow && a.timeWindow != "" {
+		score += weightTimeWindow
 	}
 
 	return score

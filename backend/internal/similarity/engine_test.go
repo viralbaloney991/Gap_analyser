@@ -113,6 +113,8 @@ func TestScorePair_identicalAlertSamePivotIsDuplicate(t *testing.T) {
 		conditions:  map[string]struct{}{"failure": {}},
 		techniques:  map[string]struct{}{"t1110": {}},
 		groupByCategories: normalizeGroupByKeys([]string{"okta.actor.alternateId"}),
+		luceneQuery: map[string]struct{}{"eventtype": {}, "okta": {}, "login": {}},
+		timeWindow:  "5m",
 	}
 	b := a
 	b.alertName = "Alert B"
@@ -123,6 +125,8 @@ func TestScorePair_identicalAlertSamePivotIsDuplicate(t *testing.T) {
 }
 
 func TestScorePair_identicalAlertNoPivotIsDuplicate(t *testing.T) {
+	// After the jaccardGroupBy fix (empty+empty→0.0), two identical alerts with no
+	// groupBy need their Lucene query and timeWindow dimensions to reach the threshold.
 	a := featureVector{
 		alertName:   "Alert A",
 		alertType:   "logs_threshold",
@@ -131,13 +135,15 @@ func TestScorePair_identicalAlertNoPivotIsDuplicate(t *testing.T) {
 		actions:     map[string]struct{}{"assumerole": {}},
 		conditions:  map[string]struct{}{"cross_account": {}},
 		techniques:  map[string]struct{}{"t1550": {}},
+		luceneQuery: map[string]struct{}{"assumerole": {}, "cross_account": {}, "aws": {}},
+		timeWindow:  "5m",
 		// groupByCategories intentionally nil on both sides
 	}
 	b := a
 	b.alertName = "Alert B"
 	score := scorePair(a, b)
 	if score < duplicateThreshold {
-		t.Errorf("identical alert with no pivot should still be duplicate (empty+empty=1.0): score=%.4f < threshold=%.2f", score, duplicateThreshold)
+		t.Errorf("identical alert with no pivot should still be duplicate: score=%.4f < threshold=%.2f", score, duplicateThreshold)
 	}
 }
 
@@ -172,7 +178,8 @@ func TestAnalyze_oktaPairIsNotDuplicate(t *testing.T) {
 
 func TestWeightsSumToOne(t *testing.T) {
 	const sum = weightDataSources + weightEntities + weightActions +
-		weightConditions + weightTechniques + weightGroupBy + weightAlertType
+		weightConditions + weightTechniques + weightGroupBy + weightAlertType +
+		weightLuceneQuery + weightTimeWindow
 	if math.Abs(sum-1.0) > 1e-9 {
 		t.Errorf("similarity weights sum to %.10f, want exactly 1.0", sum)
 	}
@@ -206,6 +213,60 @@ func TestFindNoiseAlerts_missingFeaturesPopulated(t *testing.T) {
 	for _, m := range missing {
 		if !wantSet[m] {
 			t.Errorf("unexpected MissingFeature %q", m)
+		}
+	}
+}
+
+func TestScorePair_salesforcePairIsNotDuplicate(t *testing.T) {
+	// GuestUserAnomalyEvent and ApiAnomalyEvent are distinct Salesforce event types.
+	// Without Lucene query scoring, these score 100% similar. With it, they should
+	// fall below the duplicate threshold because the event-type token differs.
+	// groupByCategories differ (guest-user alerts pivot on user; API alerts pivot on API client).
+	guestUser := featureVector{
+		alertName:         "Salesforce - SFDC - Security Event - GuestUserAnomalyEvent",
+		alertType:         "logs_threshold",
+		dataSources:       map[string]struct{}{"salesforce": {}},
+		entities:          map[string]struct{}{"user": {}},
+		actions:           map[string]struct{}{"anomaly": {}},
+		conditions:        map[string]struct{}{"security_event": {}},
+		techniques:        map[string]struct{}{"t1078": {}},
+		groupByCategories: normalizeGroupByKeys([]string{"salesforce.event.userId"}),
+		luceneQuery:       tokenizeLucene("eventType:GuestUserAnomalyEvent AND coralogix.metadata.applicationName:salesforce"),
+		timeWindow:        "5m",
+	}
+	apiEvent := featureVector{
+		alertName:         "Salesforce - SFDC - Security Event - ApiAnomalyEvent",
+		alertType:         "logs_threshold",
+		dataSources:       map[string]struct{}{"salesforce": {}},
+		entities:          map[string]struct{}{"user": {}},
+		actions:           map[string]struct{}{"anomaly": {}},
+		conditions:        map[string]struct{}{"security_event": {}},
+		techniques:        map[string]struct{}{"t1078": {}},
+		groupByCategories: normalizeGroupByKeys([]string{"salesforce.event.sourceIp"}),
+		luceneQuery:       tokenizeLucene("eventType:ApiAnomalyEvent AND coralogix.metadata.applicationName:salesforce"),
+		timeWindow:        "5m",
+	}
+	score := scorePair(guestUser, apiEvent)
+	if score >= duplicateThreshold {
+		t.Errorf("distinct Salesforce event types should NOT be duplicates: score=%.4f >= threshold=%.2f", score, duplicateThreshold)
+	}
+}
+
+func TestTokenizeLucene_basic(t *testing.T) {
+	tokens := tokenizeLucene("eventType:GuestUserAnomalyEvent AND coralogix.metadata.applicationName:salesforce")
+	want := map[string]struct{}{
+		"eventtype":                          {},
+		"guestuseranomalyevent":              {},
+		"and":                                {},
+		"coralogix.metadata.applicationname": {},
+		"salesforce":                         {},
+	}
+	if len(tokens) != len(want) {
+		t.Errorf("tokenizeLucene returned %d tokens, want %d: %v", len(tokens), len(want), tokens)
+	}
+	for k := range want {
+		if _, ok := tokens[k]; !ok {
+			t.Errorf("expected token %q not found in %v", k, tokens)
 		}
 	}
 }
