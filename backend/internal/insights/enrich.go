@@ -60,15 +60,19 @@ const (
 func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) string {
 	var sb strings.Builder
 
-	// Pre-compute capped slices so header counts match what the LLM actually sees.
+	// Cap slices for token budget — keep real counts for the header so the LLM
+	// knows the actual library scope when writing the summary.
+	totalDups := len(result.Duplicates)
 	dups := result.Duplicates
 	if len(dups) > maxPromptDuplicates {
 		dups = dups[:maxPromptDuplicates]
 	}
+	totalFamilies := len(result.Families)
 	families := result.Families
 	if len(families) > maxPromptFamilies {
 		families = families[:maxPromptFamilies]
 	}
+	totalNoise := len(result.NoiseAlerts)
 	noiseAlerts := result.NoiseAlerts
 	if len(noiseAlerts) > maxPromptNoise {
 		noiseAlerts = noiseAlerts[:maxPromptNoise]
@@ -76,10 +80,14 @@ func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) str
 
 	sb.WriteString("Role: Senior detection engineer. Task: Analyze alert library quality.\n\n")
 	sb.WriteString(fmt.Sprintf("Library: %d alerts | %d duplicates | %d families | %d noisy alerts\n\n",
-		len(alerts), len(dups), len(families), len(noiseAlerts)))
+		len(alerts), totalDups, totalFamilies, totalNoise))
 
 	if len(dups) > 0 {
-		sb.WriteString("Duplicates:\n")
+		if totalDups > maxPromptDuplicates {
+			sb.WriteString(fmt.Sprintf("Duplicates (showing top %d of %d):\n", maxPromptDuplicates, totalDups))
+		} else {
+			sb.WriteString("Duplicates:\n")
+		}
 		for _, d := range dups {
 			if len(d.AlertNames) >= 2 {
 				sb.WriteString(fmt.Sprintf("- %s ≈ %s (%.0f%%)\n", d.AlertNames[0], d.AlertNames[1], d.Similarity*100))
@@ -108,7 +116,12 @@ func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) str
 
 	// Noisy alerts section — includes missing features and reason.
 	if len(noiseAlerts) > 0 {
-		sb.WriteString("Noisy alerts:\n")
+		if totalNoise > maxPromptNoise {
+			sb.WriteString(fmt.Sprintf("Noisy alerts (showing top %d of %d):\n", maxPromptNoise, totalNoise))
+		} else {
+			sb.WriteString("Noisy alerts:\n")
+		}
+
 		for _, na := range noiseAlerts {
 			line := fmt.Sprintf("- %s", na.Name)
 			if na.NoiseType != "" {
