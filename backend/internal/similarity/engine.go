@@ -1020,9 +1020,15 @@ func findNoiseAlerts(
 			app, sub := coralogix.ExtractAppSubsystem(alert.TypeDef)
 			isUnscoped := app == "" && sub == ""
 			noEntity := len(v.entities) == 0
+			// logs_threshold and metric_threshold aggregate events over time —
+			// being unscoped means they inherently count too broadly (structural concern).
+			// logs_immediate fires on each individual match — if it fires too often,
+			// that is captured by the behavioral signal (trigger count > threshold);
+			// flagging it structurally would produce false positives for legitimate
+			// event-driven alerts like "Access Review Deletion" that have tight queries
+			// but no entity filter.
 			isHighVolumeType := alert.AlertType == "logs_threshold" ||
-				alert.AlertType == "metric_threshold" ||
-				alert.AlertType == "logs_immediate"
+				alert.AlertType == "metric_threshold"
 			hasEvidenceOfVolume := eventCounts == nil || triggerCount > 0
 			isStructural = isUnscoped && noEntity && isHighVolumeType && hasEvidenceOfVolume
 		}
