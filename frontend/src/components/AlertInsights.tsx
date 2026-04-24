@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import type { SimilarityResult, InsightsReport, NoiseAlert } from '../types';
+import { useState, useEffect, useMemo } from 'react';
+import type { SimilarityResult, InsightsReport, NoiseAlert, DetectionFamily } from '../types';
 import { fetchInsights } from '../services/api';
 
 interface Props {
@@ -24,6 +24,29 @@ export default function AlertInsights({ data, report, insightsError = false, cli
   const [selectedModel, setSelectedModel] = useState<'mistral' | 'gemma'>('mistral');
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regenError, setRegenError]       = useState(false);
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+
+  const toggleCard = (key: string) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const familyGroups = useMemo(() => {
+    const map = new Map<string, { families: DetectionFamily[]; totalAlerts: number }>();
+    (data.families ?? []).forEach(fam => {
+      const existing = map.get(fam.name);
+      if (existing) {
+        existing.families.push(fam);
+        existing.totalAlerts += fam.alert_names.length;
+      } else {
+        map.set(fam.name, { families: [fam], totalAlerts: fam.alert_names.length });
+      }
+    });
+    return Array.from(map.entries());
+  }, [data.families]);
 
   useEffect(() => {
     if (report !== null && !isRegenerating) setLocalReport(report);
