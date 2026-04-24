@@ -92,8 +92,7 @@ export interface NoiseAlert {
   reason?: string;
   /** 0 when behavioral data unavailable or not behaviorally noisy */
   trigger_count?: number;
-  /** "behavioral" | "structural" | "both" */
-  noise_type?: string;
+  noise_type?: 'behavioral' | 'structural' | 'both';
 }
 
 export interface SimilarityResult {
