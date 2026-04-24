@@ -4,75 +4,16 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"strings"
 	"testing"
 
 	"coralogix-alert-analyzer/internal/models"
 )
 
-func TestFindNoiseAlerts_returnsNoisyAlerts(t *testing.T) {
-	vectors := []featureVector{
-		{
-			alertName:   "Noisy",
-			dataSources: map[string]struct{}{"logs": {}},
-			entities:    map[string]struct{}{},
-			actions:     map[string]struct{}{},
-			conditions:  map[string]struct{}{},
-			techniques:  map[string]struct{}{},
-		},
-		{
-			alertName:   "RichAlert",
-			dataSources: map[string]struct{}{"logs": {}},
-			entities:    map[string]struct{}{"user": {}},
-			actions:     map[string]struct{}{"login": {}},
-			conditions:  map[string]struct{}{"failed": {}},
-			techniques:  map[string]struct{}{"t1078": {}},
-		},
-	}
-	noisy := findNoiseAlerts(vectors, nil)
-	if len(noisy) != 1 {
-		t.Fatalf("expected 1 noisy alert, got %d: %v", len(noisy), noisy)
-	}
-	if noisy[0].Name != "Noisy" {
-		t.Errorf("expected \"Noisy\", got %q", noisy[0].Name)
-	}
-}
-
 func TestFindNoiseAlerts_nilInput(t *testing.T) {
-	noisy := findNoiseAlerts(nil, nil)
+	noisy := findNoiseAlerts(nil, nil, nil, 0)
 	if noisy != nil {
 		t.Errorf("expected nil for nil input, got %v", noisy)
-	}
-}
-
-func TestFindNoiseAlerts_atThreshold(t *testing.T) {
-	// Total = 3 means NOT noise (threshold is strictly < 3)
-	vectors := []featureVector{
-		{
-			alertName:   "AtThreshold",
-			dataSources: map[string]struct{}{"logs": {}},
-			entities:    map[string]struct{}{"user": {}},
-			actions:     map[string]struct{}{"login": {}},
-			conditions:  map[string]struct{}{},
-			techniques:  map[string]struct{}{},
-		},
-	}
-	noisy := findNoiseAlerts(vectors, nil)
-	if len(noisy) != 0 {
-		t.Errorf("expected no noise for exactly 3 tokens, got %v", noisy)
-	}
-}
-
-func TestFindNoiseAlerts_isSorted(t *testing.T) {
-	vectors := []featureVector{
-		{alertName: "ZAlert", dataSources: map[string]struct{}{"x": {}}, entities: map[string]struct{}{}, actions: map[string]struct{}{}, conditions: map[string]struct{}{}, techniques: map[string]struct{}{}},
-		{alertName: "AAlert", dataSources: map[string]struct{}{"y": {}}, entities: map[string]struct{}{}, actions: map[string]struct{}{}, conditions: map[string]struct{}{}, techniques: map[string]struct{}{}},
-	}
-	noisy := findNoiseAlerts(vectors, nil)
-	if len(noisy) != 2 {
-		t.Fatalf("expected 2 noisy alerts, got %d", len(noisy))
-	}
-	if noisy[0].Name != "AAlert" || noisy[1].Name != "ZAlert" {
-		t.Errorf("expected sorted [AAlert, ZAlert], got %v", noisy)
 	}
 }
 
@@ -185,38 +126,6 @@ func TestWeightsSumToOne(t *testing.T) {
 	}
 }
 
-func TestFindNoiseAlerts_missingFeaturesPopulated(t *testing.T) {
-	// "Noisy" has only dataSources set — the other four dimensions are empty.
-	vectors := []featureVector{
-		{
-			alertName:   "Noisy",
-			dataSources: map[string]struct{}{"logs": {}},
-			entities:    map[string]struct{}{},
-			actions:     map[string]struct{}{},
-			conditions:  map[string]struct{}{},
-			techniques:  map[string]struct{}{},
-		},
-	}
-	noisy := findNoiseAlerts(vectors, nil)
-	if len(noisy) != 1 {
-		t.Fatalf("expected 1 noisy alert, got %d", len(noisy))
-	}
-	missing := noisy[0].MissingFeatures
-	want := []string{"entities", "actions", "conditions", "techniques"}
-	if len(missing) != len(want) {
-		t.Fatalf("MissingFeatures = %v, want %v", missing, want)
-	}
-	wantSet := map[string]bool{}
-	for _, w := range want {
-		wantSet[w] = true
-	}
-	for _, m := range missing {
-		if !wantSet[m] {
-			t.Errorf("unexpected MissingFeature %q", m)
-		}
-	}
-}
-
 func TestScorePair_salesforcePairIsNotDuplicate(t *testing.T) {
 	// GuestUserAnomalyEvent and ApiAnomalyEvent are distinct Salesforce event types.
 	// Without Lucene query scoring, these score 100% similar. With it, they should
@@ -326,49 +235,6 @@ func TestDeriveFamilyName_fallsBackToRawToken(t *testing.T) {
 	}
 }
 
-func TestFindNoiseAlerts_reasonPopulated(t *testing.T) {
-	vectors := []featureVector{
-		{
-			alertName:   "NoEntities",
-			dataSources: map[string]struct{}{"logs": {}},
-			entities:    map[string]struct{}{},
-			actions:     map[string]struct{}{},
-			conditions:  map[string]struct{}{},
-			techniques:  map[string]struct{}{},
-		},
-	}
-	noisy := findNoiseAlerts(vectors, nil)
-	if len(noisy) != 1 {
-		t.Fatalf("expected 1 noisy alert, got %d", len(noisy))
-	}
-	if noisy[0].Reason == "" {
-		t.Error("expected Reason to be populated, got empty string")
-	}
-}
-
-func TestFindNoiseAlerts_broadScopeExcluded(t *testing.T) {
-	// A broad-scope alert (no app/subsystem filter) with low features is an
-	// intentional global monitor — it must NOT appear in the noise list.
-	vectors := []featureVector{
-		{
-			alertName:   "BroadScope",
-			dataSources: map[string]struct{}{"logs": {}},
-			entities:    map[string]struct{}{},
-			actions:     map[string]struct{}{},
-			conditions:  map[string]struct{}{},
-			techniques:  map[string]struct{}{},
-		},
-	}
-	// Alert with nil TypeDef → ExtractAppSubsystem returns ("", "") → broad-scope.
-	alerts := []*models.AlertDef{
-		{ID: "", Name: "BroadScope", TypeDef: nil},
-	}
-	noisy := findNoiseAlerts(vectors, alerts)
-	if len(noisy) != 0 {
-		t.Errorf("broad-scope alert should be excluded from noise list, got %v", noisy)
-	}
-}
-
 func TestBuildIDF_rareTokenHigherWeight(t *testing.T) {
 	// Corpus: 10 vectors. "common" appears in all 10; "rare" appears in only 1.
 	// IDF("rare") must be strictly greater than IDF("common").
@@ -452,6 +318,215 @@ func TestWeightedJaccard_disjointSetsReturnZero(t *testing.T) {
 	score := weightedJaccard(setA, setB, idf)
 	if score != 0.0 {
 		t.Errorf("disjoint sets: got %.6f, want 0.0", score)
+	}
+}
+
+// ── New hybrid noise model tests ──────────────────────────────────────────
+
+func makeAlert(id, alertType string, vendorCovered, isSecurityAlert bool, labels map[string]string, appName, subsystem string) *models.AlertDef {
+	typeDef := map[string]any{}
+	if appName != "" || subsystem != "" {
+		typeDef["logsFilter"] = map[string]any{
+			"simpleFilter": map[string]any{
+				"labelFilters": map[string]any{
+					"applicationName": []any{map[string]any{"value": appName, "operation": "IS"}},
+					"subsystemName":   []any{map[string]any{"value": subsystem, "operation": "IS"}},
+				},
+			},
+		}
+	}
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	return &models.AlertDef{
+		ID:        id,
+		AlertType: alertType,
+		Labels:    labels,
+		TypeDef:   typeDef,
+		Features: models.AlertFeatures{
+			VendorCovered:   vendorCovered,
+			IsSecurityAlert: isSecurityAlert,
+		},
+	}
+}
+
+func sparseVector(name string) featureVector {
+	return featureVector{
+		alertName:   name,
+		dataSources: map[string]struct{}{},
+		entities:    map[string]struct{}{},
+		actions:     map[string]struct{}{},
+		conditions:  map[string]struct{}{},
+		techniques:  map[string]struct{}{},
+	}
+}
+
+func TestFindNoiseAlerts_vendorCoveredExcluded(t *testing.T) {
+	v := sparseVector("GCP SCC Alert")
+	alert := makeAlert("gcp-1", "logs_threshold", true, true, nil, "", "")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0)
+	if len(noisy) != 0 {
+		t.Errorf("vendor-covered alert should be excluded, got %v", noisy)
+	}
+}
+
+func TestFindNoiseAlerts_buildingBlockExcluded(t *testing.T) {
+	v := sparseVector("BB Alert")
+	alert := makeAlert("bb-1", "logs_threshold", false, true,
+		map[string]string{"flow_alert": "building block"}, "", "")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0)
+	if len(noisy) != 0 {
+		t.Errorf("building block should be excluded, got %v", noisy)
+	}
+}
+
+func TestFindNoiseAlerts_nonSecurityExcluded(t *testing.T) {
+	v := sparseVector("Ops Alert")
+	alert := makeAlert("ops-1", "logs_threshold", false, false, nil, "", "")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0)
+	if len(noisy) != 0 {
+		t.Errorf("non-security alert should be excluded, got %v", noisy)
+	}
+}
+
+func TestFindNoiseAlerts_structuralNoise_unscopedHighVolume(t *testing.T) {
+	v := sparseVector("Generic Threshold")
+	alert := makeAlert("t-1", "logs_threshold", false, true, nil, "", "")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 structural noise alert, got %d: %v", len(noisy), noisy)
+	}
+	if noisy[0].NoiseType != "structural" {
+		t.Errorf("noise_type: want structural, got %q", noisy[0].NoiseType)
+	}
+}
+
+func TestFindNoiseAlerts_structuralNoise_scopedAlertNotNoisy(t *testing.T) {
+	v := sparseVector("Scoped Alert")
+	alert := makeAlert("t-2", "logs_threshold", false, true, nil, "my-app", "")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0)
+	if len(noisy) != 0 {
+		t.Errorf("scoped alert should not be structural noise, got %v", noisy)
+	}
+}
+
+func TestFindNoiseAlerts_structuralNoise_lowVolumeTypeNotNoisy(t *testing.T) {
+	v := sparseVector("Anomaly Alert")
+	alert := makeAlert("t-3", "logs_anomaly", false, true, nil, "", "")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0)
+	if len(noisy) != 0 {
+		t.Errorf("low-volume type alert should not be structural noise, got %v", noisy)
+	}
+}
+
+func TestFindNoiseAlerts_behavioralNoise_overThreshold(t *testing.T) {
+	v := featureVector{
+		alertName:   "Chatty Alert",
+		dataSources: map[string]struct{}{"cloudtrail": {}},
+		entities:    map[string]struct{}{"user": {}},
+		actions:     map[string]struct{}{"login": {}},
+		conditions:  map[string]struct{}{"failed": {}},
+		techniques:  map[string]struct{}{"t1078": {}},
+	}
+	alert := makeAlert("b-1", "logs_threshold", false, true, nil, "my-app", "auth")
+	counts := map[string]int{"b-1": 25}
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, counts, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 behavioral noise alert, got %d", len(noisy))
+	}
+	if noisy[0].NoiseType != "behavioral" {
+		t.Errorf("noise_type: want behavioral, got %q", noisy[0].NoiseType)
+	}
+	if noisy[0].TriggerCount != 25 {
+		t.Errorf("trigger_count: want 25, got %d", noisy[0].TriggerCount)
+	}
+}
+
+func TestFindNoiseAlerts_behavioralNoise_atThresholdNotNoisy(t *testing.T) {
+	v := sparseVector("Borderline Alert")
+	alert := makeAlert("b-2", "logs_threshold", false, true, nil, "my-app", "")
+	counts := map[string]int{"b-2": 20}
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, counts, 0)
+	// 20 is not > 20, so not behavioral. Has app scoping so not structural either.
+	if len(noisy) != 0 {
+		t.Errorf("alert at threshold should not be noisy, got %v", noisy)
+	}
+}
+
+func TestFindNoiseAlerts_bothSignals(t *testing.T) {
+	v := sparseVector("Double Trouble")
+	alert := makeAlert("bt-1", "logs_threshold", false, true, nil, "", "")
+	counts := map[string]int{"bt-1": 30}
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, counts, 5)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 noise alert, got %d", len(noisy))
+	}
+	if noisy[0].NoiseType != "both" {
+		t.Errorf("noise_type: want both, got %q", noisy[0].NoiseType)
+	}
+}
+
+func TestFindNoiseAlerts_flowAlert_behavioralApplies(t *testing.T) {
+	v := sparseVector("Flow Alert")
+	alert := makeAlert("f-1", "flow", false, true, nil, "", "")
+	counts := map[string]int{"f-1": 25}
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, counts, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("flow alert with high count should be behavioral noise, got %d", len(noisy))
+	}
+	if noisy[0].NoiseType != "behavioral" {
+		t.Errorf("noise_type: want behavioral, got %q", noisy[0].NoiseType)
+	}
+}
+
+func TestFindNoiseAlerts_flowAlert_structuralDoesNotApply(t *testing.T) {
+	v := sparseVector("Flow No Triggers")
+	alert := makeAlert("f-2", "flow", false, true, nil, "", "")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0)
+	if len(noisy) != 0 {
+		t.Errorf("flow alert should skip structural signal, got %v", noisy)
+	}
+}
+
+func TestFindNoiseAlerts_orgAmplifier_reasonContainsCount(t *testing.T) {
+	v := sparseVector("Generic")
+	alert := makeAlert("amp-1", "logs_threshold", false, true, nil, "", "")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 15)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 structural noise alert, got %d", len(noisy))
+	}
+	if !strings.Contains(noisy[0].Reason, "15") {
+		t.Errorf("reason should mention integration count 15, got: %q", noisy[0].Reason)
+	}
+}
+
+func TestFindNoiseAlerts_sortedByName(t *testing.T) {
+	// Two structural noise alerts — result must be alphabetically sorted.
+	vectors := []featureVector{sparseVector("Zebra Alert"), sparseVector("Alpha Alert")}
+	alerts := []*models.AlertDef{
+		makeAlert("z-1", "logs_threshold", false, true, nil, "", ""),
+		makeAlert("a-1", "logs_threshold", false, true, nil, "", ""),
+	}
+	noisy := findNoiseAlerts(vectors, alerts, nil, 0)
+	if len(noisy) != 2 {
+		t.Fatalf("expected 2 noisy alerts, got %d", len(noisy))
+	}
+	if noisy[0].Name != "Alpha Alert" || noisy[1].Name != "Zebra Alert" {
+		t.Errorf("expected alphabetical order, got [%q, %q]", noisy[0].Name, noisy[1].Name)
+	}
+}
+
+func TestFindNoiseAlerts_missingFeaturesPopulated(t *testing.T) {
+	v := sparseVector("Generic")
+	alert := makeAlert("mf-1", "logs_threshold", false, true, nil, "", "")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 noisy alert, got %d", len(noisy))
+	}
+	// sparseVector has all feature sets empty — all 5 should be in MissingFeatures
+	expected := []string{"data sources", "entities", "actions", "conditions", "techniques"}
+	if len(noisy[0].MissingFeatures) != len(expected) {
+		t.Errorf("MissingFeatures: want %v, got %v", expected, noisy[0].MissingFeatures)
 	}
 }
 

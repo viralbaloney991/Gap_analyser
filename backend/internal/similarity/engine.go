@@ -236,7 +236,7 @@ func Analyze(alerts []*models.AlertDef) *models.SimilarityResult {
 	uniqueDetections := findUniqueDetections(vectors, matrix, n)
 
 	// Step 8: Noise detection.
-	noiseAlerts := findNoiseAlerts(vectors, alerts)
+	noiseAlerts := findNoiseAlerts(vectors, alerts, nil, 0)
 
 	return &models.SimilarityResult{
 		Families:         families,
@@ -1070,79 +1070,145 @@ func findUniqueDetections(vectors []featureVector, matrix [][]float64, n int) []
 // Step 8: Noise Detection
 // ---------------------------------------------------------------------------
 
-// findNoiseAlerts returns NoiseAlert entries for alerts whose total unique
-// feature token count is below the noise threshold (sparse = likely
-// threshold-only alert). Each entry includes the names of empty feature sets
-// and a human-readable Reason explaining the most significant gaps.
-// Broad-scope alerts (no app/subsystem filter) are excluded — they are
-// intentionally global monitors, not misconfigured rules.
-// alerts is parallel to vectors (same order as buildFeatureVectors input);
-// pass nil in tests that don't need broad-scope detection.
-func findNoiseAlerts(vectors []featureVector, alerts []*models.AlertDef) []models.NoiseAlert {
-	const noiseThreshold = 3
+const behavioralNoiseThreshold = 20 // triggers in 30 days before alert is behaviorally noisy
+
+// findNoiseAlerts applies the hybrid two-signal noise model.
+//
+//   - Signal 1 (behavioral): alert fired > behavioralNoiseThreshold times in the
+//     last 30 days per eventCounts. Pass nil to skip behavioral detection.
+//   - Signal 2 (structural): alert is unscoped (no app/subsystem), has no entity,
+//     and is a high-volume type (logs_threshold, metric_threshold, logs_immediate).
+//
+// Exclusions (neither signal applies):
+//
+//   - Vendor-covered alerts: intentionally sparse, vendor does detection internally.
+//   - Building blocks (flow_alert=building block): fragments by design.
+//   - Non-security alerts: outside the scope of security noise analysis.
+//
+// Flow alerts skip structural (assessed via building blocks) but ARE checked for
+// behavioral noise — a flow firing too often is genuinely noisy.
+//
+// alerts is parallel to vectors (same index). Pass nil alerts in tests that
+// do not need alert-level fields (behavioral and structural signals are skipped).
+func findNoiseAlerts(
+	vectors []featureVector,
+	alerts []*models.AlertDef,
+	eventCounts map[string]int,  // alertID → 30-day trigger count; nil = skip behavioral
+	integrationCount int,         // total integrations in org (for structural reason text)
+) []models.NoiseAlert {
 	var noisy []models.NoiseAlert
+
 	for i, v := range vectors {
-		total := len(v.dataSources) + len(v.entities) + len(v.actions) +
-			len(v.conditions) + len(v.techniques)
-		if total >= noiseThreshold {
-			continue
+		var alert *models.AlertDef
+		if alerts != nil && i < len(alerts) {
+			alert = alerts[i]
 		}
 
-		// Exclude broad-scope alerts (intentional global monitors).
-		if alerts != nil && i < len(alerts) && alerts[i] != nil {
-			app, sub := coralogix.ExtractAppSubsystem(alerts[i].TypeDef)
-			if app == "" && sub == "" {
+		// ── Exclusions ────────────────────────────────────────────────────
+		if alert != nil {
+			if alert.Features.VendorCovered {
+				continue
+			}
+			if alert.Labels["flow_alert"] == "building block" {
+				continue
+			}
+			if !alert.Features.IsSecurityAlert {
 				continue
 			}
 		}
 
-		var missing []string
-		if len(v.dataSources) == 0 {
-			missing = append(missing, "data sources")
+		isFlowAlert := alert != nil && alert.AlertType == "flow"
+
+		// ── Signal 1: Behavioral ─────────────────────────────────────────
+		var triggerCount int
+		if alert != nil && eventCounts != nil {
+			triggerCount = eventCounts[alert.ID]
 		}
-		if len(v.entities) == 0 {
-			missing = append(missing, "entities")
-		}
-		if len(v.actions) == 0 {
-			missing = append(missing, "actions")
-		}
-		if len(v.conditions) == 0 {
-			missing = append(missing, "conditions")
-		}
-		if len(v.techniques) == 0 {
-			missing = append(missing, "techniques")
+		isBehavioral := eventCounts != nil && triggerCount > behavioralNoiseThreshold
+
+		// ── Signal 2: Structural (skipped for flow alerts) ───────────────
+		isStructural := false
+		if !isFlowAlert && alert != nil {
+			app, sub := coralogix.ExtractAppSubsystem(alert.TypeDef)
+			isUnscoped := app == "" && sub == ""
+			noEntity := len(v.entities) == 0
+			isHighVolumeType := alert.AlertType == "logs_threshold" ||
+				alert.AlertType == "metric_threshold" ||
+				alert.AlertType == "logs_immediate"
+			isStructural = isUnscoped && noEntity && isHighVolumeType
 		}
 
-		// Build a specific Reason from the highest-priority gaps (up to two).
-		var reasons []string
-		if len(v.dataSources) == 0 {
-			reasons = append(reasons, "No log source identified — alert may fire across unintended data sources.")
-		}
-		if len(v.entities) == 0 {
-			reasons = append(reasons, "No monitored entity (user, IP, host) — cannot scope blast radius or owner.")
-		}
-		if len(v.actions) == 0 && len(v.conditions) == 0 {
-			reasons = append(reasons, "No behavioral signal — likely a generic threshold with no attack-pattern context.")
-		}
-		if len(v.techniques) == 0 {
-			reasons = append(reasons, "No MITRE technique mapped — coverage gap, hard to classify threat type.")
-		}
-		reason := ""
-		if len(reasons) > 0 {
-			if len(reasons) > 2 {
-				reasons = reasons[:2]
-			}
-			reason = strings.Join(reasons, " ")
+		// ── Neither signal → skip ─────────────────────────────────────────
+		if !isBehavioral && !isStructural {
+			continue
 		}
 
 		noisy = append(noisy, models.NoiseAlert{
 			Name:            v.alertName,
-			MissingFeatures: missing,
-			Reason:          reason,
+			MissingFeatures: buildMissingFeatures(v),
+			Reason:          buildNoiseReason(triggerCount, integrationCount, isBehavioral, isStructural),
+			TriggerCount:    triggerCount,
+			NoiseType:       noiseTypeString(isBehavioral, isStructural),
 		})
 	}
+
 	sort.Slice(noisy, func(i, j int) bool {
 		return noisy[i].Name < noisy[j].Name
 	})
 	return noisy
+}
+
+// noiseTypeString returns "behavioral", "structural", or "both".
+// Callers must ensure at least one signal is true before calling.
+func noiseTypeString(isBehavioral, isStructural bool) string {
+	switch {
+	case isBehavioral && isStructural:
+		return "both"
+	case isBehavioral:
+		return "behavioral"
+	case isStructural:
+		return "structural"
+	default:
+		return "" // unreachable: caller guards on isBehavioral || isStructural
+	}
+}
+
+// buildNoiseReason returns a specific human-readable reason for the noise classification.
+func buildNoiseReason(triggerCount, integrationCount int, isBehavioral, isStructural bool) string {
+	var parts []string
+	if isBehavioral {
+		parts = append(parts, fmt.Sprintf(
+			"Fired %d times in the last 30 days — alert is over-triggering.", triggerCount))
+	}
+	if isStructural {
+		if integrationCount >= 10 {
+			parts = append(parts, fmt.Sprintf(
+				"No app/subsystem scoping across an org with %d integrations — fires on all matching log sources.",
+				integrationCount))
+		} else {
+			parts = append(parts, "No app/subsystem scoping and no entity filter — alert may fire too broadly.")
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
+// buildMissingFeatures returns the names of empty feature dimensions for this vector.
+func buildMissingFeatures(v featureVector) []string {
+	var missing []string
+	if len(v.dataSources) == 0 {
+		missing = append(missing, "data sources")
+	}
+	if len(v.entities) == 0 {
+		missing = append(missing, "entities")
+	}
+	if len(v.actions) == 0 {
+		missing = append(missing, "actions")
+	}
+	if len(v.conditions) == 0 {
+		missing = append(missing, "conditions")
+	}
+	if len(v.techniques) == 0 {
+		missing = append(missing, "techniques")
+	}
+	return missing
 }
