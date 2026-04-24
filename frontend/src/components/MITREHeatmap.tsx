@@ -553,16 +553,18 @@ export default function MITREHeatmap({ data, clientName }: Props) {
 
   // Measure available height for the heatmap scroll area.
   // containerRef watches .mitre-heatmap; toolbarRef watches .mitre-toolbar.
-  // scrollHeight = total container height − toolbar height.
-  // This explicit pixel value is applied as height on .heatmap-scroll-wrap so
-  // align-items:stretch can propagate a DEFINITE height to all tactic columns,
-  // making overflow-y:auto on .tactic-techniques work on any screen size.
+  // scrollHeight = total container height − toolbar height, capped at 55vh.
+  // The 55vh cap ensures that on large/4K monitors the scroll container is
+  // never tall enough to show all techniques without scrolling — Recon has
+  // ~1308px of content, and 55% of a 2160px (4K) viewport = 1188px < 1308px.
+  // The cap is recomputed on every ResizeObserver fire so window resizes are
+  // handled automatically.
   useEffect(() => {
     const update = () => {
       if (!containerRef.current || !toolbarRef.current) return;
       const total   = containerRef.current.getBoundingClientRect().height;
       const toolbar = toolbarRef.current.getBoundingClientRect().height;
-      setHeatmapBodyHeight(total - toolbar);
+      setHeatmapBodyHeight(Math.min(total - toolbar, window.innerHeight * 0.55));
     };
     const obs = new ResizeObserver(update);
     if (containerRef.current) obs.observe(containerRef.current);
