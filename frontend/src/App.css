@@ -651,10 +651,17 @@ html, body, #root {
 /* ================================================================
    MITRE HEATMAP
    ================================================================ */
-.mitre-heatmap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+/*
+ * .mitre-heatmap is a flex item in the outer layout (flex: 1 = take
+ * remaining height). Its internal layout is a simple flex column —
+ * no grid needed, because MITREHeatmap.tsx uses a ResizeObserver to
+ * measure and explicitly set the scroll container's height.
+ */
+.mitre-heatmap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* Toolbar */
-.mitre-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; }
+.mitre-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 24px; border-bottom: 1px solid var(--border); gap: 16px; flex-shrink: 0; }
 
 .mitre-stats         { display: flex; align-items: center; gap: 20px; }
 .mitre-stat          { display: flex; flex-direction: column; gap: 2px; }
@@ -676,24 +683,36 @@ html, body, #root {
 .view-toggle-btn { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 6px 14px; background: none; border: none; color: var(--text-dim); cursor: pointer; transition: all 0.15s; }
 .view-toggle-btn--active { background: var(--accent-dim); color: var(--accent); }
 
-/* Heatmap scroll */
-.heatmap-scroll-wrap { flex: 1; min-height: 0; overflow: auto; }
-.heatmap-columns     { display: flex; min-height: 100%; }
+/*
+ * Heatmap scroll container — height is set explicitly via inline style
+ * by MITREHeatmap.tsx (ResizeObserver). overflow-x: auto provides
+ * horizontal scroll across all 14 tactic columns. overflow-y: hidden
+ * prevents the container from scrolling as a unit — each column's
+ * .tactic-techniques element scrolls independently.
+ * align-items: stretch propagates the explicit height to all columns.
+ */
+.heatmap-scroll-wrap { overflow-x: auto; overflow-y: hidden; display: flex; align-items: stretch; }
+.heatmap-columns     { display: flex; align-items: stretch; flex-shrink: 0; }
 
 /* Tactic columns */
-.tactic-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); flex: 0 0 130px; min-height: 0; }
+.tactic-col { display: flex; flex-direction: column; border-right: 1px solid var(--border); flex-shrink: 0; width: 140px; }
 .tactic-col:last-child { border-right: none; }
 
 .tactic-header { padding: 10px 10px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; position: relative; }
 .tactic-header::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: var(--cov-color, var(--cov-none)); }
 
-.tactic-name       { font-family: var(--font-display); font-size: 0.72rem; font-weight: 600; color: var(--text); line-height: 1.3; margin-bottom: 4px; }
-.tactic-count      { font-family: var(--font-mono); font-size: 0.58rem; color: var(--text-dim); }
-.tactic-count em   { font-style: normal; color: var(--accent); }
-.tactic-count--zero { color: var(--danger); }
+.tactic-name  { font-family: var(--font-display); font-size: 0.72rem; font-weight: 600; color: var(--text); line-height: 1.3; margin-bottom: 4px; word-break: break-word; }
+.tactic-count { font-family: var(--font-mono); font-size: 0.58rem; color: var(--text-dim); }
+.tactic-count em { font-style: normal; color: var(--accent); }
+.tactic-count--zero    { color: var(--danger); }
 .tactic-count--zero em { color: var(--danger); }
 
-/* Technique cells */
+/*
+ * .tactic-techniques uses flex: 1 to fill the remaining column height
+ * after the header. Because .tactic-col has an explicit height (via
+ * align-self: stretch from parent), flex: 1 here is bounded — and
+ * overflow-y: auto creates a per-column scrollbar when needed.
+ */
 .tactic-techniques { flex: 1; min-height: 0; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 3px; }
 
 .tech-cell { height: 26px; border-radius: 3px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: opacity 0.1s; position: relative; }
@@ -758,7 +777,7 @@ html, body, #root {
 .suggestion-desc        { font-family: var(--font-display); font-size: 0.75rem; color: var(--text-sec); line-height: 1.5; margin-bottom: 8px; }
 
 /* Force graph container */
-.force-graph-container { flex: 1; overflow: hidden; position: relative; }
+.force-graph-container { overflow: hidden; position: relative; }
 
 /* Download button */
 .mitre-download-btn { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 5px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border-bright); background: transparent; color: var(--accent); cursor: pointer; transition: all 0.15s; }
