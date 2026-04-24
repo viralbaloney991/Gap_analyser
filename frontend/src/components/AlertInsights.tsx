@@ -296,7 +296,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                     {isOpen && (
                       <div className="alert-pair" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
                         {allAlertNames.map((alertName, j) => (
-                          <span key={j} className="alert-tag">{alertName}</span>
+                          <span key={`${j}-${alertName}`} className="alert-tag">{alertName}</span>
                         ))}
                       </div>
                     )}
