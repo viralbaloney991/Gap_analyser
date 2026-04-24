@@ -742,7 +742,7 @@ html, body, #root {
   position: fixed;
   bottom: 24px; right: 24px;
   width: 320px;
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - 48px); /* 24px bottom offset + 24px top breathing room */
   display: flex;
   flex-direction: column;
   background: var(--surface);
