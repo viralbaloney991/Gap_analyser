@@ -215,34 +215,47 @@ export default function AlertInsights({ data, report, insightsError = false, cli
           {activeTab === 'duplicates' && (
             data.duplicates?.length ? (
               data.duplicates.map((dup, i) => {
-                // enriched_dups is string[] — use as plain string explanation
+                const key = `dup-${i}`;
+                const isOpen = expandedCards.has(key);
                 const enrichedExplanation = effectiveReport?.enriched_dups?.[i];
                 const simPct = Math.round((dup.similarity ?? 0) * 100);
                 return (
-                  <div key={i} className="insight-card insight-card--duplicate">
+                  <div
+                    key={i}
+                    className={`insight-card insight-card--duplicate${isOpen ? ' insight-card--open' : ''}`}
+                    onClick={() => toggleCard(key)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <div className="insight-card-header">
                       <div className="insight-card-title">{dup.alert_names[0]}</div>
-                      <span className="badge badge--indigo">Duplicate</span>
-                    </div>
-                    <div className="alert-pair">
-                      {dup.alert_names.map((name, j) => (
-                        <span key={j}>
-                          {j > 0 && <span className="alert-pair-sep">↔</span>}
-                          <span className="alert-tag">{name}</span>
-                        </span>
-                      ))}
-                    </div>
-                    <div className="sim-bar-wrap">
-                      <span className="sim-bar-label">{simPct}% similar</span>
-                      <div className="sim-bar-track">
-                        <div
-                          className="sim-bar-fill"
-                          style={{ width: `${simPct}%`, background: simBarGradient(dup.similarity ?? 0) }}
-                        />
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span className="badge badge--indigo">Duplicate</span>
+                        <span className="insight-card-chevron">{isOpen ? '▼' : '▶'}</span>
                       </div>
                     </div>
-                    {(enrichedExplanation || dup.explanation) && (
-                      <p className="insight-card-body">{enrichedExplanation ?? dup.explanation}</p>
+                    {isOpen && (
+                      <>
+                        <div className="alert-pair">
+                          {dup.alert_names.map((name, j) => (
+                            <span key={j}>
+                              {j > 0 && <span className="alert-pair-sep">↔</span>}
+                              <span className="alert-tag">{name}</span>
+                            </span>
+                          ))}
+                        </div>
+                        <div className="sim-bar-wrap">
+                          <span className="sim-bar-label">{simPct}% similar</span>
+                          <div className="sim-bar-track">
+                            <div
+                              className="sim-bar-fill"
+                              style={{ width: `${simPct}%`, background: simBarGradient(dup.similarity ?? 0) }}
+                            />
+                          </div>
+                        </div>
+                        {(enrichedExplanation || dup.explanation) && (
+                          <p className="insight-card-body">{enrichedExplanation ?? dup.explanation}</p>
+                        )}
+                      </>
                     )}
                   </div>
                 );
