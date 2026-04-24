@@ -53,7 +53,7 @@ const TACTIC_LABELS: Record<string, string> = {
   'impact':               'Impact',
 };
 
-const HEATMAP_BODY_MAX_PX = 1100; // px — only activates on tall monitors (≥ 1440p); keeps columns shorter than the tallest tactic column's ~1308px of content
+const HEATMAP_BODY_MAX_PX = 900; // px — caps scroll container so tallest columns (~1308px of content) always scroll; activates when available height exceeds 900px
 
 // ---------------------------------------------------------------------------
 // Colour helpers
