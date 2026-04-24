@@ -742,6 +742,9 @@ html, body, #root {
   position: fixed;
   bottom: 24px; right: 24px;
   width: 320px;
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--border-bright);
   border-radius: var(--radius-xl);
@@ -757,7 +760,7 @@ html, body, #root {
 .detail-close     { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 1rem; flex-shrink: 0; padding: 2px; line-height: 1; }
 .detail-close:hover { color: var(--text); }
 
-.detail-panel-body       { padding: 14px 16px; }
+.detail-panel-body       { padding: 14px 16px; flex: 1; overflow-y: auto; min-height: 0; }
 .detail-panel-empty      { padding: 24px 16px; text-align: center; color: var(--text-dim); font-family: var(--font-mono); font-size: 0.68rem; }
 .detail-suggestion-bar   { display: flex; gap: 6px; margin-bottom: 10px; }
 .detail-provider-select  { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; font-family: var(--font-mono); font-size: 0.65rem; color: var(--text); }
