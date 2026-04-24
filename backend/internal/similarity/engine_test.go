@@ -419,6 +419,35 @@ func TestFindNoiseAlerts_structuralNoise_lowVolumeTypeNotNoisy(t *testing.T) {
 	}
 }
 
+// When event count data is available and an alert has zero triggers, it cannot be
+// producing undesired volume — structural noise must not be flagged.
+// Regression guard for "Azure Audit - Access Review Deletion" style false positives.
+func TestFindNoiseAlerts_structuralNoise_zeroTriggersWithEventData_notNoisy(t *testing.T) {
+	v := sparseVector("Azure Audit - Access Review Deletion")
+	alert := makeAlert("az-1", "logs_immediate", false, true, nil, "", "")
+	// Pass non-nil eventCounts (data available) but alert not in map → 0 triggers.
+	eventCounts := map[string]int{"other-alert-id": 5}
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, eventCounts, 0)
+	if len(noisy) != 0 {
+		t.Errorf("unscoped logs_immediate with 0 triggers and event data available should not be structural noise, got %v", noisy)
+	}
+}
+
+// When event data is available and the alert has at least 1 trigger, structural
+// noise still fires — the alert is provably producing volume.
+func TestFindNoiseAlerts_structuralNoise_nonZeroTriggersWithEventData_isNoisy(t *testing.T) {
+	v := sparseVector("Broad Audit Alert")
+	alert := makeAlert("az-2", "logs_immediate", false, true, nil, "", "")
+	eventCounts := map[string]int{"az-2": 3} // 3 triggers — below behavioral threshold but > 0
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, eventCounts, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("unscoped logs_immediate with 3 triggers should be structural noise, got %v", noisy)
+	}
+	if noisy[0].NoiseType != "structural" {
+		t.Errorf("noise_type: want structural, got %q", noisy[0].NoiseType)
+	}
+}
+
 func TestFindNoiseAlerts_behavioralNoise_overThreshold(t *testing.T) {
 	v := featureVector{
 		alertName:   "Chatty Alert",

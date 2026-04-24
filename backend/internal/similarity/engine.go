@@ -1009,6 +1009,12 @@ func findNoiseAlerts(
 		isBehavioral := eventCounts != nil && triggerCount > behavioralNoiseThreshold
 
 		// ── Signal 2: Structural (skipped for flow alerts) ───────────────
+		// An alert is structurally noisy when it is unscoped, has no entity
+		// filter, and is a high-volume alert type. When event count data is
+		// available we additionally require triggerCount > 0: an alert that
+		// never fired in 30 days cannot be producing undesired volume, so
+		// flagging it as structural noise would be a false positive (e.g. a
+		// tight Lucene query like "Access Review Deletion" with no scope).
 		isStructural := false
 		if !isFlowAlert && alert != nil {
 			app, sub := coralogix.ExtractAppSubsystem(alert.TypeDef)
@@ -1017,7 +1023,8 @@ func findNoiseAlerts(
 			isHighVolumeType := alert.AlertType == "logs_threshold" ||
 				alert.AlertType == "metric_threshold" ||
 				alert.AlertType == "logs_immediate"
-			isStructural = isUnscoped && noEntity && isHighVolumeType
+			hasEvidenceOfVolume := eventCounts == nil || triggerCount > 0
+			isStructural = isUnscoped && noEntity && isHighVolumeType && hasEvidenceOfVolume
 		}
 
 		// ── Neither signal → skip ─────────────────────────────────────────
