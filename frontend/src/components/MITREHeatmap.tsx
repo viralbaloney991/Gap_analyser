@@ -53,7 +53,7 @@ const TACTIC_LABELS: Record<string, string> = {
   'impact':               'Impact',
 };
 
-const HEATMAP_MAX_HEIGHT_VH = 0.55; // 55 % of viewport — keeps all tactic columns shorter than their content so per-column scroll triggers
+const HEATMAP_BODY_MAX_PX = 1100; // px — only activates on tall monitors (≥ 1440p); keeps columns shorter than the tallest tactic column's ~1308px of content
 
 // ---------------------------------------------------------------------------
 // Colour helpers
@@ -554,19 +554,20 @@ export default function MITREHeatmap({ data, clientName }: Props) {
     : null;
 
   // Measure available height for the heatmap scroll area.
-  // containerRef watches .mitre-heatmap; toolbarRef watches .mitre-toolbar.
-  // scrollHeight = total container height − toolbar height, capped at 55vh.
-  // The 55vh cap ensures that on large/4K monitors the scroll container is
-  // never tall enough to show all techniques without scrolling — Recon has
-  // ~1308px of content, and 55% of a 2160px (4K) viewport = 1188px < 1308px.
-  // The cap is recomputed on every ResizeObserver fire so window resizes are
-  // handled automatically.
+  // Uses window.innerHeight − toolbar.bottom (viewport-relative) instead of
+  // container.height − toolbar.height, which can be content-inflated on first
+  // render before the ResizeObserver fires.
+  // HEATMAP_BODY_MAX_PX caps the height on tall monitors (≥ 1440p) to keep
+  // all tactic columns shorter than their tallest content (~1308px) so that
+  // per-column overflow-y:auto always triggers scroll. On smaller monitors
+  // (MacBook Pro, 1080p) the available height is already < 1100px so no cap
+  // is applied and the heatmap fills the full available viewport.
   useEffect(() => {
     const update = () => {
-      if (!containerRef.current || !toolbarRef.current) return;
-      const total   = containerRef.current.getBoundingClientRect().height;
-      const toolbar = toolbarRef.current.getBoundingClientRect().height;
-      setHeatmapBodyHeight(Math.min(total - toolbar, window.innerHeight * HEATMAP_MAX_HEIGHT_VH));
+      if (!toolbarRef.current) return;
+      const toolbarBottom = toolbarRef.current.getBoundingClientRect().bottom;
+      const available     = window.innerHeight - toolbarBottom;
+      setHeatmapBodyHeight(Math.min(available, HEATMAP_BODY_MAX_PX));
     };
     const obs = new ResizeObserver(update);
     if (containerRef.current) obs.observe(containerRef.current);
