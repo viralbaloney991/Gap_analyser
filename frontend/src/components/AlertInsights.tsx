@@ -75,7 +75,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
 
   const tabs: { key: Tab; label: string; count: number }[] = [
     { key: 'duplicates',      label: 'Duplicates',      count: data.duplicates?.length       ?? 0 },
-    { key: 'families',        label: 'Families',        count: data.families?.length          ?? 0 },
+    { key: 'families',        label: 'Families',        count: familyGroups.length                  },
     { key: 'merge',           label: 'Merge',           count: data.merge_suggestions?.length ?? 0 },
     { key: 'coverage',        label: 'Coverage',        count: gapCount                           },
     { key: 'noise',           label: 'Noise',           count: noiseCount                         },
@@ -372,7 +372,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 const key = `noise-${i}`;
                 const isOpen = expandedCards.has(key);
                 const explanation = effectiveReport?.noise_explanations?.[i];
-                const reasonPreview = noise.reason ?? explanation ?? '';
+                const reasonPreview = noise.reason ?? '';
                 return (
                   <div
                     key={key}

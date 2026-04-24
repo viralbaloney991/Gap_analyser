@@ -620,7 +620,9 @@ html, body, #root {
 .insight-card--family    { border-left: 3px solid var(--accent); }
 .insight-card--merge     { border-left: 3px solid var(--warn);   }
 .insight-card--coverage  { border-left: 3px solid var(--sky);    }
-.insight-card--open      { border-color: var(--border-bright); }
+.insight-card--duplicate.insight-card--open,
+.insight-card--family.insight-card--open,
+.insight-card--noise.insight-card--open    { border-left-color: var(--border-bright); }
 .insight-card-chevron    { font-size: 0.6rem; color: var(--text-dim); flex-shrink: 0; }
 .insight-card-noise-preview { font-family: var(--font-mono); font-size: 0.65rem; color: #f87171; margin: 4px 0 0; line-height: 1.4; }
 
