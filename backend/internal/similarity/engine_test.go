@@ -97,7 +97,7 @@ func TestAnalyze_oktaPairIsNotDuplicate(t *testing.T) {
 	if err := json.Unmarshal(data, &alerts); err != nil {
 		t.Fatalf("failed to parse debug_alerts.json: %v", err)
 	}
-	result := Analyze(alerts, nil, 0)
+	result := Analyze(alerts, nil, 0, nil)
 	for _, dup := range result.Duplicates {
 		hasAccount, hasSource := false, false
 		for _, n := range dup.AlertNames {
@@ -585,5 +585,75 @@ func TestScorePair_dnsAvsAAAA_notDuplicate(t *testing.T) {
 	score := scorePair(aRecord, aaaaRecord, idf)
 	if score >= duplicateThreshold {
 		t.Errorf("DNS A vs AAAA should NOT be duplicates with IDF weighting: score=%.4f >= threshold=%.2f", score, duplicateThreshold)
+	}
+}
+
+// makeMITREResult builds a minimal MITRECoverageResult for test use.
+func makeMITREResult(tactics map[string]struct{ covered, total int }) *models.MITRECoverageResult {
+	breakdown := make(map[string]models.TacticCoverage, len(tactics))
+	for name, ct := range tactics {
+		pct := 0.0
+		if ct.total > 0 {
+			pct = float64(ct.covered) / float64(ct.total) * 100.0
+		}
+		breakdown[name] = models.TacticCoverage{
+			TacticName: name,
+			Total:      ct.total,
+			Covered:    ct.covered,
+			Percent:    pct,
+		}
+	}
+	return &models.MITRECoverageResult{
+		Summary: models.MITRECoverageSummary{TacticBreakdown: breakdown},
+	}
+}
+
+func TestAnalyzeCoverage_mitrePrimaryPath(t *testing.T) {
+	mitre := makeMITREResult(map[string]struct{ covered, total int }{
+		"Reconnaissance":   {0, 9},  // gap
+		"Lateral Movement": {0, 5},  // gap
+		"Initial Access":   {2, 12}, // thin (16.6% < 25%)
+		"Persistence":      {8, 19}, // covered (42%) — no insight
+	})
+	insights := analyzeCoverage(mitre)
+
+	gapFound, thinFound, keywordFound := false, false, false
+	for _, s := range insights {
+		if strings.Contains(s, "No alert coverage") {
+			gapFound = true
+		}
+		if strings.Contains(s, "Thin coverage") && strings.Contains(s, "Initial Access") {
+			thinFound = true
+		}
+		if strings.Contains(s, "login anomalies") || strings.Contains(s, "mfa bypass") {
+			keywordFound = true
+		}
+	}
+	if !gapFound {
+		t.Error("expected gap insight for zero-covered tactics, got none")
+	}
+	if !thinFound {
+		t.Error("expected thin-coverage insight for Initial Access (16%), got none")
+	}
+	if keywordFound {
+		t.Error("keyword-based strings must not appear when mitreResult is non-nil")
+	}
+}
+
+func TestAnalyzeCoverage_nilMitre_returnsNil(t *testing.T) {
+	insights := analyzeCoverage(nil)
+	if len(insights) != 0 {
+		t.Errorf("expected no insights with nil MITRE result, got %v", insights)
+	}
+}
+
+func TestAnalyzeCoverage_allTacticsCovered_noInsights(t *testing.T) {
+	mitre := makeMITREResult(map[string]struct{ covered, total int }{
+		"Persistence":          {8, 19}, // 42% — above threshold
+		"Privilege Escalation": {5, 13}, // 38% — above threshold
+	})
+	insights := analyzeCoverage(mitre)
+	if len(insights) != 0 {
+		t.Errorf("expected no insights when all tactics above threshold, got %v", insights)
 	}
 }

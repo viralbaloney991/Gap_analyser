@@ -117,37 +117,10 @@ const (
 	// When the number of alerts exceeds this value, pairwise comparison is
 	// parallelised across a worker pool.
 	parallelThreshold = 50
-)
 
-// Common security categories used for gap analysis.
-var commonCategories = []string{
-	// Identity
-	"login anomalies",
-	"mfa bypass",
-	"credential stuffing",
-	"token abuse",
-	"session hijacking",
-	// Endpoint
-	"malware execution",
-	"persistence",
-	"privilege escalation",
-	// Cloud
-	"iam abuse",
-	"storage exfiltration",
-	"resource abuse",
-	// Network
-	"lateral movement",
-	"port scanning",
-	"c2 traffic",
-	// Data
-	"data exfiltration",
-	"sensitive data access",
-	"api abuse",
-	// Additional
-	"ransomware",
-	"supply chain",
-	"insider threat",
-}
+	// Minimum tactic coverage % to avoid a thin-coverage insight.
+	minTacticCoveragePct = 25.0
+)
 
 // Package-level regex variables for tokenizeLucene.
 // These are compiled once at startup instead of on every tokenizeLucene call.
@@ -193,8 +166,14 @@ var actionCategories = []struct {
 
 // Analyze performs full similarity analysis on a set of alert definitions.
 // eventCounts maps alertID → 30-day trigger count; pass nil to skip behavioral noise detection.
-// integrationCount is the total number of integrations in the org (used for structural noise reason text).
-func Analyze(alerts []*models.AlertDef, eventCounts map[string]int, integrationCount int) *models.SimilarityResult {
+// integrationCount is the total number of integrations in the org.
+// mitreResult provides MITRE tactic coverage for gap detection; pass nil to skip coverage insights.
+func Analyze(
+	alerts []*models.AlertDef,
+	eventCounts map[string]int,
+	integrationCount int,
+	mitreResult *models.MITRECoverageResult,
+) *models.SimilarityResult {
 	if len(alerts) == 0 {
 		return &models.SimilarityResult{}
 	}
@@ -229,8 +208,8 @@ func Analyze(alerts []*models.AlertDef, eventCounts map[string]int, integrationC
 	// Step 5: Merge suggestions.
 	mergeSuggestions := buildMergeSuggestions(vectors, matrix, n)
 
-	// Step 6: Coverage insights.
-	coverageInsights := analyzeCoverage(vectors)
+	// Step 6: Coverage insights (MITRE-based; nil = no coverage insights).
+	coverageInsights := analyzeCoverage(mitreResult)
 
 	// Step 7: Unique detections.
 	uniqueDetections := findUniqueDetections(vectors, matrix, n)
@@ -910,135 +889,38 @@ func describeMergePattern(vectors []featureVector, members []int) string {
 // Step 6: Coverage Insights
 // ---------------------------------------------------------------------------
 
-// analyzeCoverage checks for over-covered and under-covered security areas.
-func analyzeCoverage(vectors []featureVector) []string {
+// analyzeCoverage generates coverage gap insights from MITRE tactic data.
+// Returns nil when mitreResult is nil.
+func analyzeCoverage(mitreResult *models.MITRECoverageResult) []string {
+	if mitreResult == nil {
+		return nil
+	}
 	var insights []string
-
-	// Count how many alerts mention each common category by scanning all
-	// feature dimensions.
-	categoryCounts := make(map[string]int, len(commonCategories))
-	for _, cat := range commonCategories {
-		categoryCounts[cat] = 0
-	}
-
-	for _, v := range vectors {
-		allTokens := collectAllTokens(v)
-		for _, cat := range commonCategories {
-			if categoryMatchesTokens(cat, allTokens) {
-				categoryCounts[cat]++
-			}
-		}
-	}
-
-	// Identify over-covered and gap areas.
-	maxCount := 0
-	maxCat := ""
-	for _, cat := range commonCategories {
-		if categoryCounts[cat] > maxCount {
-			maxCount = categoryCounts[cat]
-			maxCat = cat
-		}
-	}
-
 	var gaps []string
-	for _, cat := range commonCategories {
-		if categoryCounts[cat] == 0 {
-			gaps = append(gaps, cat)
+	var thin []string
+
+	for _, tc := range mitreResult.Summary.TacticBreakdown {
+		if tc.Total == 0 {
+			continue
+		}
+		switch {
+		case tc.Covered == 0:
+			gaps = append(gaps, tc.TacticName)
+		case tc.Percent < minTacticCoveragePct:
+			thin = append(thin, fmt.Sprintf("%s (%.0f%%)", tc.TacticName, tc.Percent))
 		}
 	}
 
-	if maxCount > 0 && len(gaps) > 0 {
-		insights = append(insights, fmt.Sprintf(
-			"You have %d detections for %s but none for %s",
-			maxCount, maxCat, strings.Join(gaps, ", "),
-		))
-	} else if len(gaps) > 0 {
-		insights = append(insights, fmt.Sprintf(
-			"No coverage detected for: %s",
-			strings.Join(gaps, ", "),
-		))
-	}
+	sort.Strings(gaps)
+	sort.Strings(thin)
 
-	// Per-gap insights.
-	for _, gap := range gaps {
-		insights = append(insights, fmt.Sprintf(
-			"Consider adding detections for %s", gap,
-		))
+	if len(gaps) > 0 {
+		insights = append(insights, fmt.Sprintf("No alert coverage for: %s", strings.Join(gaps, ", ")))
 	}
-
-	// Flag heavy concentration.
-	for _, cat := range commonCategories {
-		if categoryCounts[cat] >= 5 {
-			insights = append(insights, fmt.Sprintf(
-				"Heavy concentration: %d rules cover %s - review for redundancy",
-				categoryCounts[cat], cat,
-			))
-		}
+	for _, t := range thin {
+		insights = append(insights, fmt.Sprintf("Thin coverage: %s — consider adding more detections", t))
 	}
-
 	return insights
-}
-
-// collectAllTokens gathers every feature token from a vector into a single set.
-func collectAllTokens(v featureVector) map[string]struct{} {
-	all := make(map[string]struct{})
-	for k := range v.dataSources {
-		all[k] = struct{}{}
-	}
-	for k := range v.entities {
-		all[k] = struct{}{}
-	}
-	for k := range v.actions {
-		all[k] = struct{}{}
-	}
-	for k := range v.conditions {
-		all[k] = struct{}{}
-	}
-	for k := range v.techniques {
-		all[k] = struct{}{}
-	}
-	if v.alertType != "" {
-		all[v.alertType] = struct{}{}
-	}
-	return all
-}
-
-// categoryMatchesTokens returns true if any token in the set contains words
-// from the category name (fuzzy keyword matching).
-func categoryMatchesTokens(category string, tokens map[string]struct{}) bool {
-	// Split the category into keywords (e.g. "privilege escalation" -> ["privilege", "escalation"]).
-	keywords := strings.Fields(strings.ToLower(category))
-
-	for tok := range tokens {
-		matchCount := 0
-		for _, kw := range keywords {
-			if strings.Contains(tok, kw) {
-				matchCount++
-			}
-		}
-		// All keywords must appear in at least one token.
-		if matchCount == len(keywords) {
-			return true
-		}
-	}
-
-	// Also check if all keywords appear across different tokens.
-	if len(keywords) > 1 {
-		matched := 0
-		for _, kw := range keywords {
-			for tok := range tokens {
-				if strings.Contains(tok, kw) {
-					matched++
-					break
-				}
-			}
-		}
-		if matched == len(keywords) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // ---------------------------------------------------------------------------
