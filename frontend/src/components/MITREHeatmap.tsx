@@ -496,7 +496,7 @@ function TechniqueDetailPanel({
       </div>
 
       <div className="detail-panel-body">
-        {technique.score > 0 ? (
+        {technique.score === 100 ? (
           <div>
             <div className="detail-panel-empty" style={{ paddingBottom: 8 }}>
               Covered by existing alerts:
@@ -513,6 +513,20 @@ function TechniqueDetailPanel({
           </div>
         ) : (
           <div className="detail-suggestion-bar">
+            {technique.score > 0 && (
+              <div className="detail-panel-empty" style={{ paddingBottom: 8 }}>
+                Partially covered by existing alerts:
+                <div className="covered-by-list" style={{ marginTop: 4 }}>
+                  {(technique.comment || '')
+                    .replace(/^Covered by \d+ alert\(s\):\s*/, '')
+                    .split(', ')
+                    .filter(Boolean)
+                    .map((name, i) => (
+                      <div key={i} className="covered-by-item">{name}</div>
+                    ))}
+                </div>
+              </div>
+            )}
             <SuggestionsPanel technique={technique} clientName={clientName} />
           </div>
         )}
