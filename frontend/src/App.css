@@ -814,10 +814,15 @@ html, body, #root {
 .query-text     { font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-sec); line-height: 1.6; }
 .query-field    { color: var(--accent); }
 
-.suggestion-card        { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px; }
-.suggestion-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.suggestion-name        { font-family: var(--font-display); font-size: 0.78rem; font-weight: 600; color: var(--text); }
-.suggestion-desc        { font-family: var(--font-display); font-size: 0.75rem; color: var(--text-sec); line-height: 1.5; margin-bottom: 8px; }
+.suggestion-card         { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 8px; overflow: hidden; }
+.suggestion-card-header,
+.suggestion-header       { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
+.suggestion-name         { font-family: var(--font-display); font-size: 0.78rem; font-weight: 600; color: var(--text); line-height: 1.35; flex: 1; min-width: 0; }
+.suggestion-priority     { font-family: var(--font-mono); font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.06em; flex-shrink: 0; padding-top: 2px; }
+.suggestion-source       { font-family: var(--font-mono); font-size: 0.6rem; color: var(--text-dim); margin-bottom: 6px; }
+.suggestion-desc         { font-family: var(--font-display); font-size: 0.75rem; color: var(--text-sec); line-height: 1.5; margin-bottom: 8px; }
+.suggestion-query        { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 9px; overflow-x: auto; }
+.suggestion-query code   { font-family: var(--font-mono); font-size: 0.62rem; color: var(--text-sec); white-space: pre-wrap; word-break: break-all; line-height: 1.55; }
 
 /* Force graph container */
 .force-graph-container { flex: 1; overflow: hidden; position: relative; }
