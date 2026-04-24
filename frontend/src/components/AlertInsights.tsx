@@ -18,6 +18,15 @@ function simBarGradient(score: number): string {
   return 'linear-gradient(90deg, #ef4444, #ef4444)';
 }
 
+function noiseTypeLabel(noiseType?: string): string {
+  switch (noiseType) {
+    case 'behavioral': return 'Behavioral';
+    case 'structural': return 'Structural';
+    case 'both':       return 'Both';
+    default:           return 'Structural'; // fallback for legacy data without noise_type
+  }
+}
+
 export default function AlertInsights({ data, report, insightsError = false, client }: Props) {
   const [activeTab, setActiveTab]         = useState<Tab>('duplicates');
   const [localReport, setLocalReport]     = useState<InsightsReport | null>(report);
@@ -383,7 +392,12 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                     <div className="insight-card-header">
                       <div className="insight-card-title">{noise.name}</div>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <span className="badge badge--red">Noisy</span>
+                        <span className={`noise-type-badge noise-type-badge--${noise.noise_type ?? 'structural'}`}>
+                          {noiseTypeLabel(noise.noise_type)}
+                        </span>
+                        {(noise.trigger_count ?? 0) > 0 && (
+                          <span className="noise-trigger-count">Fired {noise.trigger_count}×</span>
+                        )}
                         <span className="insight-card-chevron">{isOpen ? '▼' : '▶'}</span>
                       </div>
                     </div>

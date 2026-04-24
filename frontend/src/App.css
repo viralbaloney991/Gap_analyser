@@ -643,6 +643,39 @@ html, body, #root {
 .sim-bar-fill  { height: 100%; border-radius: 2px; }
 .sim-bar-label { font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-sec); flex-shrink: 0; min-width: 70px; }
 
+/* ── Noise card type badges ───────────────────────────────────────── */
+.noise-type-badge {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.noise-type-badge--behavioral {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+.noise-type-badge--structural {
+  background: #78350f;
+  color: #fcd34d;
+}
+
+.noise-type-badge--both {
+  background: #450a0a;
+  color: #fca5a5;
+}
+
+.noise-trigger-count {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
 /* Missing features (noise) */
 .missing-features { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .missing-tag { font-family: var(--font-mono); font-size: 0.6rem; background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); padding: 3px 8px; border-radius: var(--radius-sm); }
