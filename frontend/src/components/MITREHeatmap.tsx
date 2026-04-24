@@ -496,9 +496,15 @@ function TechniqueDetailPanel({
       </div>
 
       <div className="detail-panel-body">
-        <div className="detail-suggestion-bar">
-          <SuggestionsPanel technique={technique} clientName={clientName} />
-        </div>
+        {technique.score >= 1 ? (
+          <div className="detail-panel-empty">
+            This technique is already covered by existing alerts.
+          </div>
+        ) : (
+          <div className="detail-suggestion-bar">
+            <SuggestionsPanel technique={technique} clientName={clientName} />
+          </div>
+        )}
       </div>
     </div>
   );
