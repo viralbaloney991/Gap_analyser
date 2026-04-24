@@ -24,13 +24,15 @@ Cap `heatmapBodyHeight` at 55% of the viewport height inside the existing Resize
 
 ## Why 55%
 
-| Monitor | Viewport height | 55% cap | Recon content (1244px) | Scrolls? |
-|---------|-----------------|---------|------------------------|----------|
-| 1080p   | 1080px          | 594px   | 1244px > 594px         | ✅ Yes   |
-| 1440p   | 900px           | 495px   | 1244px > 495px         | ✅ Yes   |
-| 4K      | 2160px          | 1188px  | 1244px > 1188px        | ✅ Yes   |
+Recon has 43 techniques (10 parent + 33 sub). Content height in `.tactic-techniques`: 43 × 26px + 42 × 3px gap + 12px padding = 1256px. Plus `.tactic-header` (~52px) = **1308px total column content**.
 
-55% is the smallest percentage at which 4K monitors (the hardest case) still force Recon to scroll. Values above 58% fail on 4K.
+| Monitor | Viewport height | 55% cap | Recon column (1308px) | Scrolls? |
+|---------|-----------------|---------|------------------------|----------|
+| 1080p   | 1080px          | 594px   | 1308px > 594px         | ✅ Yes   |
+| 1440p   | 1440px          | 792px   | 1308px > 792px         | ✅ Yes   |
+| 4K      | 2160px          | 1188px  | 1308px > 1188px        | ✅ Yes   |
+
+55% is the largest percentage that still forces Recon to scroll on 4K. At 56%: cap = 1210px, still < 1308px ✅. At 61%: cap = 1318px > 1308px ❌ (Recon no longer scrolls on 4K). 55% leaves a comfortable margin.
 
 ---
 
@@ -80,8 +82,9 @@ The cap `window.innerHeight * 0.55` is computed fresh on every ResizeObserver fi
 
 | Scenario | Before | After |
 |----------|--------|-------|
-| Recon (43 techniques) on 4K monitor | No scroll — 1244px fits in 1800px height | Scrolls — height capped at 1188px |
-| Impact (22 techniques) on 1080p | No scroll — 635px fits in 950px height | No scroll — 635px < 594px cap... scrolls at 1080p, does not scroll at 1440p+ |
+| Recon (43 techniques) on 4K monitor | No scroll — 1308px fits in 1900px+ height | Scrolls — height capped at 1188px |
+| Impact (22 techniques) on 1440p | No scroll — ~689px fits in 1320px height | No scroll — 689px < 792px cap (all 22 fit) |
+| Impact (22 techniques) on 1080p | No scroll — ~689px fits in 960px height | Scrolls — 689px > 594px cap |
 | Short columns (≤10 techniques) | Large dead space | Same dead space — no change to column behaviour |
 | Window resize | Height updates via ResizeObserver | Cap recomputes alongside height — same latency |
 
