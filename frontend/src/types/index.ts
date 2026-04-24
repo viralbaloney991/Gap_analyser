@@ -81,14 +81,19 @@ export interface MergeSuggestion {
 }
 
 /**
- * A sparse alert flagged as likely noise.
- * `missing_features` lists which feature dimensions (data sources, entities,
- * actions, conditions, techniques) are empty for this alert.
+ * An alert flagged by the hybrid noise model.
+ * `missing_features` lists which feature dimensions are empty for this alert.
+ * `trigger_count` is 0 when behavioral data is unavailable or alert is not behaviorally noisy.
+ * `noise_type` is "behavioral" | "structural" | "both".
  */
 export interface NoiseAlert {
   name: string;
   missing_features: string[];
   reason?: string;
+  /** 0 when behavioral data unavailable or not behaviorally noisy */
+  trigger_count?: number;
+  /** "behavioral" | "structural" | "both" */
+  noise_type?: string;
 }
 
 export interface SimilarityResult {
