@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"coralogix-alert-analyzer/internal/models"
 )
@@ -86,6 +87,67 @@ func (c *Client) grpcCall(ctx context.Context, method, body string) ([]byte, err
 	}
 
 	return stdout.Bytes(), nil
+}
+
+// FetchAlertEventCounts returns the trigger count for each alert ID over the
+// past [days] days. Uses EventsService/ListEventsCount (no pagination).
+// Returns a map of alertID → count; IDs not in the response have count 0.
+// If the call fails, returns nil, err — the caller falls back to structural-only.
+func (c *Client) FetchAlertEventCounts(
+	ctx context.Context,
+	alertIDs []string,
+	days int,
+) (map[string]int, error) {
+	if len(alertIDs) == 0 {
+		return map[string]int{}, nil
+	}
+	if days <= 0 {
+		return nil, fmt.Errorf("FetchAlertEventCounts: days must be positive, got %d", days)
+	}
+
+	now := time.Now().UTC()
+	from := now.AddDate(0, 0, -days)
+
+	// NOTE: field names use camelCase per protobuf JSON transcoding convention.
+	// If the API rejects the request or returns unexpected results, verify the
+	// exact field names against the ListEventsCount proto definition.
+	type reqBody struct {
+		AlertIDs       []string `json:"alertIds"`
+		TimestampRange struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		} `json:"timestampRange"`
+	}
+	var body reqBody
+	body.AlertIDs = alertIDs
+	body.TimestampRange.From = from.Format(time.RFC3339)
+	body.TimestampRange.To = now.Format(time.RFC3339)
+
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal event count request: %w", err)
+	}
+
+	raw, err := c.grpcCall(ctx, "com.coralogixapis.events.v3.EventsService/ListEventsCount", string(bodyJSON))
+	if err != nil {
+		return nil, err
+	}
+	return parseEventCountResponse(raw)
+}
+
+// parseEventCountResponse parses the ListEventsCount JSON response into a
+// map of alertID → count. Extracted for testability (avoids grpcurl dependency).
+// NOTE: if the real API uses different field names, update listEventsCountResp only.
+func parseEventCountResponse(raw []byte) (map[string]int, error) {
+	var resp listEventsCountResp
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, fmt.Errorf("parse event count response: %w", err)
+	}
+	counts := make(map[string]int, len(resp.AlertsEventsCounts))
+	for _, entry := range resp.AlertsEventsCounts {
+		counts[entry.AlertID] = entry.Count
+	}
+	return counts, nil
 }
 
 // ── JSON response types (mirrors Coralogix gRPC JSON output) ────────
@@ -177,6 +239,16 @@ func detectAlertType(props *alertDefPropsJSON) string {
 	default:
 		return "unknown"
 	}
+}
+
+// listEventsCountResp mirrors the EventsService/ListEventsCount JSON response.
+// Field names are camelCase per protobuf-to-JSON transcoding convention.
+// Verify against real API output if counts are always 0.
+type listEventsCountResp struct {
+	AlertsEventsCounts []struct {
+		AlertID string `json:"alertId"`
+		Count   int    `json:"count"`
+	} `json:"alertsEventsCounts"`
 }
 
 func extractTypeDef(props *alertDefPropsJSON) map[string]any {
