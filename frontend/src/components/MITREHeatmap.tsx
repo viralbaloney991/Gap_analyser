@@ -513,6 +513,10 @@ export default function MITREHeatmap({ data, clientName }: Props) {
   const [selectedTechnique, setSelectedTechnique] = useState<NavigatorTechnique | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
+  const containerRef       = useRef<HTMLDivElement>(null);
+  const toolbarRef         = useRef<HTMLDivElement>(null);
+  const [heatmapBodyHeight, setHeatmapBodyHeight] = useState(0);
+
   const { summary, navigator_layer: layer } = data;
 
   // Build tactic-keyed technique map
@@ -547,10 +551,30 @@ export default function MITREHeatmap({ data, clientName }: Props) {
     ? `tech:${selectedTechnique.techniqueID}:${selectedTechnique.tactic}`
     : null;
 
+  // Measure available height for the heatmap scroll area.
+  // containerRef watches .mitre-heatmap; toolbarRef watches .mitre-toolbar.
+  // scrollHeight = total container height − toolbar height.
+  // This explicit pixel value is applied as height on .heatmap-scroll-wrap so
+  // align-items:stretch can propagate a DEFINITE height to all tactic columns,
+  // making overflow-y:auto on .tactic-techniques work on any screen size.
+  useEffect(() => {
+    const update = () => {
+      if (!containerRef.current || !toolbarRef.current) return;
+      const total   = containerRef.current.getBoundingClientRect().height;
+      const toolbar = toolbarRef.current.getBoundingClientRect().height;
+      setHeatmapBodyHeight(total - toolbar);
+    };
+    const obs = new ResizeObserver(update);
+    if (containerRef.current) obs.observe(containerRef.current);
+    if (toolbarRef.current)   obs.observe(toolbarRef.current);
+    update();
+    return () => obs.disconnect();
+  }, []);
+
   return (
-    <div className="mitre-heatmap">
+    <div className="mitre-heatmap" ref={containerRef}>
       {/* Toolbar */}
-      <div className="mitre-toolbar">
+      <div className="mitre-toolbar" ref={toolbarRef}>
         <div className="mitre-stats">
           <div className="mitre-stat">
             <div className="mitre-stat-val mitre-stat-val--accent">
@@ -616,7 +640,10 @@ export default function MITREHeatmap({ data, clientName }: Props) {
 
       {/* ── Heatmap view ── */}
       {viewMode === 'heatmap' && (
-        <div className="heatmap-scroll-wrap">
+        <div
+          className="heatmap-scroll-wrap"
+          style={{ height: heatmapBodyHeight > 0 ? heatmapBodyHeight : undefined }}
+        >
           <div className="heatmap-columns">
             {TACTICS_ORDER.map((tactic) => {
               const tacticData = summary.tactic_breakdown[tactic];
