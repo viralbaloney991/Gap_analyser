@@ -421,6 +421,13 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WARN [noise] event counts unavailable for insights client=%s — structural-only", req.Client)
 	}
 
+	// Populate alert features (MITRE technique IDs, data sources, etc.) from alert
+	// definitions. Pass nil for llmMappings — LLM-classified T-codes are not available
+	// in this path, but existing label-based MITRE tags are extracted correctly.
+	// Without this call, alert.Features.Techniques is always empty and AnalyzeCoverage
+	// reports zero coverage across all 14 tactics.
+	coralogix.ExtractFeatures(alerts, nil)
+
 	// Compute MITRE coverage for accurate gap detection in the insights prompt.
 	// In-memory computation (~1ms), no external calls.
 	insightsMitre := mitre.AnalyzeCoverage(alerts)
