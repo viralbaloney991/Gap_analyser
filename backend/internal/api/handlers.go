@@ -217,7 +217,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Run similarity analysis.
-	alertInsights := similarity.Analyze(alerts, eventCounts, len(integrations), nil)
+	alertInsights := similarity.Analyze(alerts, eventCounts, len(integrations), mitreCoverage)
 
 	// Build integration info for response.
 	integrationInfos := make([]models.IntegrationInfo, len(matched))
@@ -421,10 +421,14 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WARN [noise] event counts unavailable for insights client=%s — structural-only", req.Client)
 	}
 
+	// Compute MITRE coverage for accurate gap detection in the insights prompt.
+	// In-memory computation (~1ms), no external calls.
+	insightsMitre := mitre.AnalyzeCoverage(alerts)
+
 	// Similarity analysis is fast (< 1s) and required for the cache key + LLM prompt.
 	// Pass 0 for integrationCount — Monday not fetched in this path; structural reason
 	// text won't include org integration count but all other noise signals are accurate.
-	alertInsights := similarity.Analyze(alerts, insightsEventCounts, 0, nil)
+	alertInsights := similarity.Analyze(alerts, insightsEventCounts, 0, insightsMitre)
 
 	// Check insights cache — skip when model is explicitly specified so the user
 	// can switch models without being served a stale cached response.
