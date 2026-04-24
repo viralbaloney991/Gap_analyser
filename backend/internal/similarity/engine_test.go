@@ -638,6 +638,14 @@ func TestAnalyzeCoverage_mitrePrimaryPath(t *testing.T) {
 	if keywordFound {
 		t.Error("keyword-based strings must not appear when mitreResult is non-nil")
 	}
+	// Verify gap tactics are sorted alphabetically in the combined message.
+	for _, s := range insights {
+		if strings.Contains(s, "No alert coverage") {
+			if !strings.Contains(s, "Lateral Movement, Reconnaissance") {
+				t.Errorf("gap tactics must be sorted alphabetically; got: %q", s)
+			}
+		}
+	}
 }
 
 func TestAnalyzeCoverage_nilMitre_returnsNil(t *testing.T) {
