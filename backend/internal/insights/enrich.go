@@ -110,6 +110,13 @@ func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) str
 		sb.WriteString("Noisy alerts:\n")
 		for _, na := range noiseAlerts {
 			line := fmt.Sprintf("- %s", na.Name)
+			if na.NoiseType != "" {
+				if na.TriggerCount > 0 {
+					line += fmt.Sprintf(" [%s, %d×]", na.NoiseType, na.TriggerCount)
+				} else {
+					line += fmt.Sprintf(" [%s]", na.NoiseType)
+				}
+			}
 			if len(na.MissingFeatures) > 0 {
 				line += fmt.Sprintf(": no %s", strings.Join(na.MissingFeatures, ", no "))
 			}
@@ -124,9 +131,10 @@ func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) str
 	sb.WriteString("STRICT RULES for output:\n")
 	sb.WriteString("- Use ONLY alert names, counts, and patterns from the data above — never invent statistics.\n")
 	sb.WriteString("- Do NOT reference any client name, company name, or product name (you do not know them).\n")
-	sb.WriteString("- Recommendations must describe structural patterns (e.g. 'alerts lacking data source binding'), never specific alert counts you invent.\n\n")
+	sb.WriteString("- Recommendations must describe structural patterns (e.g. 'alerts lacking data source binding'), never specific alert counts you invent.\n")
+	sb.WriteString("- noise_explanations MUST contain exactly one entry per noisy alert listed above — never omit or truncate this field when noisy alerts are present.\n\n")
 	sb.WriteString("Return JSON only — no prose, no markdown:\n")
-	sb.WriteString(`{"summary":"<2-3 sentences>","top_priority":["<3-5 items>"],"strengths":["<2-3 items>"],"recommendations":["<3-5 items>"],"enriched_dups":["<1 sentence each>"],"enriched_gaps":["<1 sentence each>"],"noise_explanations":["<1 sentence each>"]}`)
+	sb.WriteString(`{"summary":"<2-3 sentences>","top_priority":["<3-5 items>"],"strengths":["<2-3 items>"],"recommendations":["<3-5 items>"],"enriched_dups":["<1 sentence each>"],"enriched_gaps":["<1 sentence each>"],"noise_explanations":["<mandatory — one entry per noisy alert, explain the behavioral or structural signal>"]}`)
 
 	return sb.String()
 }
