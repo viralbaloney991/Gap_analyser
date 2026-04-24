@@ -60,15 +60,24 @@ const (
 func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) string {
 	var sb strings.Builder
 
-	sb.WriteString("Role: Senior detection engineer. Task: Analyze alert library quality.\n\n")
-	sb.WriteString(fmt.Sprintf("Library: %d alerts | %d duplicates | %d families | %d noisy alerts\n\n",
-		len(alerts), len(result.Duplicates), len(result.Families), len(result.NoiseAlerts)))
-
-	// Duplicates section.
+	// Pre-compute capped slices so header counts match what the LLM actually sees.
 	dups := result.Duplicates
 	if len(dups) > maxPromptDuplicates {
 		dups = dups[:maxPromptDuplicates]
 	}
+	families := result.Families
+	if len(families) > maxPromptFamilies {
+		families = families[:maxPromptFamilies]
+	}
+	noiseAlerts := result.NoiseAlerts
+	if len(noiseAlerts) > maxPromptNoise {
+		noiseAlerts = noiseAlerts[:maxPromptNoise]
+	}
+
+	sb.WriteString("Role: Senior detection engineer. Task: Analyze alert library quality.\n\n")
+	sb.WriteString(fmt.Sprintf("Library: %d alerts | %d duplicates | %d families | %d noisy alerts\n\n",
+		len(alerts), len(dups), len(families), len(noiseAlerts)))
+
 	if len(dups) > 0 {
 		sb.WriteString("Duplicates:\n")
 		for _, d := range dups {
@@ -80,10 +89,6 @@ func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) str
 	}
 
 	// Families section.
-	families := result.Families
-	if len(families) > maxPromptFamilies {
-		families = families[:maxPromptFamilies]
-	}
 	if len(families) > 0 {
 		sb.WriteString("Families: ")
 		parts := make([]string, len(families))
@@ -102,10 +107,6 @@ func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) str
 	}
 
 	// Noisy alerts section — includes missing features and reason.
-	noiseAlerts := result.NoiseAlerts
-	if len(noiseAlerts) > maxPromptNoise {
-		noiseAlerts = noiseAlerts[:maxPromptNoise]
-	}
 	if len(noiseAlerts) > 0 {
 		sb.WriteString("Noisy alerts:\n")
 		for _, na := range noiseAlerts {

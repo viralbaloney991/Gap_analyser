@@ -131,3 +131,26 @@ func TestBuildPrompt_includesNoiseReason(t *testing.T) {
 		t.Error("prompt should contain missing features")
 	}
 }
+
+func TestBuildPrompt_noiseTypeAndCount(t *testing.T) {
+	result := &models.SimilarityResult{
+		NoiseAlerts: []models.NoiseAlert{
+			{Name: "FreqAlert", NoiseType: "behavioral", TriggerCount: 45},
+			{Name: "StructAlert", NoiseType: "structural", TriggerCount: 0},
+			{Name: "UnclassAlert"},
+		},
+	}
+	prompt := buildPrompt(result, nil)
+	if !strings.Contains(prompt, "[behavioral, 45×]") {
+		t.Errorf("prompt missing [behavioral, 45×] tag; got:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "[structural]") {
+		t.Errorf("prompt missing [structural] tag (no count); got:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "UnclassAlert [") {
+		t.Error("unclassified alert must not have a bracket tag")
+	}
+	if !strings.Contains(prompt, "noise_explanations MUST contain exactly one entry") {
+		t.Error("STRICT RULES missing mandatory noise_explanations line")
+	}
+}
