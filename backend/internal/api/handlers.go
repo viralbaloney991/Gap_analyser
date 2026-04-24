@@ -417,6 +417,9 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		insightsAlertIDs[i] = a.ID
 	}
 	insightsEventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, insightsAlertIDs)
+	if insightsEventCounts == nil {
+		log.Printf("WARN [noise] event counts unavailable for insights client=%s — structural-only", req.Client)
+	}
 
 	// Similarity analysis is fast (< 1s) and required for the cache key + LLM prompt.
 	// Pass 0 for integrationCount — Monday not fetched in this path; structural reason
