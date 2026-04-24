@@ -121,8 +121,12 @@ func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) str
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(`Return JSON only — no prose, no markdown:
-{"summary":"<2-3 sentences>","top_priority":["<3-5 items>"],"strengths":["<2-3 items>"],"recommendations":["<3-5 items>"],"enriched_dups":["<1 sentence each>"],"enriched_gaps":["<1 sentence each>"],"noise_explanations":["<1 sentence each>"]}`)
+	sb.WriteString("STRICT RULES for output:\n")
+	sb.WriteString("- Use ONLY alert names, counts, and patterns from the data above — never invent statistics.\n")
+	sb.WriteString("- Do NOT reference any client name, company name, or product name (you do not know them).\n")
+	sb.WriteString("- Recommendations must describe structural patterns (e.g. 'alerts lacking data source binding'), never specific alert counts you invent.\n\n")
+	sb.WriteString("Return JSON only — no prose, no markdown:\n")
+	sb.WriteString(`{"summary":"<2-3 sentences>","top_priority":["<3-5 items>"],"strengths":["<2-3 items>"],"recommendations":["<3-5 items>"],"enriched_dups":["<1 sentence each>"],"enriched_gaps":["<1 sentence each>"],"noise_explanations":["<1 sentence each>"]}`)
 
 	return sb.String()
 }

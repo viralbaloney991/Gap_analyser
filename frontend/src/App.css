@@ -611,7 +611,6 @@ html, body, #root {
   border-radius: var(--radius-lg);
   padding: 16px;
   position: relative;
-  overflow: hidden;
 }
 
 /* Card type left-border variants — no top-edge gradient for these */
@@ -632,6 +631,9 @@ html, body, #root {
 
 /* Alert pair (duplicate) */
 .alert-pair     { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* Expanded family alert list — scrollable when long */
+.family-alert-list { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; margin-top: 4px; padding-right: 4px; }
 .alert-tag      { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-sec); background: var(--surface-2); padding: 4px 8px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
 .alert-pair-sep { font-family: var(--font-mono); font-size: 0.6rem; color: var(--text-dim); }
 
