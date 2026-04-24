@@ -217,7 +217,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Run similarity analysis.
-	alertInsights := similarity.Analyze(alerts, eventCounts, len(integrations))
+	alertInsights := similarity.Analyze(alerts, eventCounts, len(integrations), nil)
 
 	// Build integration info for response.
 	integrationInfos := make([]models.IntegrationInfo, len(matched))
@@ -424,7 +424,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	// Similarity analysis is fast (< 1s) and required for the cache key + LLM prompt.
 	// Pass 0 for integrationCount — Monday not fetched in this path; structural reason
 	// text won't include org integration count but all other noise signals are accurate.
-	alertInsights := similarity.Analyze(alerts, insightsEventCounts, 0)
+	alertInsights := similarity.Analyze(alerts, insightsEventCounts, 0, nil)
 
 	// Check insights cache — skip when model is explicitly specified so the user
 	// can switch models without being served a stale cached response.
