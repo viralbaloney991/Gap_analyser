@@ -271,20 +271,38 @@ export default function AlertInsights({ data, report, insightsError = false, cli
 
           {/* ── FAMILIES ── */}
           {activeTab === 'families' && (
-            data.families?.length ? (
-              data.families.map((fam, i) => (
-                <div key={i} className="insight-card insight-card--family">
-                  <div className="insight-card-header">
-                    <div className="insight-card-title">{fam.name}</div>
-                    <span className="badge badge--green">{fam.alert_ids.length} alerts</span>
+            familyGroups.length ? (
+              familyGroups.map(([name, { families, totalAlerts }]) => {
+                const key = `fam-${name}`;
+                const isOpen = expandedCards.has(key);
+                const groupCount = families.length;
+                const allAlertNames = families.flatMap(f => f.alert_names);
+                return (
+                  <div
+                    key={key}
+                    className={`insight-card insight-card--family${isOpen ? ' insight-card--open' : ''}`}
+                    onClick={() => toggleCard(key)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="insight-card-header">
+                      <div className="insight-card-title">{name}</div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span className="badge badge--green">
+                          {groupCount > 1 ? `${groupCount} groups · ` : ''}{totalAlerts} alerts
+                        </span>
+                        <span className="insight-card-chevron">{isOpen ? '▼' : '▶'}</span>
+                      </div>
+                    </div>
+                    {isOpen && (
+                      <div className="alert-pair" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                        {allAlertNames.map((alertName, j) => (
+                          <span key={j} className="alert-tag">{alertName}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="alert-pair" style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
-                    {fam.alert_names.map((name, j) => (
-                      <span key={j} className="alert-tag">{name}</span>
-                    ))}
-                  </div>
-                </div>
-              ))
+                );
+              })
             ) : (
               <div className="state-empty">
                 <div className="state-empty__icon">◎</div>
