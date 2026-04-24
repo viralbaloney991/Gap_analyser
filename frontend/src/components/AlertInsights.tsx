@@ -237,7 +237,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                       <>
                         <div className="alert-pair">
                           {dup.alert_names.map((name, j) => (
-                            <span key={j}>
+                            <span key={`${j}-${name}`}>
                               {j > 0 && <span className="alert-pair-sep">↔</span>}
                               <span className="alert-tag">{name}</span>
                             </span>
@@ -372,7 +372,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 const key = `noise-${i}`;
                 const isOpen = expandedCards.has(key);
                 const explanation = effectiveReport?.noise_explanations?.[i];
-                const reasonPreview = noise.reason ?? '';
+                const reasonPreview = noise.reason ?? explanation ?? '';
                 return (
                   <div
                     key={key}

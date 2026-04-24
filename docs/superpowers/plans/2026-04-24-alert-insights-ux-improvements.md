@@ -491,7 +491,7 @@ git commit -m "feat(insights): noise accordion — reason always visible collaps
 - ✅ Noise accordion (expand for full explanation + missing-feature tags) → Task 4
 - ✅ Shared `expandedCards` state + `toggleCard` → Task 1
 - ✅ `familyGroups` memo with `useMemo` → Task 1
-- ✅ CSS foundation (`.insight-card--open`, `.insight-card-chevron`, `.noise-reason-preview`) → Task 1
+- ✅ CSS foundation (`.insight-card--open`, `.insight-card-chevron`, `.insight-card-noise-preview`) → Task 1
 
 **Placeholder scan:** No TBDs. All JSX is complete and exact. All CSS is explicit.
 
