@@ -560,7 +560,7 @@ export default function MITREHeatmap({ data, clientName }: Props) {
   // HEATMAP_BODY_MAX_PX caps the height on tall monitors (≥ 1440p) to keep
   // all tactic columns shorter than their tallest content (~1308px) so that
   // per-column overflow-y:auto always triggers scroll. On smaller monitors
-  // (MacBook Pro, 1080p) the available height is already < 1100px so no cap
+  // (MacBook Pro, 1080p) the available height is already < 900px so no cap
   // is applied and the heatmap fills the full available viewport.
   useEffect(() => {
     const update = () => {
