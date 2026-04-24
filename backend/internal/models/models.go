@@ -71,11 +71,15 @@ type TacticCoverage struct {
 	CoveredSubs int     `json:"covered_subs"`
 }
 
-// NoiseAlert represents a sparse alert with an explanation of its missing features.
+// NoiseAlert represents an alert flagged by the hybrid noise model.
+// TriggerCount is 0 when behavioral data is unavailable or the alert is not behaviorally noisy.
+// NoiseType is "behavioral", "structural", or "both"; empty string means unclassified.
 type NoiseAlert struct {
 	Name            string   `json:"name"`
 	MissingFeatures []string `json:"missing_features"`
 	Reason          string   `json:"reason,omitempty"`
+	TriggerCount    int      `json:"trigger_count,omitempty"`
+	NoiseType       string   `json:"noise_type,omitempty"`
 }
 
 // SimilarityResult is the response for alert insight analysis.
