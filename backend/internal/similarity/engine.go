@@ -191,10 +191,10 @@ var actionCategories = []struct {
 	{[]string{"encrypt", "ransom", "destroy"}, "Impact"},
 }
 
-// Analyze performs full similarity analysis on a set of alert definitions and
-// returns families, duplicates, merge suggestions, coverage insights and
-// unique-detection identifiers.
-func Analyze(alerts []*models.AlertDef) *models.SimilarityResult {
+// Analyze performs full similarity analysis on a set of alert definitions.
+// eventCounts maps alertID → 30-day trigger count; pass nil to skip behavioral noise detection.
+// integrationCount is the total number of integrations in the org (used for structural noise reason text).
+func Analyze(alerts []*models.AlertDef, eventCounts map[string]int, integrationCount int) *models.SimilarityResult {
 	if len(alerts) == 0 {
 		return &models.SimilarityResult{}
 	}
@@ -236,7 +236,7 @@ func Analyze(alerts []*models.AlertDef) *models.SimilarityResult {
 	uniqueDetections := findUniqueDetections(vectors, matrix, n)
 
 	// Step 8: Noise detection.
-	noiseAlerts := findNoiseAlerts(vectors, alerts, nil, 0)
+	noiseAlerts := findNoiseAlerts(vectors, alerts, eventCounts, integrationCount)
 
 	return &models.SimilarityResult{
 		Families:         families,

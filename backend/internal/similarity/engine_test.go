@@ -97,7 +97,7 @@ func TestAnalyze_oktaPairIsNotDuplicate(t *testing.T) {
 	if err := json.Unmarshal(data, &alerts); err != nil {
 		t.Fatalf("failed to parse debug_alerts.json: %v", err)
 	}
-	result := Analyze(alerts)
+	result := Analyze(alerts, nil, 0)
 	for _, dup := range result.Duplicates {
 		hasAccount, hasSource := false, false
 		for _, n := range dup.AlertNames {

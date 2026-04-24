@@ -205,8 +205,19 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	// Run MITRE coverage.
 	mitreCoverage := mitre.AnalyzeCoverage(alerts)
 
+	// Fetch 30-day trigger counts for behavioral noise detection.
+	// Returns nil on failure — findNoiseAlerts falls back to structural-only.
+	alertIDs := make([]string, len(alerts))
+	for i, a := range alerts {
+		alertIDs[i] = a.ID
+	}
+	eventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, alertIDs)
+	if eventCounts == nil {
+		log.Printf("WARN [noise] event counts unavailable for client=%s — structural-only noise", req.Client)
+	}
+
 	// Run similarity analysis.
-	alertInsights := similarity.Analyze(alerts)
+	alertInsights := similarity.Analyze(alerts, eventCounts, len(integrations))
 
 	// Build integration info for response.
 	integrationInfos := make([]models.IntegrationInfo, len(matched))
@@ -400,8 +411,17 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Fetch event counts for behavioral noise (structural-only fallback on error).
+	insightsAlertIDs := make([]string, len(alerts))
+	for i, a := range alerts {
+		insightsAlertIDs[i] = a.ID
+	}
+	insightsEventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, insightsAlertIDs)
+
 	// Similarity analysis is fast (< 1s) and required for the cache key + LLM prompt.
-	alertInsights := similarity.Analyze(alerts)
+	// Pass 0 for integrationCount — Monday not fetched in this path; structural reason
+	// text won't include org integration count but all other noise signals are accurate.
+	alertInsights := similarity.Analyze(alerts, insightsEventCounts, 0)
 
 	// Check insights cache — skip when model is explicitly specified so the user
 	// can switch models without being served a stale cached response.
@@ -847,6 +867,9 @@ func computeInsightsCacheKey(clientName string, result *models.SimilarityResult)
 		return sr.MergeSuggestions[i].Reason < sr.MergeSuggestions[j].Reason
 	})
 	sort.Strings(sr.UniqueDetections)
+	sort.Slice(sr.NoiseAlerts, func(i, j int) bool {
+		return sr.NoiseAlerts[i].Name < sr.NoiseAlerts[j].Name
+	})
 
 	data, err := json.Marshal(sr)
 	if err != nil {
@@ -867,6 +890,21 @@ func fetchAlerts(ctx context.Context, region, apiKey string) ([]*models.AlertDef
 	}
 	defer client.Close()
 	return client.FetchActiveAlerts(ctx)
+}
+
+// fetchEventCounts fetches 30-day trigger counts for the given alert IDs.
+// Returns nil on any error so callers fall back to structural-only noise detection.
+func fetchEventCounts(ctx context.Context, region, apiKey string, alertIDs []string) map[string]int {
+	client, err := coralogix.NewClient(region, apiKey)
+	if err != nil {
+		return nil
+	}
+	defer client.Close()
+	counts, err := client.FetchAlertEventCounts(ctx, alertIDs, 30)
+	if err != nil {
+		return nil
+	}
+	return counts
 }
 
 // writeJSON writes a JSON response with the given status code.
