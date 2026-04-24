@@ -777,7 +777,7 @@ html, body, #root {
 .suggestion-desc        { font-family: var(--font-display); font-size: 0.75rem; color: var(--text-sec); line-height: 1.5; margin-bottom: 8px; }
 
 /* Force graph container */
-.force-graph-container { overflow: hidden; position: relative; }
+.force-graph-container { flex: 1; overflow: hidden; position: relative; }
 
 /* Download button */
 .mitre-download-btn { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 5px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border-bright); background: transparent; color: var(--accent); cursor: pointer; transition: all 0.15s; }
