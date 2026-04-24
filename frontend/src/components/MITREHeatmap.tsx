@@ -53,6 +53,8 @@ const TACTIC_LABELS: Record<string, string> = {
   'impact':               'Impact',
 };
 
+const HEATMAP_MAX_HEIGHT_VH = 0.55; // cap keeps scroll container shorter than Recon's ~1308px of content on any monitor
+
 // ---------------------------------------------------------------------------
 // Colour helpers
 // ---------------------------------------------------------------------------
@@ -564,7 +566,7 @@ export default function MITREHeatmap({ data, clientName }: Props) {
       if (!containerRef.current || !toolbarRef.current) return;
       const total   = containerRef.current.getBoundingClientRect().height;
       const toolbar = toolbarRef.current.getBoundingClientRect().height;
-      setHeatmapBodyHeight(Math.min(total - toolbar, window.innerHeight * 0.55));
+      setHeatmapBodyHeight(Math.min(total - toolbar, window.innerHeight * HEATMAP_MAX_HEIGHT_VH));
     };
     const obs = new ResizeObserver(update);
     if (containerRef.current) obs.observe(containerRef.current);
