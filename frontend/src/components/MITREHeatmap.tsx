@@ -53,7 +53,7 @@ const TACTIC_LABELS: Record<string, string> = {
   'impact':               'Impact',
 };
 
-const HEATMAP_MAX_HEIGHT_VH = 0.55; // cap keeps scroll container shorter than Recon's ~1308px of content on any monitor
+const HEATMAP_MAX_HEIGHT_VH = 0.55; // 55 % of viewport — keeps all tactic columns shorter than their content so per-column scroll triggers
 
 // ---------------------------------------------------------------------------
 // Colour helpers
