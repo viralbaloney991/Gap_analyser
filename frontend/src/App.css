@@ -805,7 +805,20 @@ html, body, #root {
 .detail-suggestion-bar   { display: flex; gap: 6px; margin-bottom: 10px; }
 .detail-provider-select  { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; font-family: var(--font-mono); font-size: 0.65rem; color: var(--text); }
 
-.btn-generate { background: var(--accent); border: none; border-radius: var(--radius-sm); padding: 6px 10px; font-family: var(--font-mono); font-size: 0.65rem; color: var(--bg); font-weight: 500; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; }
+/* Suggestions panel layout */
+.suggestions-section    { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.suggestions-controls   { display: flex; flex-direction: column; gap: 6px; }
+.provider-select        { width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; font-family: var(--font-mono); font-size: 0.65rem; color: var(--text); appearance: none; cursor: pointer; }
+.suggestions-list       { display: flex; flex-direction: column; gap: 0; }
+.suggestions-header     { display: flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 0.62rem; color: var(--text-dim); margin-bottom: 8px; }
+.suggestions-provider   { color: var(--accent); flex: 1; }
+.suggestions-empty      { font-family: var(--font-mono); font-size: 0.65rem; color: var(--text-dim); padding: 8px 0; }
+
+/* Covered-by alerts list */
+.covered-by-list        { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.covered-by-item        { font-family: var(--font-mono); font-size: 0.62rem; color: var(--text-sec); background: var(--accent-dim); border: 1px solid var(--border-bright); border-radius: var(--radius-sm); padding: 4px 8px; line-height: 1.4; }
+
+.btn-generate { background: var(--accent); border: none; border-radius: var(--radius-sm); padding: 7px 12px; font-family: var(--font-mono); font-size: 0.65rem; color: var(--bg); font-weight: 500; cursor: pointer; white-space: nowrap; transition: opacity 0.15s; width: 100%; text-align: center; letter-spacing: 0.06em; text-transform: uppercase; }
 .btn-generate:hover    { opacity: 0.9; }
 .btn-generate:disabled { opacity: 0.5; cursor: not-allowed; }
 

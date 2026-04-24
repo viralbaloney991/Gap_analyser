@@ -394,7 +394,7 @@ function SuggestionsPanel({
         <select
           className="provider-select"
           value={provider}
-          onChange={(e) => setProvider(e.target.value)}
+          onChange={(e) => { setProvider(e.target.value); setSuggestions(null); }}
           disabled={loading}
         >
           <option value="">Mistral Small (default)</option>
@@ -403,8 +403,8 @@ function SuggestionsPanel({
           <option value="gemini">Gemini 2.0 Flash</option>
         </select>
         <button
-          className="btn btn-generate"
-          onClick={() => generate()}
+          className="btn-generate"
+          onClick={() => generate(true)}
           disabled={loading}
         >
           {loading ? 'Generating...' : 'Generate Suggestions'}
@@ -496,9 +496,20 @@ function TechniqueDetailPanel({
       </div>
 
       <div className="detail-panel-body">
-        {technique.score >= 1 ? (
-          <div className="detail-panel-empty">
-            This technique is already covered by existing alerts.
+        {technique.score > 0 ? (
+          <div>
+            <div className="detail-panel-empty" style={{ paddingBottom: 8 }}>
+              Covered by existing alerts:
+            </div>
+            <div className="covered-by-list">
+              {(technique.comment || '')
+                .replace(/^Covered by \d+ alert\(s\):\s*/, '')
+                .split(', ')
+                .filter(Boolean)
+                .map((name, i) => (
+                  <div key={i} className="covered-by-item">{name}</div>
+                ))}
+            </div>
           </div>
         ) : (
           <div className="detail-suggestion-bar">
@@ -682,7 +693,7 @@ export default function MITREHeatmap({ data, clientName }: Props) {
                         <div
                           key={`${t.techniqueID}-${t.tactic}`}
                           className={`tech-cell${isActive ? ' tech-cell--selected' : ''}`}
-                          style={{ background: coverageColor(t.score * 100) }}
+                          style={{ background: coverageColor(t.score) }}
                           onClick={(e) => {
                             e.stopPropagation();
                             handleSelectTechnique(isActive ? null : t);
