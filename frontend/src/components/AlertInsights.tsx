@@ -369,23 +369,40 @@ export default function AlertInsights({ data, report, insightsError = false, cli
           {activeTab === 'noise' && (
             data.noise_alerts?.length ? (
               data.noise_alerts.map((noise: NoiseAlert, i) => {
-                // noise_explanations is string[] — use as plain string
+                const key = `noise-${i}`;
+                const isOpen = expandedCards.has(key);
                 const explanation = effectiveReport?.noise_explanations?.[i];
+                const reasonPreview = noise.reason ?? '';
                 return (
-                  <div key={i} className="insight-card insight-card--noise">
+                  <div
+                    key={key}
+                    className={`insight-card insight-card--noise${isOpen ? ' insight-card--open' : ''}`}
+                    onClick={() => toggleCard(key)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <div className="insight-card-header">
                       <div className="insight-card-title">{noise.name}</div>
-                      <span className="badge badge--red">Noisy</span>
-                    </div>
-                    {(explanation || noise.reason) && (
-                      <p className="insight-card-body">{explanation ?? noise.reason}</p>
-                    )}
-                    {noise.missing_features?.length > 0 && (
-                      <div className="missing-features">
-                        {noise.missing_features.map((feat, j) => (
-                          <span key={j} className="missing-tag">{feat}</span>
-                        ))}
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span className="badge badge--red">Noisy</span>
+                        <span className="insight-card-chevron">{isOpen ? '▼' : '▶'}</span>
                       </div>
+                    </div>
+                    {reasonPreview && (
+                      <p className="insight-card-noise-preview">{reasonPreview}</p>
+                    )}
+                    {isOpen && (
+                      <>
+                        {explanation && (
+                          <p className="insight-card-body">{explanation}</p>
+                        )}
+                        {noise.missing_features?.length > 0 && (
+                          <div className="missing-features">
+                            {noise.missing_features.map((feat, j) => (
+                              <span key={`${j}-${feat}`} className="missing-tag">{feat}</span>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 );
