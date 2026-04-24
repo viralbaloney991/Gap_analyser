@@ -221,7 +221,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 const simPct = Math.round((dup.similarity ?? 0) * 100);
                 return (
                   <div
-                    key={i}
+                    key={key}
                     className={`insight-card insight-card--duplicate${isOpen ? ' insight-card--open' : ''}`}
                     onClick={() => toggleCard(key)}
                     style={{ cursor: 'pointer' }}
