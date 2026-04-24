@@ -60,7 +60,7 @@ const HEATMAP_BODY_MAX_PX = 900; // px — caps scroll container so tallest colu
 // ---------------------------------------------------------------------------
 
 function coverageColor(percent: number): string {
-  if (percent === 0)  return '#1e2535';  // --cov-none
+  if (percent === 0)  return '#7f1d1d';  // --cov-none (uncovered = red)
   if (percent < 25)  return '#7c2d12';  // --cov-low
   if (percent < 50)  return '#92400e';  // --cov-partial
   if (percent < 75)  return '#065f46';  // --cov-good

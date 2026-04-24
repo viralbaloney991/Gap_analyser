@@ -46,7 +46,7 @@
   --radius-xl:     10px;
 
   /* Coverage colours (MITREHeatmap) */
-  --cov-none:      #1e2535;
+  --cov-none:      #7f1d1d;
   --cov-low:       #7c2d12;
   --cov-partial:   #92400e;
   --cov-good:      #065f46;
