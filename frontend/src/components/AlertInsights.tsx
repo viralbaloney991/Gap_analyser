@@ -77,8 +77,32 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     }
   };
 
+  const renderGapSection = (title: string, items: string[] | undefined) => {
+    if (!items?.length) return null;
+    return (
+      <div key={title} style={{ marginBottom: 16 }}>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>{title}</div>
+        {items.map((item, i) => (
+          <div key={i} className="insight-card insight-card--coverage">
+            <div className="insight-card-header">
+              <div className="insight-card-title">{item}</div>
+              <span className="badge badge--sky">Gap</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   const noiseCount = data.noise_alerts?.length ?? 0;
-  const gapCount   = data.coverage_insights?.length ?? 0;
+  const gapCount = effectiveReport
+    ? (effectiveReport.gap_categories.environment_cleanup.length +
+       effectiveReport.gap_categories.no_detection.length +
+       effectiveReport.gap_categories.poor_tactic_coverage.length +
+       effectiveReport.gap_categories.weak_detection_quality.length +
+       effectiveReport.gap_categories.advanced_use_cases.length +
+       effectiveReport.gap_categories.missing_source_alerts.length)
+    : 0;
   const recsCount  = effectiveReport?.recommendations?.length ?? 0;
 
   const tabs: { key: Tab; label: string; count: number }[] = [
@@ -340,27 +364,25 @@ export default function AlertInsights({ data, report, insightsError = false, cli
 
           {/* ── COVERAGE ── */}
           {activeTab === 'coverage' && (
-            data.coverage_insights?.length ? (
-              data.coverage_insights.map((gap, i) => {
-                // enriched_gaps is string[] — use as plain enriched string
-                const enrichedGap = effectiveReport?.enriched_gaps?.[i];
-                return (
-                  <div key={i} className="insight-card insight-card--coverage">
-                    <div className="insight-card-header">
-                      <div className="insight-card-title">{enrichedGap ?? gap}</div>
-                      <span className="badge badge--sky">Gap</span>
-                    </div>
-                    {enrichedGap && enrichedGap !== gap && (
-                      <p className="insight-card-body">{gap}</p>
-                    )}
-                  </div>
-                );
-              })
+            gapCount > 0 ? (
+              <>
+                {renderGapSection('Environment Cleanup', effectiveReport?.gap_categories.environment_cleanup)}
+                {renderGapSection('No Detection', effectiveReport?.gap_categories.no_detection)}
+                {renderGapSection('Poor Tactic Coverage', effectiveReport?.gap_categories.poor_tactic_coverage)}
+                {renderGapSection('Weak Detection Quality', effectiveReport?.gap_categories.weak_detection_quality)}
+                {renderGapSection('Advanced Use Cases', effectiveReport?.gap_categories.advanced_use_cases)}
+                {renderGapSection('Missing Source Alerts', effectiveReport?.gap_categories.missing_source_alerts)}
+              </>
+            ) : isLoading || isRegenerating ? (
+              <>
+                <div className="insights-skeleton skeleton" style={{ width: '100%', height: 60 }} />
+                <div className="insights-skeleton skeleton" style={{ width: '100%', height: 60 }} />
+              </>
             ) : (
               <div className="state-empty">
                 <div className="state-empty__icon">◎</div>
-                <div className="state-empty__title">No coverage gaps</div>
-                <div className="state-empty__body">Full MITRE ATT&amp;CK coverage detected across all tactics.</div>
+                <div className="state-empty__title">No gaps detected</div>
+                <div className="state-empty__body">No significant MITRE coverage gaps or alert quality issues found.</div>
               </div>
             )
           )}
