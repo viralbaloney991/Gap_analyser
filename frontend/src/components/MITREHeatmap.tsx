@@ -397,9 +397,8 @@ function SuggestionsPanel({
           onChange={(e) => { setProvider(e.target.value); setSuggestions(null); }}
           disabled={loading}
         >
-          <option value="">Mistral Small (default)</option>
-          <option value="nvidia">NVIDIA (Nemotron)</option>
-          <option value="claude">Claude (Haiku)</option>
+          <option value="">Claude Opus (default)</option>
+          <option value="nvidia">NVIDIA NIM (Nemotron)</option>
           <option value="gemini">Gemini 2.0 Flash</option>
         </select>
         <button
