@@ -84,24 +84,18 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	if cfg.MondayAPIToken == "" {
-		return nil, fmt.Errorf("config: monday_api_token is required")
+	// Secrets: env vars override yaml (secrets shouldn't be in yaml)
+	if v := os.Getenv("MONDAY_API_TOKEN"); v != "" {
+		cfg.MondayAPIToken = v
 	}
-	if cfg.MondayBoardID == 0 {
-		return nil, fmt.Errorf("config: monday_board_id is required")
-	}
-
-	for name, client := range cfg.Clients {
-		if client.APIKey == "" {
-			return nil, fmt.Errorf("config: client %q missing api_key", name)
-		}
-		region := strings.ToLower(client.Region)
-		if _, ok := models.Regions[region]; !ok {
-			return nil, fmt.Errorf("config: client %q has invalid region %q", name, client.Region)
+	if v := os.Getenv("MONDAY_BOARD_ID"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			cfg.MondayBoardID = n
 		}
 	}
-
-	// LLM: env vars override yaml for API keys (secrets shouldn't be in yaml)
+	if v := os.Getenv("NEON_DSN"); v != "" {
+		cfg.NeonDSN = v
+	}
 	if v := os.Getenv("ANTHROPIC_API_KEY"); v != "" {
 		cfg.LLM.AnthropicAPIKey = v
 	}
@@ -114,8 +108,13 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("GEMINI_API_KEY"); v != "" {
 		cfg.LLM.GeminiAPIKey = v
 	}
-	if v := os.Getenv("NEON_DSN"); v != "" {
-		cfg.NeonDSN = v
+	// Per-client API keys: CLIENT_<UPPERCASED_NAME>_API_KEY
+	for name, client := range cfg.Clients {
+		envKey := "CLIENT_" + strings.ToUpper(strings.ReplaceAll(name, " ", "_")) + "_API_KEY"
+		if v := os.Getenv(envKey); v != "" {
+			client.APIKey = v
+			cfg.Clients[name] = client
+		}
 	}
 	if v := os.Getenv("PIPELINE_GLOBAL_CAP"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -137,6 +136,22 @@ func Load(path string) (*Config, error) {
 		cfg.LLM.PipelineBatchSize = 10
 	}
 
+	// Validate required fields after env var overrides so secrets can come from env.
+	if cfg.MondayAPIToken == "" {
+		return nil, fmt.Errorf("config: monday_api_token is required")
+	}
+	if cfg.MondayBoardID == 0 {
+		return nil, fmt.Errorf("config: monday_board_id is required")
+	}
+	for name, client := range cfg.Clients {
+		if client.APIKey == "" {
+			return nil, fmt.Errorf("config: client %q missing api_key", name)
+		}
+		region := strings.ToLower(client.Region)
+		if _, ok := models.Regions[region]; !ok {
+			return nil, fmt.Errorf("config: client %q has invalid region %q", name, client.Region)
+		}
+	}
 	if cfg.Classifier.Endpoint == "" {
 		return nil, fmt.Errorf("config: classifier.endpoint is required")
 	}
