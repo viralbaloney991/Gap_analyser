@@ -26,7 +26,7 @@ export async function fetchInsights(client: string): Promise<InsightsReport> {
   const res = await fetch(`${API_BASE}/api/insights`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ client }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Insights failed' }));
