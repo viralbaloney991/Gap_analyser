@@ -301,6 +301,7 @@ func AnalyzeCoverage(alerts []*models.AlertDef) *models.MITRECoverageResult {
 	}
 
 	// Track which parent techniques have at least one scoped alert.
+	// An alert is treated as scoped for all of its techniques — scope is alert-level, not per-technique.
 	techHasScoped := make(map[string]bool)
 	for _, alert := range alerts {
 		if len(alert.Features.DataSources) == 0 && len(alert.Features.Entities) == 0 {
@@ -525,6 +526,8 @@ func AnalyzeCoverage(alerts []*models.AlertDef) *models.MITRECoverageResult {
 			continue
 		}
 		seenTechID[t.ID] = true
+		// alertCount reflects parent-level credit — sub-technique alerts are credited to the parent
+		// via the baseTID normalization in the techToAlerts loop above.
 		alertCount := len(techToAlerts[t.ID])
 		techniqueCoverage[t.ID] = models.TechniqueCoverageEntry{
 			Name:       t.Name,
