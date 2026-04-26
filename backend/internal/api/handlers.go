@@ -868,7 +868,7 @@ func computeInsightsCacheKey(clientName string, result *models.SimilarityResult)
 	// Replace colons to avoid ambiguous key segments (consistent with SimilarityResult
 	// slices being deterministically sorted by similarity.Analyze()).
 	safeName := strings.ReplaceAll(clientName, ":", "_")
-	return fmt.Sprintf("insights_v1:%s:%s", safeName, hex.EncodeToString(h[:])[:12]), nil
+	return fmt.Sprintf("insights_v2:%s:%s", safeName, hex.EncodeToString(h[:])[:12]), nil
 }
 
 // fetchAlerts creates a Coralogix client, fetches active alerts, and closes the client.
