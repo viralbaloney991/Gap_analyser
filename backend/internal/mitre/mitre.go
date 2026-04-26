@@ -1,9 +1,11 @@
 package mitre
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"coralogix-alert-analyzer/internal/models"
 )
@@ -631,4 +633,68 @@ func GetAllTechniques() []TechniqueInfo {
 	result := make([]TechniqueInfo, len(masterTechniqueList))
 	copy(result, masterTechniqueList)
 	return result
+}
+
+type techniqueCompact struct {
+	N string            `json:"n"`
+	S map[string]string `json:"s,omitempty"`
+}
+
+var (
+	techniqueJSONOnce  sync.Once
+	techniqueJSONCache string
+	validTechIDsCache  map[string]bool
+)
+
+// BuildTechniqueJSON returns compact tactic-grouped JSON of all MITRE techniques (parents + sub-techniques).
+// Computed once at first call and cached. Used to build the LLM classifier system prompt.
+func BuildTechniqueJSON() string {
+	techniqueJSONOnce.Do(func() {
+		techniqueJSONCache, validTechIDsCache = buildTechniqueData()
+	})
+	return techniqueJSONCache
+}
+
+// ValidTechniqueID reports whether id is a known parent or sub-technique ID in the master list.
+func ValidTechniqueID(id string) bool {
+	BuildTechniqueJSON() // ensure initialized
+	return validTechIDsCache[id]
+}
+
+func buildTechniqueData() (string, map[string]bool) {
+	tacticMap := make(map[string]map[string]techniqueCompact)
+	validIDs := make(map[string]bool)
+
+	for _, t := range masterTechniqueList {
+		validIDs[t.ID] = true
+		if _, ok := tacticMap[t.Tactic]; !ok {
+			tacticMap[t.Tactic] = make(map[string]techniqueCompact)
+		}
+		if _, exists := tacticMap[t.Tactic][t.ID]; exists {
+			continue // already added for this tactic (multi-tactic duplicate)
+		}
+		entry := techniqueCompact{N: t.Name}
+		if len(t.SubTechniques) > 0 {
+			entry.S = make(map[string]string, len(t.SubTechniques))
+			for _, subID := range t.SubTechniques {
+				validIDs[subID] = true
+				parts := strings.SplitN(subID, ".", 2)
+				if len(parts) == 2 {
+					suffix := parts[1]
+					name := subTechniqueNames[subID]
+					if name == "" {
+						name = subID
+					}
+					entry.S[suffix] = name
+				}
+			}
+		}
+		tacticMap[t.Tactic][t.ID] = entry
+	}
+
+	data, err := json.Marshal(tacticMap)
+	if err != nil {
+		return "{}", validIDs
+	}
+	return string(data), validIDs
 }
