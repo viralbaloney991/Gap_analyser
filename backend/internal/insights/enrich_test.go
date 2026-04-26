@@ -3,7 +3,6 @@ package insights
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"coralogix-alert-analyzer/internal/llm"
@@ -20,8 +19,86 @@ func (m *mockProvider) Complete(_ context.Context, _ llm.CompletionRequest) (str
 }
 func (m *mockProvider) Name() string { return "mock" }
 
+// ── parseGapCategoriesResponse ────────────────────────────────────────────────
+
+func TestParseGapCategoriesResponse_ValidJSON(t *testing.T) {
+	raw := `{
+		"summary": "Strong credential-access coverage.",
+		"environment_cleanup": ["Alert A duplicates Alert B"],
+		"no_detection": ["T1078: no coverage"],
+		"poor_tactic_coverage": [],
+		"weak_detection_quality": ["T1059 unscoped"],
+		"advanced_use_cases": [],
+		"missing_source_alerts": ["Azure AD: 0 alerts"]
+	}`
+	report := parseGapCategoriesResponse(raw)
+	if report == nil {
+		t.Fatal("expected non-nil report")
+	}
+	if report.Summary != "Strong credential-access coverage." {
+		t.Errorf("wrong summary: %q", report.Summary)
+	}
+	if len(report.GapCategories.EnvironmentCleanup) != 1 {
+		t.Errorf("environment_cleanup: want 1, got %d", len(report.GapCategories.EnvironmentCleanup))
+	}
+	if len(report.GapCategories.NoDetection) != 1 {
+		t.Errorf("no_detection: want 1, got %d", len(report.GapCategories.NoDetection))
+	}
+	if len(report.GapCategories.PoorTacticCoverage) != 0 {
+		t.Errorf("poor_tactic_coverage: want empty slice, got %v", report.GapCategories.PoorTacticCoverage)
+	}
+	if report.GapCategories.WeakDetectionQuality[0] != "T1059 unscoped" {
+		t.Errorf("weak_detection_quality: %v", report.GapCategories.WeakDetectionQuality)
+	}
+}
+
+func TestParseGapCategoriesResponse_MissingCategory_FillsEmptySlice(t *testing.T) {
+	raw := `{"summary": "partial", "no_detection": ["T1059"]}`
+	report := parseGapCategoriesResponse(raw)
+	if report == nil {
+		t.Fatal("expected non-nil even with missing categories")
+	}
+	if report.GapCategories.EnvironmentCleanup == nil {
+		t.Error("missing category must produce empty slice, not nil")
+	}
+	if len(report.GapCategories.EnvironmentCleanup) != 0 {
+		t.Errorf("want 0 items, got %d", len(report.GapCategories.EnvironmentCleanup))
+	}
+}
+
+func TestParseGapCategoriesResponse_MalformedJSON_ReturnsNil(t *testing.T) {
+	report := parseGapCategoriesResponse("{not valid}")
+	if report != nil {
+		t.Error("want nil for malformed JSON")
+	}
+}
+
+func TestParseGapCategoriesResponse_MarkdownWrapped_Stripped(t *testing.T) {
+	raw := "```json\n{\"summary\": \"ok\", \"no_detection\": [\"T1059\"]}\n```"
+	report := parseGapCategoriesResponse(raw)
+	if report == nil {
+		t.Fatal("should strip markdown fence and parse")
+	}
+	if report.Summary != "ok" {
+		t.Errorf("wrong summary after strip: %q", report.Summary)
+	}
+}
+
+func TestParseGapCategoriesResponse_NullCategoryCoercedToEmpty(t *testing.T) {
+	raw := `{"summary": "ok", "no_detection": null, "environment_cleanup": []}`
+	report := parseGapCategoriesResponse(raw)
+	if report == nil {
+		t.Fatal("expected non-nil")
+	}
+	if report.GapCategories.NoDetection == nil {
+		t.Error("null no_detection should become empty slice")
+	}
+}
+
+// ── Enrich ────────────────────────────────────────────────────────────────────
+
 func TestEnrich_nilResult_returnsNilNil(t *testing.T) {
-	report, err := Enrich(context.Background(), nil, nil, &mockProvider{})
+	report, err := Enrich(context.Background(), nil, nil, nil, nil, &mockProvider{})
 	if report != nil || err != nil {
 		t.Errorf("expected nil, nil; got %v, %v", report, err)
 	}
@@ -29,41 +106,42 @@ func TestEnrich_nilResult_returnsNilNil(t *testing.T) {
 
 func TestEnrich_emptyResult_returnsNilNil(t *testing.T) {
 	result := &models.SimilarityResult{}
-	report, err := Enrich(context.Background(), result, nil, &mockProvider{})
+	report, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{})
 	if report != nil || err != nil {
 		t.Errorf("expected nil, nil for empty result; got %v, %v", report, err)
 	}
 }
 
-func TestEnrich_validResponse_parsesReport(t *testing.T) {
+func TestEnrich_validResponse_parsesGapCategories(t *testing.T) {
 	result := &models.SimilarityResult{
 		Duplicates: []models.DuplicateGroup{
 			{AlertNames: []string{"A", "B"}, Similarity: 0.95},
 		},
 	}
 	jsonResp := `{
-		"summary": "Test summary",
-		"top_priority": ["Fix A"],
-		"strengths": ["Good B"],
-		"recommendations": ["Add C"],
-		"enriched_dups": ["A and B overlap in login detection"],
-		"enriched_gaps": []
+		"summary": "Good baseline coverage.",
+		"environment_cleanup": [],
+		"no_detection": ["T1078: no alerts"],
+		"poor_tactic_coverage": ["Reconnaissance: 0%"],
+		"weak_detection_quality": [],
+		"advanced_use_cases": [],
+		"missing_source_alerts": []
 	}`
-	report, err := Enrich(context.Background(), result, nil, &mockProvider{response: jsonResp})
+	report, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{response: jsonResp})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if report == nil {
 		t.Fatal("expected non-nil report")
 	}
-	if report.Summary != "Test summary" {
-		t.Errorf("expected summary \"Test summary\", got %q", report.Summary)
+	if report.Summary != "Good baseline coverage." {
+		t.Errorf("wrong summary: %q", report.Summary)
 	}
-	if len(report.TopPriority) != 1 || report.TopPriority[0] != "Fix A" {
-		t.Errorf("unexpected top_priority: %v", report.TopPriority)
+	if len(report.GapCategories.NoDetection) != 1 {
+		t.Errorf("no_detection: want 1, got %d", len(report.GapCategories.NoDetection))
 	}
-	if len(report.EnrichedDups) != 1 {
-		t.Errorf("expected 1 enriched dup, got %d", len(report.EnrichedDups))
+	if len(report.GapCategories.PoorTacticCoverage) != 1 {
+		t.Errorf("poor_tactic_coverage: want 1, got %d", len(report.GapCategories.PoorTacticCoverage))
 	}
 }
 
@@ -71,10 +149,7 @@ func TestEnrich_llmError_returnsError(t *testing.T) {
 	result := &models.SimilarityResult{
 		Duplicates: []models.DuplicateGroup{{AlertNames: []string{"A", "B"}}},
 	}
-	report, err := Enrich(context.Background(), result, nil, &mockProvider{err: errors.New("network error")})
-	if report != nil {
-		t.Error("expected nil report on error")
-	}
+	_, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{err: errors.New("network error")})
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
@@ -84,73 +159,8 @@ func TestEnrich_invalidJSON_returnsError(t *testing.T) {
 	result := &models.SimilarityResult{
 		Duplicates: []models.DuplicateGroup{{AlertNames: []string{"A", "B"}}},
 	}
-	report, err := Enrich(context.Background(), result, nil, &mockProvider{response: "not json at all"})
-	if report != nil {
-		t.Error("expected nil report on parse error")
-	}
+	_, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{response: "not json"})
 	if err == nil {
-		t.Error("expected error for invalid JSON")
-	}
-}
-
-func TestEnrich_markdownFence_stripped(t *testing.T) {
-	result := &models.SimilarityResult{
-		Duplicates: []models.DuplicateGroup{{AlertNames: []string{"A", "B"}}},
-	}
-	jsonResp := "```json\n{\"summary\":\"ok\",\"top_priority\":[],\"strengths\":[],\"recommendations\":[],\"enriched_dups\":[],\"enriched_gaps\":[]}\n```"
-	report, err := Enrich(context.Background(), result, nil, &mockProvider{response: jsonResp})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if report == nil || report.Summary != "ok" {
-		t.Errorf("expected summary \"ok\", got %v", report)
-	}
-}
-
-func TestBuildPrompt_includesNoiseReason(t *testing.T) {
-	result := &models.SimilarityResult{
-		Duplicates: []models.DuplicateGroup{
-			{AlertNames: []string{"A", "B"}, Similarity: 0.92},
-		},
-		NoiseAlerts: []models.NoiseAlert{
-			{
-				Name:            "SparseAlert",
-				MissingFeatures: []string{"entities", "actions"},
-				Reason:          "No monitored entity. No behavioral signal.",
-			},
-		},
-	}
-	prompt := buildPrompt(result, nil)
-	if !strings.Contains(prompt, "SparseAlert") {
-		t.Error("prompt should contain noise alert name")
-	}
-	if !strings.Contains(prompt, "No monitored entity") {
-		t.Error("prompt should contain noise reason")
-	}
-	if !strings.Contains(prompt, "entities") {
-		t.Error("prompt should contain missing features")
-	}
-}
-
-func TestBuildPrompt_noiseTypeAndCount(t *testing.T) {
-	result := &models.SimilarityResult{
-		NoiseAlerts: []models.NoiseAlert{
-			{Name: "FreqAlert", NoiseType: "behavioral", TriggerCount: 45},
-			{Name: "StructAlert", NoiseType: "structural", TriggerCount: 0},
-			{Name: "UnclassAlert"},
-		},
-	}
-	prompt := buildPrompt(result, nil)
-	if !strings.Contains(prompt, "[behavioral, 45×]") {
-		t.Errorf("prompt missing [behavioral, 45×] tag; got:\n%s", prompt)
-	}
-	if !strings.Contains(prompt, "[structural]") {
-		t.Errorf("prompt missing [structural] tag (no count); got:\n%s", prompt)
-	}
-	if strings.Contains(prompt, "UnclassAlert [") {
-		t.Error("unclassified alert must not have a bracket tag")
-	}
-	if !strings.Contains(prompt, "noise_explanations MUST contain exactly one entry") {
-		t.Error("STRICT RULES missing mandatory noise_explanations line")
+		t.Error("expected error for invalid JSON, got nil")
 	}
 }

@@ -10,31 +10,76 @@ import (
 	"coralogix-alert-analyzer/internal/models"
 )
 
-// Enrich takes a completed SimilarityResult and alert list, sends one
-// structured prompt to the LLM, and returns an InsightsReport.
+const gapAnalysisSystemPrompt = `You are a senior detection engineer analysing an organisation's security alert library.
+You will receive a JSON object with these fields:
+- alert_count, integration_count: library size
+- tactic_coverage: per-tactic {pct, alerts} — pct is coverage percent
+- technique_coverage: per T-code {name, alerts, weak} — weak=true means covered but unscoped
+- integration_gaps: integrations with zero alerts [{name, alerts}]
+- noise_alerts: alert names flagged as noisy (with type and trigger count)
+- duplicate_groups: number of duplicate alert groups
+
+Respond with ONLY valid JSON matching this exact schema — no prose, no markdown:
+{
+  "summary": "<2-4 sentences: start with strengths then key gaps>",
+  "environment_cleanup": ["<string>"],
+  "no_detection": ["<string>"],
+  "poor_tactic_coverage": ["<string>"],
+  "weak_detection_quality": ["<string>"],
+  "advanced_use_cases": ["<string>"],
+  "missing_source_alerts": ["<string>"]
+}
+
+Rules:
+- Every category field must be a JSON array — use [] if nothing applies, never null or omit the field
+- Only reference techniques, tactics, and alert names present in the input — never fabricate names
+- weak_detection_quality: only flag techniques where weak=true in the input
+- advanced_use_cases: reason over technique type; only flag when threshold/count alerts exist but no anomaly layer
+- summary: prose only (no bullet points), 2-4 sentences`
+
+// Enrich takes a completed SimilarityResult, assembles structured signals, sends them
+// to Claude Opus, and returns an InsightsReport with 6-category gap analysis.
 // Returns nil, nil if the result has no meaningful content to enrich.
 // Returns nil, err on LLM failure (caller treats as non-fatal).
 func Enrich(
 	ctx context.Context,
 	result *models.SimilarityResult,
 	alerts []*models.AlertDef,
+	integrations []models.IntegrationInfo,
+	mitreCoverage *models.MITRECoverageResult,
 	provider llm.Provider,
 ) (*models.InsightsReport, error) {
 	if result == nil || (len(result.Duplicates) == 0 && len(result.Families) == 0 &&
-		len(result.CoverageInsights) == 0 && len(result.NoiseAlerts) == 0) {
+		len(result.NoiseAlerts) == 0) {
 		return nil, nil
 	}
 
-	prompt := buildPrompt(result, alerts)
+	signals := buildStructuredSignals(result, alerts, integrations, mitreCoverage)
+	signalsJSON, err := json.Marshal(signals)
+	if err != nil {
+		return nil, fmt.Errorf("insights signals marshal: %w", err)
+	}
+
 	raw, err := provider.Complete(ctx, llm.CompletionRequest{
-		UserMessage: prompt,
-		MaxTokens:   4096,
+		SystemPrompt: gapAnalysisSystemPrompt,
+		UserMessage:  string(signalsJSON),
+		MaxTokens:    2048,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("insights LLM call: %w", err)
 	}
 
-	// Strip markdown code fence if present.
+	report := parseGapCategoriesResponse(raw)
+	if report == nil {
+		return nil, fmt.Errorf("insights JSON parse: malformed response")
+	}
+	return report, nil
+}
+
+// parseGapCategoriesResponse parses the Claude Opus JSON output into an InsightsReport.
+// Strips markdown fences if present. Missing categories become empty slices.
+// Returns nil on malformed JSON.
+func parseGapCategoriesResponse(raw string) *models.InsightsReport {
 	raw = strings.TrimSpace(raw)
 	if strings.HasPrefix(raw, "```") {
 		if i := strings.Index(raw, "\n"); i != -1 {
@@ -44,111 +89,35 @@ func Enrich(
 		raw = strings.TrimSpace(raw)
 	}
 
-	var report models.InsightsReport
-	if err := json.Unmarshal([]byte(raw), &report); err != nil {
-		return nil, fmt.Errorf("insights JSON parse: %w", err)
+	var loose struct {
+		Summary              string   `json:"summary"`
+		EnvironmentCleanup   []string `json:"environment_cleanup"`
+		NoDetection          []string `json:"no_detection"`
+		PoorTacticCoverage   []string `json:"poor_tactic_coverage"`
+		WeakDetectionQuality []string `json:"weak_detection_quality"`
+		AdvancedUseCases     []string `json:"advanced_use_cases"`
+		MissingSourceAlerts  []string `json:"missing_source_alerts"`
 	}
-	return &report, nil
-}
-
-const (
-	maxPromptDuplicates = 10 // reduced from 15
-	maxPromptFamilies   = 8  // reduced from 15
-	maxPromptNoise      = 12 // reduced from 20
-)
-
-func buildPrompt(result *models.SimilarityResult, alerts []*models.AlertDef) string {
-	var sb strings.Builder
-
-	// Cap slices for token budget — keep real counts for the header so the LLM
-	// knows the actual library scope when writing the summary.
-	totalDups := len(result.Duplicates)
-	dups := result.Duplicates
-	if len(dups) > maxPromptDuplicates {
-		dups = dups[:maxPromptDuplicates]
-	}
-	totalFamilies := len(result.Families)
-	families := result.Families
-	if len(families) > maxPromptFamilies {
-		families = families[:maxPromptFamilies]
-	}
-	totalNoise := len(result.NoiseAlerts)
-	noiseAlerts := result.NoiseAlerts
-	if len(noiseAlerts) > maxPromptNoise {
-		noiseAlerts = noiseAlerts[:maxPromptNoise]
+	if err := json.Unmarshal([]byte(raw), &loose); err != nil {
+		return nil
 	}
 
-	sb.WriteString("Role: Senior detection engineer. Task: Analyze alert library quality.\n\n")
-	sb.WriteString(fmt.Sprintf("Library: %d alerts | %d duplicates | %d families | %d noisy alerts\n\n",
-		len(alerts), totalDups, totalFamilies, totalNoise))
-
-	if len(dups) > 0 {
-		if totalDups > maxPromptDuplicates {
-			sb.WriteString(fmt.Sprintf("Duplicates (showing top %d of %d):\n", maxPromptDuplicates, totalDups))
-		} else {
-			sb.WriteString("Duplicates:\n")
+	coerce := func(s []string) []string {
+		if s == nil {
+			return []string{}
 		}
-		for _, d := range dups {
-			if len(d.AlertNames) >= 2 {
-				sb.WriteString(fmt.Sprintf("- %s ≈ %s (%.0f%%)\n", d.AlertNames[0], d.AlertNames[1], d.Similarity*100))
-			}
-		}
-		sb.WriteString("\n")
+		return s
 	}
 
-	// Families section.
-	if len(families) > 0 {
-		sb.WriteString("Families: ")
-		parts := make([]string, len(families))
-		for i, f := range families {
-			parts[i] = fmt.Sprintf("%s (%s)", f.Name, strings.Join(f.AlertNames, ", "))
-		}
-		sb.WriteString(strings.Join(parts, " | "))
-		sb.WriteString("\n\n")
+	return &models.InsightsReport{
+		Summary: loose.Summary,
+		GapCategories: models.GapCategories{
+			EnvironmentCleanup:   coerce(loose.EnvironmentCleanup),
+			NoDetection:          coerce(loose.NoDetection),
+			PoorTacticCoverage:   coerce(loose.PoorTacticCoverage),
+			WeakDetectionQuality: coerce(loose.WeakDetectionQuality),
+			AdvancedUseCases:     coerce(loose.AdvancedUseCases),
+			MissingSourceAlerts:  coerce(loose.MissingSourceAlerts),
+		},
 	}
-
-	// Coverage gaps section.
-	if len(result.CoverageInsights) > 0 {
-		sb.WriteString("Coverage gaps: ")
-		sb.WriteString(strings.Join(result.CoverageInsights, "; "))
-		sb.WriteString("\n\n")
-	}
-
-	// Noisy alerts section — includes missing features and reason.
-	if len(noiseAlerts) > 0 {
-		if totalNoise > maxPromptNoise {
-			sb.WriteString(fmt.Sprintf("Noisy alerts (showing top %d of %d):\n", maxPromptNoise, totalNoise))
-		} else {
-			sb.WriteString("Noisy alerts:\n")
-		}
-
-		for _, na := range noiseAlerts {
-			line := fmt.Sprintf("- %s", na.Name)
-			if na.NoiseType != "" {
-				if na.TriggerCount > 0 {
-					line += fmt.Sprintf(" [%s, %d×]", na.NoiseType, na.TriggerCount)
-				} else {
-					line += fmt.Sprintf(" [%s]", na.NoiseType)
-				}
-			}
-			if len(na.MissingFeatures) > 0 {
-				line += fmt.Sprintf(": no %s", strings.Join(na.MissingFeatures, ", no "))
-			}
-			if na.Reason != "" {
-				line += fmt.Sprintf(" — %s", na.Reason)
-			}
-			sb.WriteString(line + "\n")
-		}
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString("STRICT RULES for output:\n")
-	sb.WriteString("- Use ONLY alert names, counts, and patterns from the data above — never invent statistics.\n")
-	sb.WriteString("- Do NOT reference any client name, company name, or product name (you do not know them).\n")
-	sb.WriteString("- Recommendations must describe structural patterns (e.g. 'alerts lacking data source binding'), never specific alert counts you invent.\n")
-	sb.WriteString("- noise_explanations MUST contain exactly one entry per noisy alert listed above — never omit or truncate this field when noisy alerts are present.\n\n")
-	sb.WriteString("Return JSON only — no prose, no markdown:\n")
-	sb.WriteString(`{"summary":"<2-3 sentences>","top_priority":["<3-5 items>"],"strengths":["<2-3 items>"],"recommendations":["<3-5 items>"],"enriched_dups":["<1 sentence each>"],"enriched_gaps":["<1 sentence each>"],"noise_explanations":["<mandatory — one entry per noisy alert, explain the behavioral or structural signal>"]}`)
-
-	return sb.String()
 }
