@@ -95,11 +95,19 @@ export interface NoiseAlert {
   noise_type?: 'behavioral' | 'structural' | 'both';
 }
 
+export interface GapCategories {
+  environment_cleanup: string[];
+  no_detection: string[];
+  poor_tactic_coverage: string[];
+  weak_detection_quality: string[];
+  advanced_use_cases: string[];
+  missing_source_alerts: string[];
+}
+
 export interface SimilarityResult {
   families: DetectionFamily[];
   duplicates: DuplicateGroup[];
   merge_suggestions: MergeSuggestion[];
-  coverage_insights: string[];
   unique_detections: string[];
   noise_alerts?: NoiseAlert[];
 }
@@ -111,7 +119,7 @@ export interface InsightsReport {
   strengths: string[];
   recommendations: string[];
   enriched_dups: string[];
-  enriched_gaps: string[];
+  gap_categories: GapCategories;
   noise_explanations?: string[];
 }
 
