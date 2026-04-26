@@ -9,7 +9,7 @@ interface Props {
   client: string;
 }
 
-type Tab = 'duplicates' | 'families' | 'merge' | 'coverage' | 'noise' | 'unique' | 'recommendations';
+type Tab = 'duplicates' | 'families' | 'merge' | 'gaps' | 'noise' | 'unique';
 
 /** Returns a CSS gradient colour for a similarity bar (0–1 scale) */
 function simBarGradient(score: number): string {
@@ -103,16 +103,13 @@ export default function AlertInsights({ data, report, insightsError = false, cli
        effectiveReport.gap_categories.advanced_use_cases.length +
        effectiveReport.gap_categories.missing_source_alerts.length)
     : 0;
-  const recsCount  = effectiveReport?.recommendations?.length ?? 0;
-
   const tabs: { key: Tab; label: string; count: number }[] = [
-    { key: 'duplicates',      label: 'Duplicates',      count: data.duplicates?.length       ?? 0 },
-    { key: 'families',        label: 'Families',        count: familyGroups.length                  },
-    { key: 'merge',           label: 'Merge',           count: data.merge_suggestions?.length ?? 0 },
-    { key: 'coverage',        label: 'Coverage',        count: gapCount                           },
-    { key: 'noise',           label: 'Noise',           count: noiseCount                         },
-    { key: 'unique',          label: 'Unique',          count: data.unique_detections?.length ?? 0 },
-    { key: 'recommendations', label: 'Recommendations', count: recsCount                          },
+    { key: 'duplicates', label: 'Duplicates', count: data.duplicates?.length       ?? 0 },
+    { key: 'families',   label: 'Families',   count: familyGroups.length                  },
+    { key: 'merge',      label: 'Merge',      count: data.merge_suggestions?.length ?? 0 },
+    { key: 'gaps',       label: 'Gaps',       count: gapCount                           },
+    { key: 'noise',      label: 'Noise',      count: noiseCount                         },
+    { key: 'unique',     label: 'Unique',     count: data.unique_detections?.length ?? 0 },
   ];
 
   const hasError = insightsError || regenError;
@@ -363,7 +360,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
           )}
 
           {/* ── COVERAGE ── */}
-          {activeTab === 'coverage' && (
+          {activeTab === 'gaps' && (
             isLoading || isRegenerating ? (
               <>
                 <div className="insights-skeleton skeleton" style={{ width: '100%', height: 60 }} />
@@ -465,38 +462,6 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 <div className="state-empty__icon">◎</div>
                 <div className="state-empty__title">No unique detections</div>
                 <div className="state-empty__body">All alerts overlap with at least one other detection rule.</div>
-              </div>
-            )
-          )}
-
-          {/* ── RECOMMENDATIONS ── */}
-          {activeTab === 'recommendations' && (
-            isLoading || isRegenerating ? (
-              <>
-                <div className="insights-skeleton skeleton" style={{ width: '100%', height: 60 }} />
-                <div className="insights-skeleton skeleton" style={{ width: '100%', height: 60 }} />
-              </>
-            ) : hasError ? (
-              <div className="state-error">
-                <span className="state-error__icon">⚠</span>
-                <div>
-                  <div className="state-error__title">Recommendations unavailable</div>
-                  <div className="state-error__body">LLM enrichment failed. Try regenerating with a different model.</div>
-                  <button className="state-error__retry" onClick={handleRegenerate}>↺ Retry</button>
-                </div>
-              </div>
-            ) : effectiveReport?.recommendations?.length ? (
-              effectiveReport.recommendations.map((rec, i) => (
-                <div key={i} className="rec-item">
-                  <div className="rec-num">{String(i + 1).padStart(2, '0')}</div>
-                  <div className="rec-text">{rec}</div>
-                </div>
-              ))
-            ) : (
-              <div className="state-empty">
-                <div className="state-empty__icon">◎</div>
-                <div className="state-empty__title">No recommendations</div>
-                <div className="state-empty__body">Run insights generation to get AI-powered recommendations.</div>
               </div>
             )
           )}
