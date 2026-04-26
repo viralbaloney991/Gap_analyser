@@ -22,8 +22,14 @@ func TestGapCategories_JSONRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(b, &out); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
+	if len(out.EnvironmentCleanup) != 1 || out.EnvironmentCleanup[0] != "Alert A duplicates Alert B" {
+		t.Errorf("environment_cleanup roundtrip failed: %v", out.EnvironmentCleanup)
+	}
 	if len(out.NoDetection) != 1 || out.NoDetection[0] != "T1078: no coverage" {
 		t.Errorf("no_detection roundtrip failed: %v", out.NoDetection)
+	}
+	if len(out.MissingSourceAlerts) != 1 || out.MissingSourceAlerts[0] != "Azure AD: 0 alerts" {
+		t.Errorf("missing_source_alerts roundtrip failed: %v", out.MissingSourceAlerts)
 	}
 }
 
@@ -49,9 +55,14 @@ func TestInsightsReport_GapCategoriesField(t *testing.T) {
 			NoDetection: []string{"T1059"},
 		},
 	}
-	b, _ := json.Marshal(ir)
+	b, err := json.Marshal(ir)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
 	var out InsightsReport
-	json.Unmarshal(b, &out)
+	if err := json.Unmarshal(b, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
 	if len(out.GapCategories.NoDetection) != 1 {
 		t.Error("GapCategories not preserved through JSON")
 	}
