@@ -54,7 +54,7 @@ func Enrich(
 		return nil, nil
 	}
 
-	signals := buildStructuredSignals(result, alerts, integrations, mitreCoverage)
+	signals := buildStructuredSignals(result, alerts, integrations, mitreCoverage, nil)
 	signalsJSON, err := json.Marshal(signals)
 	if err != nil {
 		return nil, fmt.Errorf("insights signals marshal: %w", err)

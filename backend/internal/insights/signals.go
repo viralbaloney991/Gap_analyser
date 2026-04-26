@@ -2,19 +2,24 @@ package insights
 
 import (
 	"fmt"
+	"sort"
 
+	"coralogix-alert-analyzer/internal/coralogix"
 	"coralogix-alert-analyzer/internal/models"
 )
 
+const maxImmediateCandidates = 30
+
 // structuredSignals is the JSON payload sent to Claude Opus for gap analysis.
 type structuredSignals struct {
-	AlertCount        int                              `json:"alert_count"`
-	IntegrationCount  int                              `json:"integration_count"`
-	TacticCoverage    map[string]signalsTacticEntry    `json:"tactic_coverage"`
-	TechniqueCoverage map[string]signalsTechniqueEntry `json:"technique_coverage"`
-	IntegrationGaps   []signalsIntegrationGap          `json:"integration_gaps"`
-	NoiseAlerts       []string                         `json:"noise_alerts"`
-	DuplicateGroups   int                              `json:"duplicate_groups"`
+	AlertCount               int                              `json:"alert_count"`
+	IntegrationCount         int                              `json:"integration_count"`
+	TacticCoverage           map[string]signalsTacticEntry    `json:"tactic_coverage"`
+	TechniqueCoverage        map[string]signalsTechniqueEntry `json:"technique_coverage"`
+	IntegrationGaps          []signalsIntegrationGap          `json:"integration_gaps"`
+	NoiseAlerts              []string                         `json:"noise_alerts"`
+	DuplicateGroups          int                              `json:"duplicate_groups"`
+	ImmediateNoiseCandidates []signalsImmediateCandidate      `json:"immediate_noise_candidates"`
 }
 
 type signalsTacticEntry struct {
@@ -33,13 +38,21 @@ type signalsIntegrationGap struct {
 	Alerts int    `json:"alerts"`
 }
 
+type signalsImmediateCandidate struct {
+	Name         string `json:"name"`
+	Query        string `json:"query"`
+	TriggerCount int    `json:"trigger_count,omitempty"`
+}
+
 // buildStructuredSignals assembles the ~1–2k token JSON payload for Claude Opus.
 // All parameters are optional — nil inputs produce empty but valid signals.
+// eventCounts may be nil; candidates will have TriggerCount 0 (omitted from JSON).
 func buildStructuredSignals(
 	result *models.SimilarityResult,
 	alerts []*models.AlertDef,
 	integrations []models.IntegrationInfo,
 	mitreCoverage *models.MITRECoverageResult,
+	eventCounts map[string]int,
 ) structuredSignals {
 	sig := structuredSignals{
 		TacticCoverage:    make(map[string]signalsTacticEntry),
@@ -88,6 +101,34 @@ func buildStructuredSignals(
 			})
 		}
 	}
+
+	// Pre-filter: unscoped logs_immediate security alerts with no entity filter.
+	var candidates []signalsImmediateCandidate
+	for _, alert := range alerts {
+		if alert.AlertType != "logs_immediate" {
+			continue
+		}
+		if !alert.Features.IsSecurityAlert || alert.Features.IsBuildingBlock || alert.Features.VendorCovered {
+			continue
+		}
+		app, sub := coralogix.ExtractAppSubsystem(alert.TypeDef)
+		if app != "" || sub != "" {
+			continue
+		}
+		if len(alert.Features.Entities) > 0 {
+			continue
+		}
+		candidates = append(candidates, signalsImmediateCandidate{
+			Name:         alert.Name,
+			Query:        coralogix.ExtractLuceneQuery(alert.TypeDef),
+			TriggerCount: eventCounts[alert.ID],
+		})
+	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].Name < candidates[j].Name })
+	if len(candidates) > maxImmediateCandidates {
+		candidates = candidates[:maxImmediateCandidates]
+	}
+	sig.ImmediateNoiseCandidates = candidates
 
 	return sig
 }
