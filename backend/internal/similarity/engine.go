@@ -2,6 +2,7 @@ package similarity
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"regexp"
 	"runtime"
@@ -966,6 +967,15 @@ func findNoiseAlerts(
 ) []models.NoiseAlert {
 	var noisy []models.NoiseAlert
 
+	// Debug counters — logged at the end to explain zero-noise results.
+	var (
+		skippedVendor    int
+		skippedBB        int
+		skippedNonSec    int
+		skippedNoSignal  int
+		noSignalReasons  = make(map[string]int) // breakdown of why no signal fired
+	)
+
 	for i, v := range vectors {
 		var alert *models.AlertDef
 		if alerts != nil && i < len(alerts) {
@@ -975,12 +985,15 @@ func findNoiseAlerts(
 		// ── Exclusions ────────────────────────────────────────────────────
 		if alert != nil {
 			if alert.Features.VendorCovered {
+				skippedVendor++
 				continue
 			}
 			if alert.Features.IsBuildingBlock {
+				skippedBB++
 				continue
 			}
 			if !alert.Features.IsSecurityAlert {
+				skippedNonSec++
 				continue
 			}
 		}
@@ -1017,10 +1030,28 @@ func findNoiseAlerts(
 				alert.AlertType == "metric_threshold"
 			hasEvidenceOfVolume := eventCounts == nil || triggerCount > 0
 			isStructural = isUnscoped && noEntity && isHighVolumeType && hasEvidenceOfVolume
+
+			if !isStructural && !isBehavioral {
+				switch {
+				case !isHighVolumeType:
+					noSignalReasons["type="+alert.AlertType]++
+				case !isUnscoped:
+					noSignalReasons["scoped"]++
+				case !noEntity:
+					noSignalReasons["has_entity"]++
+				case !hasEvidenceOfVolume:
+					noSignalReasons["zero_triggers"]++
+				default:
+					noSignalReasons["behavioral_below_threshold"]++
+				}
+			}
+		} else if isFlowAlert && !isBehavioral {
+			noSignalReasons["flow_below_threshold"]++
 		}
 
 		// ── Neither signal → skip ─────────────────────────────────────────
 		if !isBehavioral && !isStructural {
+			skippedNoSignal++
 			continue
 		}
 
@@ -1031,6 +1062,11 @@ func findNoiseAlerts(
 			TriggerCount:    triggerCount,
 			NoiseType:       noiseTypeString(isBehavioral, isStructural),
 		})
+	}
+
+	if len(noisy) == 0 && len(vectors) > 0 {
+		log.Printf("DEBUG [noise] 0 noisy alerts from %d vectors: vendor=%d bb=%d non-sec=%d no-signal=%d reasons=%v eventCountsAvailable=%v",
+			len(vectors), skippedVendor, skippedBB, skippedNonSec, skippedNoSignal, noSignalReasons, eventCounts != nil)
 	}
 
 	sort.Slice(noisy, func(i, j int) bool {
