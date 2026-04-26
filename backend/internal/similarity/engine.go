@@ -124,9 +124,6 @@ const (
 	// When the number of alerts exceeds this value, pairwise comparison is
 	// parallelised across a worker pool.
 	parallelThreshold = 50
-
-	// Minimum tactic coverage % to avoid a thin-coverage insight.
-	minTacticCoveragePct = 25.0
 )
 
 // Package-level regex variables for tokenizeLucene and tokenizeAlertName.
@@ -216,10 +213,10 @@ func Analyze(
 	// Step 5: Merge suggestions.
 	mergeSuggestions := buildMergeSuggestions(vectors, matrix, n)
 
-	// Step 7: Unique detections.
+	// Step 6: Unique detections.
 	uniqueDetections := findUniqueDetections(vectors, matrix, n)
 
-	// Step 8: Noise detection.
+	// Step 7: Noise detection.
 	noiseAlerts := findNoiseAlerts(vectors, alerts, eventCounts, integrationCount)
 
 	return &models.SimilarityResult{
@@ -913,7 +910,7 @@ func describeMergePattern(vectors []featureVector, members []int) string {
 }
 
 // ---------------------------------------------------------------------------
-// Step 7: Unique Detections
+// Step 6: Unique Detections
 // ---------------------------------------------------------------------------
 
 // findUniqueDetections returns the IDs of alerts whose maximum similarity to
@@ -938,7 +935,7 @@ func findUniqueDetections(vectors []featureVector, matrix [][]float64, n int) []
 }
 
 // ---------------------------------------------------------------------------
-// Step 8: Noise Detection
+// Step 7: Noise Detection
 // ---------------------------------------------------------------------------
 
 const behavioralNoiseThreshold = 20 // triggers in 30 days before alert is behaviorally noisy
