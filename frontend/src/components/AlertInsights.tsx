@@ -83,7 +83,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
       <div key={title} style={{ marginBottom: 16 }}>
         <div className="eyebrow" style={{ marginBottom: 8 }}>{title}</div>
         {items.map((item, i) => (
-          <div key={i} className="insight-card insight-card--coverage">
+          <div key={`${i}-${item}`} className="insight-card insight-card--coverage">
             <div className="insight-card-header">
               <div className="insight-card-title">{item}</div>
               <span className="badge badge--sky">Gap</span>

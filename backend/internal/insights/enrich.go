@@ -13,7 +13,7 @@ import (
 const gapAnalysisSystemPrompt = `You are a senior detection engineer analysing an organisation's security alert library.
 You will receive a JSON object with these fields:
 - alert_count, integration_count: library size
-- tactic_coverage: per-tactic {pct, alerts} — pct is coverage percent
+- tactic_coverage: per-tactic {pct, alerts} — pct is coverage percent (0–100)
 - technique_coverage: per T-code {name, alerts, weak} — weak=true means covered but unscoped
 - integration_gaps: integrations with zero alerts [{name, alerts}]
 - noise_alerts: alert names flagged as noisy (with type and trigger count)
@@ -33,6 +33,7 @@ Respond with ONLY valid JSON matching this exact schema — no prose, no markdow
 Rules:
 - Every category field must be a JSON array — use [] if nothing applies, never null or omit the field
 - Only reference techniques, tactics, and alert names present in the input — never fabricate names
+- poor_tactic_coverage: flag any tactic with pct < 25
 - weak_detection_quality: only flag techniques where weak=true in the input
 - advanced_use_cases: reason over technique type; only flag when threshold/count alerts exist but no anomaly layer
 - summary: prose only (no bullet points), 2-4 sentences`
@@ -49,8 +50,7 @@ func Enrich(
 	mitreCoverage *models.MITRECoverageResult,
 	provider llm.Provider,
 ) (*models.InsightsReport, error) {
-	if result == nil || (len(result.Duplicates) == 0 && len(result.Families) == 0 &&
-		len(result.NoiseAlerts) == 0) {
+	if result == nil {
 		return nil, nil
 	}
 

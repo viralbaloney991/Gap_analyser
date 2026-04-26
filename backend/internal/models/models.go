@@ -71,7 +71,7 @@ type GapCategories struct {
 type MITRECoverageResult struct {
 	NavigatorLayer    map[string]any                    `json:"navigator_layer"`
 	Summary           MITRECoverageSummary              `json:"summary"`
-	TechniqueCoverage map[string]TechniqueCoverageEntry `json:"technique_coverage"`
+	TechniqueCoverage map[string]TechniqueCoverageEntry `json:"-"` // internal only; not exposed in AnalyzeResponse
 }
 
 type MITRECoverageSummary struct {

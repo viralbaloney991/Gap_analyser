@@ -462,6 +462,8 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Monday integrations are not fetched in this synchronous path to avoid blocking.
+	// missing_source_alerts will be empty; all other gap categories are fully populated.
 	ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, nil, insightsMitre, insightsProvider)
 	if enrichErr != nil {
 		log.Printf("WARN [insights] enrich client=%s: %v", req.Client, enrichErr)

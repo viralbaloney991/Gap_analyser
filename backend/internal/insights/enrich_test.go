@@ -104,11 +104,28 @@ func TestEnrich_nilResult_returnsNilNil(t *testing.T) {
 	}
 }
 
-func TestEnrich_emptyResult_returnsNilNil(t *testing.T) {
+func TestEnrich_emptyResult_stillCallsLLM(t *testing.T) {
+	// Empty similarity result (no duplicates/noise) still calls LLM — MITRE gaps
+	// are independent of similarity signals and must not be silently skipped.
 	result := &models.SimilarityResult{}
-	report, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{})
-	if report != nil || err != nil {
-		t.Errorf("expected nil, nil for empty result; got %v, %v", report, err)
+	jsonResp := `{
+		"summary": "No similarity issues. MITRE coverage gaps dominate.",
+		"environment_cleanup": [],
+		"no_detection": ["T1078: no alerts"],
+		"poor_tactic_coverage": [],
+		"weak_detection_quality": [],
+		"advanced_use_cases": [],
+		"missing_source_alerts": []
+	}`
+	report, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{response: jsonResp})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if report == nil {
+		t.Fatal("expected non-nil report for non-nil result")
+	}
+	if len(report.GapCategories.NoDetection) != 1 {
+		t.Errorf("no_detection: want 1, got %d", len(report.GapCategories.NoDetection))
 	}
 }
 
