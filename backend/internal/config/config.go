@@ -12,23 +12,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ClassifierConfig holds settings for the local MITRE classifier sidecar.
-type ClassifierConfig struct {
-	Endpoint string `yaml:"endpoint"` // e.g. "http://localhost:8001"
-}
-
 // Config holds the application configuration.
 type Config struct {
 	MondayAPIToken string                  `yaml:"monday_api_token"`
 	MondayBoardID  int64                   `yaml:"monday_board_id"`
 	Clients        map[string]ClientConfig `yaml:"clients"`
 	LLM            LLMConfig               `yaml:"llm"`
-	Classifier     ClassifierConfig        `yaml:"classifier"`
 	NeonDSN        string                  `yaml:"neon_dsn"`
 }
 
-// LLMConfig holds settings for LLM-powered suggestions.
-// API keys can also be set via ANTHROPIC_API_KEY / NVIDIA_API_KEY env vars.
+// LLMConfig holds settings for all LLM-powered features.
+// API keys must be set via environment variables (ANTHROPIC_API_KEY, NVIDIA_API_KEY, etc.).
 type LLMConfig struct {
 	DefaultProvider string `yaml:"default_provider"` // "claude" or "nvidia"
 	AnthropicAPIKey string `yaml:"anthropic_api_key"`
@@ -43,10 +37,6 @@ type LLMConfig struct {
 	// ClassifierProvider/Model is a fast model used only for MITRE technique classification.
 	ClassifierProvider string `yaml:"classifier_provider"`
 	ClassifierModel    string `yaml:"classifier_model"`
-
-	// ValidatorProvider/Model: Llama used to confirm/reject classifier candidates.
-	ValidatorProvider string `yaml:"validator_provider"`
-	ValidatorModel    string `yaml:"validator_model"`
 
 	// SuggestionProvider/Model: model used for gap alert suggestion generation.
 	SuggestionProvider string `yaml:"suggestion_provider"`
@@ -151,12 +141,6 @@ func Load(path string) (*Config, error) {
 		if _, ok := models.Regions[region]; !ok {
 			return nil, fmt.Errorf("config: client %q has invalid region %q", name, client.Region)
 		}
-	}
-	if cfg.Classifier.Endpoint == "" {
-		return nil, fmt.Errorf("config: classifier.endpoint is required")
-	}
-	if cfg.LLM.ValidatorModel == "" {
-		return nil, fmt.Errorf("config: llm.validator_model is required")
 	}
 	if cfg.LLM.SuggestionModel == "" {
 		return nil, fmt.Errorf("config: llm.suggestion_model is required")
