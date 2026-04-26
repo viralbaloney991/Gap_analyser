@@ -297,6 +297,28 @@ func (h *Handler) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// resolveInsightsProvider constructs the LLM provider for insights enrichment
+// using the insights-specific config fields, falling back to the default provider.
+func resolveInsightsProvider(cfg *config.Config) (llm.Provider, error) {
+	providerName := cfg.LLM.InsightsProvider
+	if providerName == "" {
+		providerName = cfg.LLM.DefaultProvider
+	}
+	model := cfg.LLM.InsightsModel
+	if model == "" {
+		model = cfg.LLM.ClaudeModel
+	}
+	return llm.NewClassifierProvider(providerName, model, llm.ProviderConfig{
+		AnthropicAPIKey: cfg.LLM.AnthropicAPIKey,
+		ClaudeModel:     cfg.LLM.ClaudeModel,
+		NvidiaAPIKey:    cfg.LLM.NvidiaAPIKey,
+		NvidiaModel:     cfg.LLM.NvidiaModel,
+		NvidiaEndpoint:  cfg.LLM.NvidiaEndpoint,
+		GeminiAPIKey:    cfg.LLM.GeminiAPIKey,
+		GeminiModel:     cfg.LLM.GeminiModel,
+	})
+}
+
 // runInsightsBackground runs LLM insights enrichment as a fire-and-forget goroutine.
 // Uses a detached context so that client disconnect does not abort the work.
 // Results are stored in Redis for /api/insights to serve.
@@ -305,26 +327,7 @@ func (h *Handler) runInsightsBackground(client string, alertInsights *models.Sim
 	go func() {
 		defer cancel()
 
-		insightsProviderName := h.config.LLM.InsightsProvider
-		if insightsProviderName == "" {
-			insightsProviderName = h.config.LLM.SuggestionProvider
-		}
-		insightsModel := h.config.LLM.InsightsModel
-		if insightsModel == "" {
-			insightsModel = h.config.LLM.NvidiaModel
-		}
-		insightsProvider, err := llm.NewClassifierProvider(
-			insightsProviderName, "",
-			llm.ProviderConfig{
-				AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
-				ClaudeModel:     h.config.LLM.ClaudeModel,
-				NvidiaAPIKey:    h.config.LLM.NvidiaAPIKey,
-				NvidiaModel:     insightsModel,
-				NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
-				GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
-				GeminiModel:     h.config.LLM.GeminiModel,
-			},
-		)
+		insightsProvider, err := resolveInsightsProvider(h.config)
 		if err != nil {
 			log.Printf("WARN [insights-bg] client=%s provider init failed: %v", client, err)
 			return
