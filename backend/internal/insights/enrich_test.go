@@ -112,7 +112,7 @@ func TestParseGapCategoriesResponse_NullCategoryCoercedToEmpty(t *testing.T) {
 // ── Enrich ────────────────────────────────────────────────────────────────────
 
 func TestEnrich_nilResult_returnsNilNil(t *testing.T) {
-	report, err := Enrich(context.Background(), nil, nil, nil, nil, &mockProvider{})
+	report, err := Enrich(context.Background(), nil, nil, nil, nil, nil, &mockProvider{})
 	if report != nil || err != nil {
 		t.Errorf("expected nil, nil; got %v, %v", report, err)
 	}
@@ -131,7 +131,7 @@ func TestEnrich_emptyResult_stillCallsLLM(t *testing.T) {
 		"advanced_use_cases": [],
 		"missing_source_alerts": []
 	}`
-	report, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{response: jsonResp})
+	report, err := Enrich(context.Background(), result, nil, nil, nil, nil, &mockProvider{response: jsonResp})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestEnrich_validResponse_parsesGapCategories(t *testing.T) {
 		"advanced_use_cases": [],
 		"missing_source_alerts": []
 	}`
-	report, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{response: jsonResp})
+	report, err := Enrich(context.Background(), result, nil, nil, nil, nil, &mockProvider{response: jsonResp})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestEnrich_llmError_returnsError(t *testing.T) {
 	result := &models.SimilarityResult{
 		Duplicates: []models.DuplicateGroup{{AlertNames: []string{"A", "B"}}},
 	}
-	_, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{err: errors.New("network error")})
+	_, err := Enrich(context.Background(), result, nil, nil, nil, nil, &mockProvider{err: errors.New("network error")})
 	if err == nil {
 		t.Error("expected error, got nil")
 	}
@@ -190,7 +190,7 @@ func TestEnrich_invalidJSON_returnsError(t *testing.T) {
 	result := &models.SimilarityResult{
 		Duplicates: []models.DuplicateGroup{{AlertNames: []string{"A", "B"}}},
 	}
-	_, err := Enrich(context.Background(), result, nil, nil, nil, &mockProvider{response: "not json"})
+	_, err := Enrich(context.Background(), result, nil, nil, nil, nil, &mockProvider{response: "not json"})
 	if err == nil {
 		t.Error("expected error for invalid JSON, got nil")
 	}

@@ -17,6 +17,8 @@ You will receive a JSON object with these fields:
 - technique_coverage: per T-code {name, alerts, weak} — weak=true means covered but unscoped
 - integration_gaps: integrations with zero alerts [{name, alerts}]
 - noise_alerts: alert names flagged as noisy (with type and trigger count)
+- immediate_noise_candidates: unscoped logs_immediate security alerts with no entity filter
+  [{name, query, trigger_count}] — trigger_count is 0 when event data unavailable
 - duplicate_groups: number of duplicate alert groups
 
 Respond with ONLY valid JSON matching this exact schema — no prose, no markdown:
@@ -36,7 +38,12 @@ Rules:
 - poor_tactic_coverage: flag any tactic with pct < 25
 - weak_detection_quality: only flag techniques where weak=true in the input
 - advanced_use_cases: reason over technique type; only flag when threshold/count alerts exist but no anomaly layer
-- summary: prose only (no bullet points), 2-4 sentences`
+- summary: prose only (no bullet points), 2-4 sentences
+- immediate_noise_candidates: for each entry, assess whether the Lucene query targets a
+  high-frequency event (common user actions, broad field matches, platform lifecycle events).
+  If yes, flag in environment_cleanup with a specific recommendation to add app/subsystem
+  scoping or an entity filter. If the query is narrow enough to be low-frequency by nature,
+  do not flag it. Use trigger_count as a signal when > 0; reason from query semantics when 0.`
 
 // Enrich takes a completed SimilarityResult, assembles structured signals, sends them
 // to Claude Opus, and returns an InsightsReport with 6-category gap analysis.
@@ -48,13 +55,14 @@ func Enrich(
 	alerts []*models.AlertDef,
 	integrations []models.IntegrationInfo,
 	mitreCoverage *models.MITRECoverageResult,
+	eventCounts map[string]int,
 	provider llm.Provider,
 ) (*models.InsightsReport, error) {
 	if result == nil {
 		return nil, nil
 	}
 
-	signals := buildStructuredSignals(result, alerts, integrations, mitreCoverage, nil)
+	signals := buildStructuredSignals(result, alerts, integrations, mitreCoverage, eventCounts)
 	signalsJSON, err := json.Marshal(signals)
 	if err != nil {
 		return nil, fmt.Errorf("insights signals marshal: %w", err)
