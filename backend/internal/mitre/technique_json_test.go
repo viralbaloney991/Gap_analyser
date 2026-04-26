@@ -3,6 +3,8 @@ package mitre
 import (
 	"encoding/json"
 	"testing"
+
+	"coralogix-alert-analyzer/internal/models"
 )
 
 func TestBuildTechniqueJSON_IsValidJSON(t *testing.T) {
@@ -80,5 +82,68 @@ func TestValidTechniqueID_UnknownParent(t *testing.T) {
 func TestValidTechniqueID_UnknownSubTechnique(t *testing.T) {
 	if ValidTechniqueID("T1059.999") {
 		t.Error("T1059.999 should not be valid")
+	}
+}
+
+func TestAnalyzeCoverage_TechniqueLevel(t *testing.T) {
+	// Unscoped alert (no DataSources, no Entities) — should mark T1059 as weak
+	unscopedAlert := &models.AlertDef{
+		Name: "Broad CMD Alert",
+		Features: models.AlertFeatures{
+			Techniques:  []string{"T1059"},
+			DataSources: nil,
+			Entities:    nil,
+		},
+	}
+	// Scoped alert (has DataSources) — T1078 should NOT be weak
+	scopedAlert := &models.AlertDef{
+		Name: "Valid Accounts Scoped",
+		Features: models.AlertFeatures{
+			Techniques:  []string{"T1078"},
+			DataSources: []string{"windows-security"},
+		},
+	}
+
+	result := AnalyzeCoverage([]*models.AlertDef{unscopedAlert, scopedAlert})
+
+	if result.TechniqueCoverage == nil {
+		t.Fatal("TechniqueCoverage map is nil")
+	}
+
+	t1059, ok := result.TechniqueCoverage["T1059"]
+	if !ok {
+		t.Fatal("T1059 missing from TechniqueCoverage")
+	}
+	if t1059.AlertCount != 1 {
+		t.Errorf("T1059: want AlertCount=1, got %d", t1059.AlertCount)
+	}
+	if !t1059.Weak {
+		t.Error("T1059: want Weak=true (unscoped alert), got false")
+	}
+	if t1059.Name == "" {
+		t.Error("T1059: Name must be populated")
+	}
+
+	t1078, ok := result.TechniqueCoverage["T1078"]
+	if !ok {
+		t.Fatal("T1078 missing from TechniqueCoverage")
+	}
+	if t1078.Weak {
+		t.Error("T1078: want Weak=false (scoped alert), got true")
+	}
+	if t1078.AlertCount != 1 {
+		t.Errorf("T1078: want AlertCount=1, got %d", t1078.AlertCount)
+	}
+
+	// Uncovered technique must be present with AlertCount=0
+	t1566, ok := result.TechniqueCoverage["T1566"]
+	if !ok {
+		t.Fatal("T1566 (Phishing) missing from TechniqueCoverage — all parent techniques must be present")
+	}
+	if t1566.AlertCount != 0 {
+		t.Errorf("T1566: want AlertCount=0, got %d", t1566.AlertCount)
+	}
+	if t1566.Weak {
+		t.Error("T1566: Weak must be false when AlertCount=0")
 	}
 }

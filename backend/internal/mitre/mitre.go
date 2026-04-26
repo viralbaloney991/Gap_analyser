@@ -300,6 +300,21 @@ func AnalyzeCoverage(alerts []*models.AlertDef) *models.MITRECoverageResult {
 		}
 	}
 
+	// Track which parent techniques have at least one scoped alert.
+	techHasScoped := make(map[string]bool)
+	for _, alert := range alerts {
+		if len(alert.Features.DataSources) == 0 && len(alert.Features.Entities) == 0 {
+			continue
+		}
+		for _, tid := range alert.Features.Techniques {
+			baseTID := tid
+			if idx := strings.Index(tid, "."); idx != -1 {
+				baseTID = tid[:idx]
+			}
+			techHasScoped[baseTID] = true
+		}
+	}
+
 	// Compute per-technique scores and per-tactic coverage.
 	tacticTotal := make(map[string]int)
 	tacticCovered := make(map[string]int)
@@ -501,8 +516,26 @@ func AnalyzeCoverage(alerts []*models.AlertDef) *models.MITRECoverageResult {
 		"links":    []any{},
 	}
 
+	// Build technique-level coverage map (parent techniques only, deduplicated).
+	techniqueCoverage := make(map[string]models.TechniqueCoverageEntry)
+	seenTechID := make(map[string]bool)
+	for i := range masterTechniqueList {
+		t := &masterTechniqueList[i]
+		if seenTechID[t.ID] {
+			continue
+		}
+		seenTechID[t.ID] = true
+		alertCount := len(techToAlerts[t.ID])
+		techniqueCoverage[t.ID] = models.TechniqueCoverageEntry{
+			Name:       t.Name,
+			AlertCount: alertCount,
+			Weak:       alertCount > 0 && !techHasScoped[t.ID],
+		}
+	}
+
 	return &models.MITRECoverageResult{
-		NavigatorLayer: navigatorLayer,
+		NavigatorLayer:    navigatorLayer,
+		TechniqueCoverage: techniqueCoverage,
 		Summary: models.MITRECoverageSummary{
 			TotalTechniques:      totalTechniques,
 			CoveredTechniques:    coveredTechniques,
