@@ -565,6 +565,7 @@ html, body, #root {
 .insights-model-header { padding: 14px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
 
 .insights-model-select { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 10px; font-family: var(--font-mono); font-size: 0.68rem; color: var(--text); appearance: none; cursor: pointer; }
+.insights-model-badge { flex: 1; font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600; color: var(--text); padding: 7px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); white-space: nowrap; }
 
 .insights-regenerate-btn { flex-shrink: 0; padding: 7px 12px; border-radius: var(--radius-sm); background: var(--accent); border: none; cursor: pointer; font-family: var(--font-mono); font-size: 0.68rem; color: var(--bg); font-weight: 500; transition: opacity 0.15s; }
 .insights-regenerate-btn:disabled   { opacity: 0.5; cursor: not-allowed; }

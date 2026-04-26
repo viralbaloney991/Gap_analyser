@@ -30,7 +30,6 @@ function noiseTypeLabel(noiseType?: string): string {
 export default function AlertInsights({ data, report, insightsError = false, client }: Props) {
   const [activeTab, setActiveTab]         = useState<Tab>('duplicates');
   const [localReport, setLocalReport]     = useState<InsightsReport | null>(report);
-  const [selectedModel, setSelectedModel] = useState<'mistral' | 'gemma'>('mistral');
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regenError, setRegenError]       = useState(false);
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
@@ -68,7 +67,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     setIsRegenerating(true);
     setRegenError(false);
     try {
-      const newReport = await fetchInsights(client, selectedModel);
+      const newReport = await fetchInsights(client);
       setLocalReport(newReport);
     } catch (e) {
       console.warn('[insights regen]', e);
@@ -100,22 +99,14 @@ export default function AlertInsights({ data, report, insightsError = false, cli
       {/* ══ LEFT PANEL ══ */}
       <div className="insights-panel">
 
-        {/* Model selector */}
+        {/* Provider badge */}
         <div className="insights-model-header">
-          <select
-            className="insights-model-select"
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value as 'mistral' | 'gemma')}
-            disabled={isRegenerating}
-          >
-            <option value="mistral">Mistral Small 3.1</option>
-            <option value="gemma">Gemma 3 27B</option>
-          </select>
+          <span className="insights-model-badge">Claude Opus 4.7</span>
           <button
             className="insights-regenerate-btn"
             onClick={handleRegenerate}
             disabled={isRegenerating || !client}
-            title="Regenerate insights with selected model"
+            title="Regenerate insights"
           >
             {isRegenerating ? '…' : '↺'}
           </button>
@@ -138,7 +129,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 <div>
                   <div className="state-error__title">Insights unavailable</div>
                   <div className="state-error__body">LLM enrichment failed. Check your provider configuration.</div>
-                  <button className="state-error__retry" onClick={handleRegenerate}>↺ Retry with {selectedModel === 'mistral' ? 'Mistral Small' : 'Gemma 3 27B'}</button>
+                  <button className="state-error__retry" onClick={handleRegenerate}>↺ Retry with Claude Opus</button>
                 </div>
               </div>
             ) : (
