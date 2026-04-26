@@ -48,10 +48,30 @@ type AlertFeatures struct {
 	IsSecurityAlert bool    `json:"is_security_alert"`
 }
 
+// TechniqueCoverageEntry holds per-technique alert coverage for the signals pipeline.
+// Weak is true when the technique is covered but all covering alerts are unscoped
+// (no DataSources and no Entities), making detection quality poor.
+type TechniqueCoverageEntry struct {
+	Name       string `json:"name"`
+	AlertCount int    `json:"alert_count"`
+	Weak       bool   `json:"weak,omitempty"`
+}
+
+// GapCategories holds the 6-category LLM gap analysis output.
+type GapCategories struct {
+	EnvironmentCleanup   []string `json:"environment_cleanup"`
+	NoDetection          []string `json:"no_detection"`
+	PoorTacticCoverage   []string `json:"poor_tactic_coverage"`
+	WeakDetectionQuality []string `json:"weak_detection_quality"`
+	AdvancedUseCases     []string `json:"advanced_use_cases"`
+	MissingSourceAlerts  []string `json:"missing_source_alerts"`
+}
+
 // MITRECoverageResult is the response for MITRE coverage analysis.
 type MITRECoverageResult struct {
-	NavigatorLayer map[string]any    `json:"navigator_layer"`
-	Summary        MITRECoverageSummary `json:"summary"`
+	NavigatorLayer    map[string]any                    `json:"navigator_layer"`
+	Summary           MITRECoverageSummary              `json:"summary"`
+	TechniqueCoverage map[string]TechniqueCoverageEntry `json:"technique_coverage"`
 }
 
 type MITRECoverageSummary struct {
@@ -85,12 +105,11 @@ type NoiseAlert struct {
 
 // SimilarityResult is the response for alert insight analysis.
 type SimilarityResult struct {
-	Families         []DetectionFamily   `json:"families"`
-	Duplicates       []DuplicateGroup    `json:"duplicates"`
-	MergeSuggestions []MergeSuggestion   `json:"merge_suggestions"`
-	CoverageInsights []string            `json:"coverage_insights"`
-	UniqueDetections []string            `json:"unique_detections"`
-	NoiseAlerts      []NoiseAlert        `json:"noise_alerts"`
+	Families         []DetectionFamily `json:"families"`
+	Duplicates       []DuplicateGroup  `json:"duplicates"`
+	MergeSuggestions []MergeSuggestion `json:"merge_suggestions"`
+	UniqueDetections []string          `json:"unique_detections"`
+	NoiseAlerts      []NoiseAlert      `json:"noise_alerts"`
 }
 
 type DetectionFamily struct {
@@ -114,14 +133,14 @@ type MergeSuggestion struct {
 
 // InsightsReport is the LLM-generated analyst report for a SimilarityResult.
 type InsightsReport struct {
-	Model              string   `json:"model,omitempty"`
-	Summary            string   `json:"summary"`
-	TopPriority        []string `json:"top_priority"`
-	Strengths          []string `json:"strengths"`
-	Recommendations    []string `json:"recommendations"`
-	EnrichedDups       []string `json:"enriched_dups"`
-	EnrichedGaps       []string `json:"enriched_gaps"`
-	NoiseExplanations  []string `json:"noise_explanations"`
+	Model             string        `json:"model,omitempty"`
+	Summary           string        `json:"summary"`
+	TopPriority       []string      `json:"top_priority"`
+	Strengths         []string      `json:"strengths"`
+	Recommendations   []string      `json:"recommendations"`
+	EnrichedDups      []string      `json:"enriched_dups"`
+	GapCategories     GapCategories `json:"gap_categories"`
+	NoiseExplanations []string      `json:"noise_explanations"`
 }
 
 type PairComparison struct {
