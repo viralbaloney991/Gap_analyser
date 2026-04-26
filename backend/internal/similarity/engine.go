@@ -25,6 +25,7 @@ type featureVector struct {
 	techniques        map[string]struct{}
 	groupByCategories map[string]struct{}
 	luceneQuery       map[string]struct{} // tokenised Lucene query — actual detection logic
+	nameTokens        map[string]struct{} // tokenised alert name — discriminates near-identical alerts
 	timeWindow        string              // from AlertFeatures.TimeWindow
 	tactics           []string            // from AlertFeatures.Tactics — used by deriveFamilyName
 }
@@ -46,6 +47,7 @@ type idfTable struct {
 	techniques  map[string]float64
 	groupBy     map[string]float64
 	luceneQuery map[string]float64
+	nameTokens  map[string]float64
 }
 
 // buildIDF computes an idfTable from the full set of feature vectors.
@@ -64,6 +66,7 @@ func buildIDF(vectors []featureVector) idfTable {
 		techniques:  make(map[string]float64),
 		groupBy:     make(map[string]float64),
 		luceneQuery: make(map[string]float64),
+		nameTokens:  make(map[string]float64),
 	}
 
 	type dimDef struct {
@@ -78,6 +81,7 @@ func buildIDF(vectors []featureVector) idfTable {
 		{func(v featureVector) map[string]struct{} { return v.techniques }, tbl.techniques},
 		{func(v featureVector) map[string]struct{} { return v.groupByCategories }, tbl.groupBy},
 		{func(v featureVector) map[string]struct{} { return v.luceneQuery }, tbl.luceneQuery},
+		{func(v featureVector) map[string]struct{} { return v.nameTokens }, tbl.nameTokens},
 	}
 
 	for _, dim := range dims {
@@ -98,16 +102,19 @@ func buildIDF(vectors []featureVector) idfTable {
 // Similarity weights for each feature dimension.
 const (
 	// Weights sum to exactly 1.00.
-	// 9-dimension model: Lucene query and TimeWindow added in 2026-04.
-	weightDataSources  = 0.15
+	// 10-dimension model: nameTokens added 2026-04 to discriminate near-identical alerts
+	// (e.g. "DNS CNAME Record Deleted" vs "DNS A Record Deleted").
+	// groupBy reduced (was over-dominant); luceneQuery increased (primary detection signal).
+	weightDataSources  = 0.10
 	weightEntities     = 0.10
-	weightActions      = 0.15
-	weightConditions   = 0.10 // reduced: less signal than Lucene query
+	weightActions      = 0.10
+	weightConditions   = 0.05
 	weightTechniques   = 0.10
-	weightGroupBy      = 0.15 // reduced: was over-dominant
-	weightAlertType    = 0.05 // reduced: binary, low signal
-	weightLuceneQuery  = 0.15 // new: actual detection logic
-	weightTimeWindow   = 0.05 // new: binary equality bonus
+	weightGroupBy      = 0.05 // reduced: normalised categories lose specificity
+	weightAlertType    = 0.05 // binary, low signal
+	weightLuceneQuery  = 0.25 // increased: actual detection logic, primary discriminator
+	weightTimeWindow   = 0.05 // binary equality bonus
+	weightNameTokens   = 0.15 // new: alert name tokens discriminate near-identical alerts
 
 	duplicateThreshold = 0.85
 	familyThreshold    = 0.60
@@ -122,12 +129,13 @@ const (
 	minTacticCoveragePct = 25.0
 )
 
-// Package-level regex variables for tokenizeLucene.
-// These are compiled once at startup instead of on every tokenizeLucene call.
+// Package-level regex variables for tokenizeLucene and tokenizeAlertName.
+// Compiled once at startup instead of on every call.
 var (
-	luceneAtomRe  = regexp.MustCompile(`[\w.]+:(?:"[^"]*"|[^\s()\[\]{}+\-!"]+)`)
-	luceneNormRe  = regexp.MustCompile(`["\s]+`)
-	luceneSplitRe = regexp.MustCompile(`[:()\[\]{}\s+\-!"]+`)
+	luceneAtomRe   = regexp.MustCompile(`[\w.]+:(?:"[^"]*"|[^\s()\[\]{}+\-!"]+)`)
+	luceneNormRe   = regexp.MustCompile(`["\s]+`)
+	luceneSplitRe  = regexp.MustCompile(`[:()\[\]{}\s+\-!"]+`)
+	alertNameSplit = regexp.MustCompile(`[\s\-_/\.]+`)
 )
 
 // tacticLabels maps MITRE ATT&CK tactic slugs to human-readable names.
@@ -266,6 +274,27 @@ func tokenizeLucene(q string) map[string]struct{} {
 	return s
 }
 
+// tokenizeAlertName splits an alert name into a lowercase token set.
+// Splits on whitespace, hyphens, underscores, slashes, and dots.
+// Single-character tokens are dropped as noise (e.g. the "A" in "DNS A Record").
+// This preserves multi-character discriminating tokens like "cname", "aaaa", "sfdc".
+func tokenizeAlertName(name string) map[string]struct{} {
+	if name == "" {
+		return nil
+	}
+	lower := strings.ToLower(name)
+	s := make(map[string]struct{})
+	for _, tok := range alertNameSplit.Split(lower, -1) {
+		if len(tok) > 1 {
+			s[tok] = struct{}{}
+		}
+	}
+	if len(s) == 0 {
+		return nil
+	}
+	return s
+}
+
 // ---------------------------------------------------------------------------
 // Step 1: Feature Vector Creation
 // ---------------------------------------------------------------------------
@@ -286,6 +315,7 @@ func buildFeatureVectors(alerts []*models.AlertDef) []featureVector {
 			techniques:        toSet(a.Features.Techniques),
 			groupByCategories: normalizeGroupByKeys(a.GroupByKeys),
 			luceneQuery:       tokenizeLucene(coralogix.ExtractLuceneQuery(a.TypeDef)),
+			nameTokens:        tokenizeAlertName(a.Name),
 			timeWindow:        a.Features.TimeWindow,
 			tactics:           a.Features.Tactics,
 		}
@@ -386,6 +416,7 @@ func scorePair(a, b featureVector, idf idfTable) float64 {
 	score += weightTechniques * weightedJaccard(a.techniques, b.techniques, idf.techniques)
 	score += weightGroupBy * weightedJaccard(a.groupByCategories, b.groupByCategories, idf.groupBy)
 	score += weightLuceneQuery * weightedJaccard(a.luceneQuery, b.luceneQuery, idf.luceneQuery)
+	score += weightNameTokens * weightedJaccard(a.nameTokens, b.nameTokens, idf.nameTokens)
 
 	if a.alertType == b.alertType && a.alertType != "" {
 		score += weightAlertType

@@ -3,6 +3,8 @@ set -euo pipefail
 
 BACKEND_DIR="$(cd "$(dirname "$0")/backend" && pwd)"
 FRONTEND_DIR="$(cd "$(dirname "$0")/frontend" && pwd)"
+ENV_FILE="$(cd "$(dirname "$0")" && pwd)/.env"
+[[ -f "$ENV_FILE" ]] && set -a && source "$ENV_FILE" && set +a
 BACKEND_LOG=/tmp/backend.log
 FRONTEND_LOG=/tmp/frontend.log
 PID_FILE=/tmp/dev-servers.pid

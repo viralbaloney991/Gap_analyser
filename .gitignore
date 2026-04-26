@@ -18,6 +18,7 @@ backend/debug_alerts.json
 # Private / tooling
 .claude/
 .superpowers/
+.env
 
 # Misc
 *.xlsx

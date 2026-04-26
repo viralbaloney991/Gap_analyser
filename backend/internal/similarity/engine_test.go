@@ -46,7 +46,7 @@ func TestScorePair_oktaPairIsNotDuplicate(t *testing.T) {
 
 func TestScorePair_identicalAlertSamePivotIsDuplicate(t *testing.T) {
 	a := featureVector{
-		alertName: "Alert A",
+		alertName: "Duplicate Alert Alpha",
 		alertType: "logs_threshold",
 		dataSources: map[string]struct{}{"okta": {}},
 		entities:    map[string]struct{}{"user": {}},
@@ -55,10 +55,12 @@ func TestScorePair_identicalAlertSamePivotIsDuplicate(t *testing.T) {
 		techniques:  map[string]struct{}{"t1110": {}},
 		groupByCategories: normalizeGroupByKeys([]string{"okta.actor.alternateId"}),
 		luceneQuery: map[string]struct{}{"eventtype": {}, "okta": {}, "login": {}},
+		nameTokens:  tokenizeAlertName("Duplicate Alert Alpha"),
 		timeWindow:  "5m",
 	}
 	b := a
-	b.alertName = "Alert B"
+	b.alertName = "Duplicate Alert Beta"
+	b.nameTokens = tokenizeAlertName("Duplicate Alert Beta")
 	score := scorePair(a, b, idfTable{})
 	if score < duplicateThreshold {
 		t.Errorf("identical alert with same pivot should be duplicate: score=%.4f < threshold=%.2f", score, duplicateThreshold)
@@ -66,10 +68,10 @@ func TestScorePair_identicalAlertSamePivotIsDuplicate(t *testing.T) {
 }
 
 func TestScorePair_identicalAlertNoPivotIsDuplicate(t *testing.T) {
-	// After the jaccardGroupBy fix (empty+empty→0.0), two identical alerts with no
-	// groupBy need their Lucene query and timeWindow dimensions to reach the threshold.
+	// Two identical alerts with no groupBy must still reach the duplicate threshold.
+	// The Lucene query + nameTokens + other dims together carry enough weight.
 	a := featureVector{
-		alertName:   "Alert A",
+		alertName:   "AWS AssumeRole Cross Account",
 		alertType:   "logs_threshold",
 		dataSources: map[string]struct{}{"aws": {}},
 		entities:    map[string]struct{}{"role": {}},
@@ -77,11 +79,11 @@ func TestScorePair_identicalAlertNoPivotIsDuplicate(t *testing.T) {
 		conditions:  map[string]struct{}{"cross_account": {}},
 		techniques:  map[string]struct{}{"t1550": {}},
 		luceneQuery: map[string]struct{}{"assumerole": {}, "cross_account": {}, "aws": {}},
+		nameTokens:  tokenizeAlertName("AWS AssumeRole Cross Account"),
 		timeWindow:  "5m",
 		// groupByCategories intentionally nil on both sides
 	}
 	b := a
-	b.alertName = "Alert B"
 	score := scorePair(a, b, idfTable{})
 	if score < duplicateThreshold {
 		t.Errorf("identical alert with no pivot should still be duplicate: score=%.4f < threshold=%.2f", score, duplicateThreshold)
@@ -120,7 +122,7 @@ func TestAnalyze_oktaPairIsNotDuplicate(t *testing.T) {
 func TestWeightsSumToOne(t *testing.T) {
 	const sum = weightDataSources + weightEntities + weightActions +
 		weightConditions + weightTechniques + weightGroupBy + weightAlertType +
-		weightLuceneQuery + weightTimeWindow
+		weightLuceneQuery + weightTimeWindow + weightNameTokens
 	if math.Abs(sum-1.0) > 1e-9 {
 		t.Errorf("similarity weights sum to %.10f, want exactly 1.0", sum)
 	}
@@ -693,5 +695,85 @@ func TestAnalyzeCoverage_allTacticsCovered_noInsights(t *testing.T) {
 	insights := analyzeCoverage(mitre)
 	if len(insights) != 0 {
 		t.Errorf("expected no insights when all tactics above threshold, got %v", insights)
+	}
+}
+
+func TestScorePair_cloudflareARecordVsCNAME_notDuplicate(t *testing.T) {
+	// Regression test for "Cloudflare - Audit - DNS CNAME Record Deleted" vs
+	// "Cloudflare - Audit - DNS A Record Deleted" being incorrectly flagged at 93%.
+	//
+	// These alerts differ only in the record type: all other dimensions
+	// (data sources, entities, actions, conditions, techniques, groupBy, alertType,
+	// timeWindow) are identical. Previously the luceneQuery weight alone was not
+	// enough to push the score below the threshold.
+	//
+	// The fix: nameTokens dimension + increased luceneQuery weight + reduced groupBy weight.
+	// With IDF weighting, rare discriminating tokens ("cname") dominate and lower both
+	// the luceneQuery and nameTokens Jaccard scores significantly.
+
+	sharedGroupBy := normalizeGroupByKeys([]string{"cloudflare.actor.email"}) // → {"user"}
+
+	commonLucene := map[string]struct{}{
+		"coralogix.metadata.applicationname:cloudflare": {},
+		"and":                      {},
+		"eventtype:deletednsrecord": {},
+	}
+	makeQuery := func(recordType string) map[string]struct{} {
+		m := make(map[string]struct{}, len(commonLucene)+1)
+		for k := range commonLucene {
+			m[k] = struct{}{}
+		}
+		m["cloudflare.newvaluejson.type:"+recordType] = struct{}{}
+		return m
+	}
+
+	cname := featureVector{
+		alertName:         "Cloudflare - Audit - DNS CNAME Record Deleted",
+		alertType:         "logs_threshold",
+		dataSources:       map[string]struct{}{"cloudflare": {}},
+		entities:          map[string]struct{}{"user": {}},
+		actions:           map[string]struct{}{"delete": {}},
+		conditions:        map[string]struct{}{"dns": {}},
+		techniques:        map[string]struct{}{"t1071": {}},
+		groupByCategories: sharedGroupBy,
+		luceneQuery:       makeQuery("cname"),
+		nameTokens:        tokenizeAlertName("Cloudflare - Audit - DNS CNAME Record Deleted"),
+		timeWindow:        "5m",
+	}
+	aRec := featureVector{
+		alertName:         "Cloudflare - Audit - DNS A Record Deleted",
+		alertType:         "logs_threshold",
+		dataSources:       map[string]struct{}{"cloudflare": {}},
+		entities:          map[string]struct{}{"user": {}},
+		actions:           map[string]struct{}{"delete": {}},
+		conditions:        map[string]struct{}{"dns": {}},
+		techniques:        map[string]struct{}{"t1071": {}},
+		groupByCategories: sharedGroupBy,
+		luceneQuery:       makeQuery("a"),
+		nameTokens:        tokenizeAlertName("Cloudflare - Audit - DNS A Record Deleted"),
+		timeWindow:        "5m",
+	}
+
+	// Build a corpus where common Lucene and name tokens appear in many alerts (low IDF)
+	// and the discriminating atoms ("cloudflare.newvaluejson.type:cname", "cname")
+	// appear only once each (high IDF). This models a real Cloudflare alert library.
+	corpus := []featureVector{cname, aRec}
+	for i := 0; i < 8; i++ {
+		corpus = append(corpus, featureVector{
+			luceneQuery: map[string]struct{}{
+				"coralogix.metadata.applicationname:cloudflare": {},
+				"and":                      {},
+				"eventtype:deletednsrecord": {},
+			},
+			nameTokens: map[string]struct{}{
+				"cloudflare": {}, "audit": {}, "dns": {}, "record": {}, "deleted": {},
+			},
+		})
+	}
+	idf := buildIDF(corpus) // N=10; rare atoms df=1 → high IDF; common tokens df=10 → low IDF
+
+	score := scorePair(cname, aRec, idf)
+	if score >= duplicateThreshold {
+		t.Errorf("Cloudflare DNS A vs CNAME should NOT be duplicates (identical groupBy): score=%.4f >= threshold=%.2f", score, duplicateThreshold)
 	}
 }
