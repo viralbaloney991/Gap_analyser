@@ -282,7 +282,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	// Trigger background insights enrichment concurrently with pre-warm.
 	// Uses a detached context; semaphore ensures it doesn't crowd out pre-warm workers.
 	if h.sem != nil && h.cache != nil {
-		h.runInsightsBackground(req.Client, alertInsights, alerts, integrationInfos, mitreCoverage)
+		h.runInsightsBackground(req.Client, alertInsights, alerts, integrationInfos, mitreCoverage, eventCounts)
 	}
 }
 
@@ -326,6 +326,7 @@ func (h *Handler) runInsightsBackground(
 	alerts []*models.AlertDef,
 	integrations []models.IntegrationInfo,
 	mitreCoverage *models.MITRECoverageResult,
+	eventCounts map[string]int,
 ) {
 	bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	go func() {
@@ -343,7 +344,7 @@ func (h *Handler) runInsightsBackground(
 			return
 		}
 		defer h.sem.Release()
-		ir, enrichErr := insights.Enrich(bgCtx, alertInsights, alerts, integrations, mitreCoverage, insightsProvider)
+		ir, enrichErr := insights.Enrich(bgCtx, alertInsights, alerts, integrations, mitreCoverage, eventCounts, insightsProvider)
 
 		if enrichErr != nil {
 			log.Printf("WARN [insights-bg] client=%s enrich: %v", client, enrichErr)
@@ -464,7 +465,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 
 	// Monday integrations are not fetched in this synchronous path to avoid blocking.
 	// missing_source_alerts will be empty; all other gap categories are fully populated.
-	ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, nil, insightsMitre, insightsProvider)
+	ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, nil, insightsMitre, insightsEventCounts, insightsProvider)
 	if enrichErr != nil {
 		log.Printf("WARN [insights] enrich client=%s: %v", req.Client, enrichErr)
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("insights enrichment failed: %v", enrichErr))
