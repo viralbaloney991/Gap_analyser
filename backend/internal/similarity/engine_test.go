@@ -340,6 +340,7 @@ func makeAlert(id, alertType string, vendorCovered, isSecurityAlert bool, labels
 	if labels == nil {
 		labels = map[string]string{}
 	}
+	bb := labels["flow_alert"] == "building block" || labels["flow_alert"] == "buildingblock"
 	return &models.AlertDef{
 		ID:        id,
 		AlertType: alertType,
@@ -348,6 +349,7 @@ func makeAlert(id, alertType string, vendorCovered, isSecurityAlert bool, labels
 		Features: models.AlertFeatures{
 			VendorCovered:   vendorCovered,
 			IsSecurityAlert: isSecurityAlert,
+			IsBuildingBlock: bb,
 		},
 	}
 }

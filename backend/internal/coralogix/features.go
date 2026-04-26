@@ -455,6 +455,7 @@ func ExtractFeatures(alerts []*models.AlertDef, llmMappings map[string][]string)
 		if alert.AlertType != "flow" {
 			continue
 		}
+		bb := alert.Labels["flow_alert"] == "building block" || alert.Labels["flow_alert"] == "buildingblock"
 		isSec := isSecurityAlert(alert)
 		if isSec {
 			alert.Features = extractAlertFeatures(alert, llmMappings)
@@ -463,6 +464,7 @@ func ExtractFeatures(alerts []*models.AlertDef, llmMappings map[string][]string)
 			alert.Features = extractMinimalFeatures(alert)
 			alert.Features.IsSecurityAlert = false
 		}
+		alert.Features.IsBuildingBlock = bb
 		enrichFlowFromBuildingBlocks(alert, byID)
 	}
 }

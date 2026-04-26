@@ -1022,7 +1022,7 @@ func findNoiseAlerts(
 			if alert.Features.VendorCovered {
 				continue
 			}
-			if alert.Labels["flow_alert"] == "building block" {
+			if alert.Features.IsBuildingBlock {
 				continue
 			}
 			if !alert.Features.IsSecurityAlert {

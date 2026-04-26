@@ -884,6 +884,7 @@ func fetchEventCounts(ctx context.Context, region, apiKey string, alertIDs []str
 	defer client.Close()
 	counts, err := client.FetchAlertEventCounts(ctx, alertIDs, 30)
 	if err != nil {
+		log.Printf("DEBUG [noise] event count fetch failed: %v", err)
 		return nil
 	}
 	return counts

@@ -41,8 +41,9 @@ type AlertFeatures struct {
 	TimeWindow     string   `json:"time_window"`
 	Techniques     []string `json:"techniques"`
 	Tactics        []string `json:"tactics"`
-	BuildingBlocks []string `json:"building_blocks,omitempty"`
-	VendorCovered  bool     `json:"vendor_covered,omitempty"`
+	BuildingBlocks  []string `json:"building_blocks,omitempty"`
+	IsBuildingBlock bool     `json:"is_building_block,omitempty"`
+	VendorCovered   bool     `json:"vendor_covered,omitempty"`
 	VendorName     string   `json:"vendor_name,omitempty"`
 	IsSecurityAlert bool    `json:"is_security_alert"`
 }
