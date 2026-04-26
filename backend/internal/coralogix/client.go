@@ -90,7 +90,7 @@ func (c *Client) grpcCall(ctx context.Context, method, body string) ([]byte, err
 }
 
 // FetchAlertEventCounts returns the trigger count for each alert ID over the
-// past [days] days. Uses EventsService/ListEventsCount (no pagination).
+// past [days] days. Uses EventsService/ListAlertEvents with pagination.
 // Returns a map of alertID → count; IDs not in the response have count 0.
 // If the call fails, returns nil, err — the caller falls back to structural-only.
 func (c *Client) FetchAlertEventCounts(
@@ -108,33 +108,72 @@ func (c *Client) FetchAlertEventCounts(
 	now := time.Now().UTC()
 	from := now.AddDate(0, 0, -days)
 
+	type pagination struct {
+		PageSize int    `json:"page_size"`
+		Page     string `json:"page,omitempty"`
+	}
 	type reqBody struct {
 		AlertIDs       []string `json:"alert_ids"`
 		TimestampRange struct {
 			From string `json:"from"`
 			To   string `json:"to"`
 		} `json:"timestamp_range"`
-	}
-	var body reqBody
-	body.AlertIDs = alertIDs
-	body.TimestampRange.From = from.Format(time.RFC3339)
-	body.TimestampRange.To = now.Format(time.RFC3339)
-
-	bodyJSON, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("marshal event count request: %w", err)
+		Pagination pagination `json:"pagination"`
 	}
 
-	raw, err := c.grpcCall(ctx, "com.coralogixapis.events.v3.EventsService/ListEventsCount", string(bodyJSON))
-	if err != nil {
-		return nil, err
+	counts := make(map[string]int, len(alertIDs))
+	var nextPage string
+	const pageSize = 1000
+
+	for {
+		var body reqBody
+		body.AlertIDs = alertIDs
+		body.TimestampRange.From = from.Format(time.RFC3339)
+		body.TimestampRange.To = now.Format(time.RFC3339)
+		body.Pagination.PageSize = pageSize
+		body.Pagination.Page = nextPage
+
+		bodyJSON, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal event count request: %w", err)
+		}
+
+		raw, err := c.grpcCall(ctx, "com.coralogixapis.events.v3.EventsService/ListAlertEvents", string(bodyJSON))
+		if err != nil {
+			return nil, err
+		}
+
+		next, err := parseAlertEventsResponse(raw, counts)
+		if err != nil {
+			return nil, err
+		}
+		if next == "" {
+			break
+		}
+		nextPage = next
 	}
-	return parseEventCountResponse(raw)
+	return counts, nil
 }
 
-// parseEventCountResponse parses the ListEventsCount JSON response into a
-// map of alertID → count. Extracted for testability (avoids grpcurl dependency).
-// NOTE: if the real API uses different field names, update listEventsCountResp only.
+// parseAlertEventsResponse counts events per alertId from a ListAlertEvents page.
+// Returns the next page token (empty string when done).
+func parseAlertEventsResponse(raw []byte, counts map[string]int) (string, error) {
+	if len(raw) == 0 || string(raw) == "{}" {
+		return "", nil
+	}
+	var resp listAlertEventsResp
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return "", fmt.Errorf("parse alert events response: %w", err)
+	}
+	for _, ev := range resp.Events {
+		if ev.AlertID != "" {
+			counts[ev.AlertID]++
+		}
+	}
+	return resp.Pagination.NextPage, nil
+}
+
+// parseEventCountResponse is kept for existing tests.
 func parseEventCountResponse(raw []byte) (map[string]int, error) {
 	var resp listEventsCountResp
 	if err := json.Unmarshal(raw, &resp); err != nil {
@@ -239,13 +278,21 @@ func detectAlertType(props *alertDefPropsJSON) string {
 }
 
 // listEventsCountResp mirrors the EventsService/ListEventsCount JSON response.
-// Field names are camelCase per protobuf-to-JSON transcoding convention.
-// Verify against real API output if counts are always 0.
 type listEventsCountResp struct {
 	AlertsEventsCounts []struct {
 		AlertID string `json:"alertId"`
 		Count   int    `json:"count"`
 	} `json:"alertsEventsCounts"`
+}
+
+// listAlertEventsResp mirrors the EventsService/ListAlertEvents JSON response.
+type listAlertEventsResp struct {
+	Events []struct {
+		AlertID string `json:"alertId"`
+	} `json:"events"`
+	Pagination struct {
+		NextPage string `json:"nextPage"`
+	} `json:"pagination"`
 }
 
 func extractTypeDef(props *alertDefPropsJSON) map[string]any {
