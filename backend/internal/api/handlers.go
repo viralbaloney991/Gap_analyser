@@ -372,7 +372,6 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Client string `json:"client"`
-		Model  string `json:"model"` // "mistral" | "gemma" | "" (default = mistral)
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
@@ -381,11 +380,6 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	req.Client = strings.TrimSpace(req.Client)
 	if req.Client == "" {
 		writeError(w, http.StatusBadRequest, "missing required field: client")
-		return
-	}
-	req.Model = strings.TrimSpace(strings.ToLower(req.Model))
-	if req.Model != "" && req.Model != "mistral" && req.Model != "gemma" {
-		writeError(w, http.StatusBadRequest, "unknown insights model: use \"mistral\" or \"gemma\"")
 		return
 	}
 
@@ -444,7 +438,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	// Check insights cache — skip when model is explicitly specified so the user
 	// can switch models without being served a stale cached response.
 	var insightsCacheKey string
-	if h.cache != nil && req.Model == "" {
+	if h.cache != nil {
 		if key, err := computeInsightsCacheKey(req.Client, alertInsights); err == nil {
 			insightsCacheKey = key
 			if cached, ok := h.cache.GetString(ctx, key); ok {
@@ -458,35 +452,8 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Resolve model: explicit request overrides config default.
-	insightsProviderName := h.config.LLM.InsightsProvider
-	if insightsProviderName == "" {
-		insightsProviderName = h.config.LLM.SuggestionProvider
-	}
-	insightsModel := h.config.LLM.InsightsModel
-	if insightsModel == "" {
-		insightsModel = h.config.LLM.NvidiaModel
-	}
-	modelLabel := "Mistral Small" // human-readable name shown in UI
-	if req.Model == "gemma" {
-		insightsModel = "google/gemma-3-27b-it"
-		modelLabel = "Gemma 3 27B"
-	}
-	// Insights uses the primary NVIDIA key (not the suggestion-specific key).
-	nvidiaKey := h.config.LLM.NvidiaAPIKey
-	insightsProvider, err := llm.NewClassifierProvider(
-		insightsProviderName,
-		"",
-		llm.ProviderConfig{
-			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
-			ClaudeModel:     h.config.LLM.ClaudeModel,
-			NvidiaAPIKey:    nvidiaKey,
-			NvidiaModel:     insightsModel,
-			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
-			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
-			GeminiModel:     h.config.LLM.GeminiModel,
-		},
-	)
+	modelLabel := "Claude Opus 4.7"
+	insightsProvider, err := resolveInsightsProvider(h.config)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("insights provider unavailable: %v", err))
 		return
