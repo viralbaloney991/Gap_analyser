@@ -40,13 +40,12 @@ type signalsIntegrationGap struct {
 
 type signalsImmediateCandidate struct {
 	Name         string `json:"name"`
-	Query        string `json:"query"`
+	Query        string `json:"query,omitempty"`
 	TriggerCount int    `json:"trigger_count,omitempty"`
 }
 
 // buildStructuredSignals assembles the ~1–2k token JSON payload for Claude Opus.
 // All parameters are optional — nil inputs produce empty but valid signals.
-// eventCounts may be nil; candidates will have TriggerCount 0 (omitted from JSON).
 func buildStructuredSignals(
 	result *models.SimilarityResult,
 	alerts []*models.AlertDef,
@@ -102,7 +101,6 @@ func buildStructuredSignals(
 		}
 	}
 
-	// Pre-filter: unscoped logs_immediate security alerts with no entity filter.
 	var candidates []signalsImmediateCandidate
 	for _, alert := range alerts {
 		if alert.AlertType != "logs_immediate" {
