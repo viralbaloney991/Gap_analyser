@@ -443,8 +443,8 @@ export default function AlertInsights({ data, report, insightsError = false, cli
             ) : (
               <div className="state-empty">
                 <div className="state-empty__icon">◎</div>
-                <div className="state-empty__title">No noisy alerts</div>
-                <div className="state-empty__body">No high-volume or structurally noisy alerts detected in this library.</div>
+                <div className="state-empty__title">No rule-confirmed noisy alerts</div>
+                <div className="state-empty__body">No alerts exceeded the behavioral or structural noise thresholds. LLM-identified noise candidates (e.g. unscoped immediate alerts) appear in Gaps → Environment Cleanup.</div>
               </div>
             )
           )}
