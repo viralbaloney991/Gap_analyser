@@ -361,7 +361,7 @@ func (h *Handler) runInsightsBackground(client string, alertInsights *models.Sim
 }
 
 // HandleInsights runs LLM enrichment for alert insights, decoupled from the main
-// analyze pipeline so that the heavy Gemini/Claude call does not block the initial
+// analyze pipeline so that the heavy Claude Opus call does not block the initial
 // page load. The frontend fires this asynchronously after analyzeClient returns.
 // POST /api/insights { "client": "X" }
 func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
@@ -435,8 +435,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	// insightsMitre is passed so tactic gap detection uses real coverage data.
 	alertInsights := similarity.Analyze(alerts, insightsEventCounts, 0, insightsMitre)
 
-	// Check insights cache — skip when model is explicitly specified so the user
-	// can switch models without being served a stale cached response.
+	// Check insights cache. Provider is fixed to Claude Opus — cache is always consulted.
 	var insightsCacheKey string
 	if h.cache != nil {
 		if key, err := computeInsightsCacheKey(req.Client, alertInsights); err == nil {

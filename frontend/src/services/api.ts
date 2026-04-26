@@ -22,9 +22,7 @@ export async function analyzeClient(client: string, refresh = false): Promise<An
   return res.json();
 }
 
-export async function fetchInsights(client: string, model?: string): Promise<InsightsReport> {
-  const body: Record<string, string> = { client };
-  if (model) body.model = model;
+export async function fetchInsights(client: string): Promise<InsightsReport> {
   const res = await fetch(`${API_BASE}/api/insights`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
