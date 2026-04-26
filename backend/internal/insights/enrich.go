@@ -18,7 +18,7 @@ You will receive a JSON object with these fields:
 - integration_gaps: integrations with zero alerts [{name, alerts}]
 - noise_alerts: alert names flagged as noisy (with type and trigger count)
 - immediate_noise_candidates: unscoped logs_immediate security alerts with no entity filter
-  [{name, query, trigger_count}] — trigger_count is 0 when event data unavailable
+  [{name, query, trigger_count}] — trigger_count is absent when event data unavailable
 - duplicate_groups: number of duplicate alert groups
 
 Respond with ONLY valid JSON matching this exact schema — no prose, no markdown:
@@ -43,7 +43,7 @@ Rules:
   high-frequency event (common user actions, broad field matches, platform lifecycle events).
   If yes, flag in environment_cleanup with a specific recommendation to add app/subsystem
   scoping or an entity filter. If the query is narrow enough to be low-frequency by nature,
-  do not flag it. Use trigger_count as a signal when > 0; reason from query semantics when 0.`
+  do not flag it. Use trigger_count as a signal when present; reason from query semantics when absent.`
 
 // Enrich takes a completed SimilarityResult, assembles structured signals, sends them
 // to Claude Opus, and returns an InsightsReport with 6-category gap analysis.
