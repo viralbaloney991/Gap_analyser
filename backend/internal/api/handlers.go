@@ -282,7 +282,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	// Trigger background insights enrichment concurrently with pre-warm.
 	// Uses a detached context; semaphore ensures it doesn't crowd out pre-warm workers.
 	if h.sem != nil && h.cache != nil {
-		h.runInsightsBackground(req.Client, alertInsights, alerts)
+		h.runInsightsBackground(req.Client, alertInsights, alerts, integrationInfos, mitreCoverage)
 	}
 }
 
@@ -320,7 +320,13 @@ func resolveInsightsProvider(cfg *config.Config) (llm.Provider, error) {
 // runInsightsBackground runs LLM insights enrichment as a fire-and-forget goroutine.
 // Uses a detached context so that client disconnect does not abort the work.
 // Results are stored in Redis for /api/insights to serve.
-func (h *Handler) runInsightsBackground(client string, alertInsights *models.SimilarityResult, alerts []*models.AlertDef) {
+func (h *Handler) runInsightsBackground(
+	client string,
+	alertInsights *models.SimilarityResult,
+	alerts []*models.AlertDef,
+	integrations []models.IntegrationInfo,
+	mitreCoverage *models.MITRECoverageResult,
+) {
 	bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	go func() {
 		defer cancel()
@@ -337,7 +343,7 @@ func (h *Handler) runInsightsBackground(client string, alertInsights *models.Sim
 			return
 		}
 		defer h.sem.Release()
-		ir, enrichErr := insights.Enrich(bgCtx, alertInsights, alerts, insightsProvider)
+		ir, enrichErr := insights.Enrich(bgCtx, alertInsights, alerts, integrations, mitreCoverage, insightsProvider)
 
 		if enrichErr != nil {
 			log.Printf("WARN [insights-bg] client=%s enrich: %v", client, enrichErr)
@@ -456,7 +462,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, insightsProvider)
+	ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, nil, insightsMitre, insightsProvider)
 	if enrichErr != nil {
 		log.Printf("WARN [insights] enrich client=%s: %v", req.Client, enrichErr)
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("insights enrichment failed: %v", enrichErr))
