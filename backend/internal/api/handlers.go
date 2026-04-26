@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"coralogix-alert-analyzer/internal/cache"
-	"coralogix-alert-analyzer/internal/classifier"
 	"coralogix-alert-analyzer/internal/config"
 	"coralogix-alert-analyzer/internal/coralogix"
 	"coralogix-alert-analyzer/internal/insights"
@@ -150,7 +149,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("INFO [analyze] client=%s alerts=%d integrations=%d", req.Client, len(alerts), len(integrations))
 
-	// Build MITRE mappings via classifier sidecar + Llama validator.
+	// Build MITRE mappings via Claude classifier.
 	// Only runs on security alerts with no existing label/T-code coverage.
 	// Results are cached per-alert in Redis for 7 days.
 	var llmMappings map[string][]string
@@ -164,15 +163,14 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
 			GeminiModel:     h.config.LLM.GeminiModel,
 		}
-		validatorProvider, err := llm.NewClassifierProvider(
-			h.config.LLM.ValidatorProvider,
-			h.config.LLM.ValidatorModel,
+		classifierProvider, err := llm.NewClassifierProvider(
+			h.config.LLM.ClassifierProvider,
+			h.config.LLM.ClassifierModel,
 			baseCfg,
 		)
 		if err != nil {
-			log.Printf("WARN [analyze] validator provider unavailable: %v", err)
+			log.Printf("WARN [analyze] classifier provider unavailable: %v", err)
 		} else {
-			classifierClient := classifier.NewClient(h.config.Classifier.Endpoint)
 			var inputs []llm.AlertInput
 			for _, a := range alerts {
 				if !coralogix.IsSecurityAlert(a) || coralogix.HasExistingMITRE(a) {
@@ -189,11 +187,11 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 			}
 			log.Printf("INFO [analyze] MITRE pipeline: %d/%d alerts need classification", len(inputs), len(alerts))
 			if len(inputs) > 0 {
-				llmMappings = llm.BatchClassifyAndValidate(ctx, classifierClient, validatorProvider, h.cache, h.sem, inputs)
+				llmMappings = llm.BatchClassify(ctx, classifierProvider, h.cache, h.sem, inputs)
 			}
 		}
 	} else {
-		log.Printf("WARN [analyze] cache unavailable, skipping MITRE classification pipeline for client=%s", req.Client)
+		log.Printf("WARN [analyze] cache unavailable, skipping MITRE classification for client=%s", req.Client)
 	}
 
 	// Extract features.
