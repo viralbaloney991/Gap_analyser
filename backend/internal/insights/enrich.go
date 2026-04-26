@@ -81,12 +81,13 @@ func Enrich(
 // Returns nil on malformed JSON.
 func parseGapCategoriesResponse(raw string) *models.InsightsReport {
 	raw = strings.TrimSpace(raw)
-	if strings.HasPrefix(raw, "```") {
-		if i := strings.Index(raw, "\n"); i != -1 {
-			raw = raw[i+1:]
-		}
-		raw = strings.TrimSuffix(raw, "```")
-		raw = strings.TrimSpace(raw)
+	// Extract the JSON object from anywhere in the response — handles markdown
+	// fences, preamble prose, and any trailing content Claude may add.
+	if i := strings.Index(raw, "{"); i >= 0 {
+		raw = raw[i:]
+	}
+	if i := strings.LastIndex(raw, "}"); i >= 0 {
+		raw = raw[:i+1]
 	}
 
 	var loose struct {

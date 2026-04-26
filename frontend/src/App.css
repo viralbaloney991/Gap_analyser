@@ -803,7 +803,7 @@ html, body, #root {
 
 .detail-panel-body       { padding: 14px 16px; flex: 1; overflow-y: auto; min-height: 0; }
 .detail-panel-empty      { padding: 24px 16px; text-align: center; color: var(--text-dim); font-family: var(--font-mono); font-size: 0.68rem; }
-.detail-suggestion-bar   { display: flex; gap: 6px; margin-bottom: 10px; }
+.detail-suggestion-bar   { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
 .detail-provider-select  { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 8px; font-family: var(--font-mono); font-size: 0.65rem; color: var(--text); }
 
 /* Suggestions panel layout */

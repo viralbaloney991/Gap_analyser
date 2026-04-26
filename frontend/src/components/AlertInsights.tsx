@@ -364,7 +364,21 @@ export default function AlertInsights({ data, report, insightsError = false, cli
 
           {/* ── COVERAGE ── */}
           {activeTab === 'coverage' && (
-            gapCount > 0 ? (
+            isLoading || isRegenerating ? (
+              <>
+                <div className="insights-skeleton skeleton" style={{ width: '100%', height: 60 }} />
+                <div className="insights-skeleton skeleton" style={{ width: '100%', height: 60 }} />
+              </>
+            ) : hasError ? (
+              <div className="state-error">
+                <span className="state-error__icon">⚠</span>
+                <div>
+                  <div className="state-error__title">Coverage analysis unavailable</div>
+                  <div className="state-error__body">Gap analysis requires LLM enrichment. Try regenerating.</div>
+                  <button className="state-error__retry" onClick={handleRegenerate}>↺ Retry</button>
+                </div>
+              </div>
+            ) : gapCount > 0 ? (
               <>
                 {renderGapSection('Environment Cleanup', effectiveReport?.gap_categories.environment_cleanup)}
                 {renderGapSection('No Detection', effectiveReport?.gap_categories.no_detection)}
@@ -372,11 +386,6 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 {renderGapSection('Weak Detection Quality', effectiveReport?.gap_categories.weak_detection_quality)}
                 {renderGapSection('Advanced Use Cases', effectiveReport?.gap_categories.advanced_use_cases)}
                 {renderGapSection('Missing Source Alerts', effectiveReport?.gap_categories.missing_source_alerts)}
-              </>
-            ) : isLoading || isRegenerating ? (
-              <>
-                <div className="insights-skeleton skeleton" style={{ width: '100%', height: 60 }} />
-                <div className="insights-skeleton skeleton" style={{ width: '100%', height: 60 }} />
               </>
             ) : (
               <div className="state-empty">
@@ -438,7 +447,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
               <div className="state-empty">
                 <div className="state-empty__icon">◎</div>
                 <div className="state-empty__title">No noisy alerts</div>
-                <div className="state-empty__body">All alerts have sufficient field coverage for reliable detection.</div>
+                <div className="state-empty__body">No high-volume or structurally noisy alerts detected in this library.</div>
               </div>
             )
           )}

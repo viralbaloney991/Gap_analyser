@@ -84,6 +84,20 @@ func TestParseGapCategoriesResponse_MarkdownWrapped_Stripped(t *testing.T) {
 	}
 }
 
+func TestParseGapCategoriesResponse_ProsePrefix_Extracted(t *testing.T) {
+	raw := "Here is the analysis:\n\n{\"summary\": \"good\", \"no_detection\": [\"T1078\"]}"
+	report := parseGapCategoriesResponse(raw)
+	if report == nil {
+		t.Fatal("should extract JSON from prose-prefixed response")
+	}
+	if report.Summary != "good" {
+		t.Errorf("wrong summary: %q", report.Summary)
+	}
+	if len(report.GapCategories.NoDetection) != 1 {
+		t.Errorf("no_detection: want 1, got %d", len(report.GapCategories.NoDetection))
+	}
+}
+
 func TestParseGapCategoriesResponse_NullCategoryCoercedToEmpty(t *testing.T) {
 	raw := `{"summary": "ok", "no_detection": null, "environment_cleanup": []}`
 	report := parseGapCategoriesResponse(raw)
