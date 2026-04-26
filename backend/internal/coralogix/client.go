@@ -108,15 +108,12 @@ func (c *Client) FetchAlertEventCounts(
 	now := time.Now().UTC()
 	from := now.AddDate(0, 0, -days)
 
-	// NOTE: field names use camelCase per protobuf JSON transcoding convention.
-	// If the API rejects the request or returns unexpected results, verify the
-	// exact field names against the ListEventsCount proto definition.
 	type reqBody struct {
-		AlertIDs       []string `json:"alertIds"`
+		AlertIDs       []string `json:"alert_ids"`
 		TimestampRange struct {
 			From string `json:"from"`
 			To   string `json:"to"`
-		} `json:"timestampRange"`
+		} `json:"timestamp_range"`
 	}
 	var body reqBody
 	body.AlertIDs = alertIDs
