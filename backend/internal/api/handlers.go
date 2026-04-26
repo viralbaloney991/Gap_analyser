@@ -805,7 +805,6 @@ func computeInsightsCacheKey(clientName string, result *models.SimilarityResult)
 		Families         []models.DetectionFamily
 		Duplicates       []models.DuplicateGroup
 		MergeSuggestions []models.MergeSuggestion
-		CoverageInsights []string
 		UniqueDetections []string
 		NoiseAlerts      []models.NoiseAlert
 	}
@@ -814,7 +813,6 @@ func computeInsightsCacheKey(clientName string, result *models.SimilarityResult)
 		Families:         append([]models.DetectionFamily(nil), result.Families...),
 		Duplicates:       append([]models.DuplicateGroup(nil), result.Duplicates...),
 		MergeSuggestions: append([]models.MergeSuggestion(nil), result.MergeSuggestions...),
-		CoverageInsights: append([]string(nil), result.CoverageInsights...),
 		UniqueDetections: append([]string(nil), result.UniqueDetections...),
 		NoiseAlerts:      append([]models.NoiseAlert(nil), result.NoiseAlerts...),
 	}

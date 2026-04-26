@@ -216,9 +216,6 @@ func Analyze(
 	// Step 5: Merge suggestions.
 	mergeSuggestions := buildMergeSuggestions(vectors, matrix, n)
 
-	// Step 6: Coverage insights (MITRE-based; nil = no coverage insights).
-	coverageInsights := analyzeCoverage(mitreResult)
-
 	// Step 7: Unique detections.
 	uniqueDetections := findUniqueDetections(vectors, matrix, n)
 
@@ -229,7 +226,6 @@ func Analyze(
 		Families:         families,
 		Duplicates:       duplicates,
 		MergeSuggestions: mergeSuggestions,
-		CoverageInsights: coverageInsights,
 		UniqueDetections: uniqueDetections,
 		NoiseAlerts:      noiseAlerts,
 	}
@@ -914,44 +910,6 @@ func describeMergePattern(vectors []featureVector, members []int) string {
 		"You can replace %d rules with 1 generalized rule covering the same detection intent",
 		n,
 	)
-}
-
-// ---------------------------------------------------------------------------
-// Step 6: Coverage Insights
-// ---------------------------------------------------------------------------
-
-// analyzeCoverage generates coverage gap insights from MITRE tactic data.
-// Returns nil when mitreResult is nil.
-func analyzeCoverage(mitreResult *models.MITRECoverageResult) []string {
-	if mitreResult == nil {
-		return nil
-	}
-	var insights []string
-	var gaps []string
-	var thin []string
-
-	for _, tc := range mitreResult.Summary.TacticBreakdown {
-		if tc.Total == 0 {
-			continue
-		}
-		switch {
-		case tc.Covered == 0:
-			gaps = append(gaps, tc.TacticName)
-		case tc.Percent < minTacticCoveragePct:
-			thin = append(thin, fmt.Sprintf("%s (%.0f%%)", tc.TacticName, tc.Percent))
-		}
-	}
-
-	sort.Strings(gaps)
-	sort.Strings(thin)
-
-	if len(gaps) > 0 {
-		insights = append(insights, fmt.Sprintf("No alert coverage for: %s", strings.Join(gaps, ", ")))
-	}
-	for _, t := range thin {
-		insights = append(insights, fmt.Sprintf("Thin coverage: %s — consider adding more detections", t))
-	}
-	return insights
 }
 
 // ---------------------------------------------------------------------------
