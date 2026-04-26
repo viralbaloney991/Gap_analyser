@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"coralogix-alert-analyzer/internal/llm"
@@ -71,7 +72,7 @@ func Enrich(
 	raw, err := provider.Complete(ctx, llm.CompletionRequest{
 		SystemPrompt: gapAnalysisSystemPrompt,
 		UserMessage:  string(signalsJSON),
-		MaxTokens:    2048,
+		MaxTokens:    4096,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("insights LLM call: %w", err)
@@ -79,6 +80,7 @@ func Enrich(
 
 	report := parseGapCategoriesResponse(raw)
 	if report == nil {
+		log.Printf("WARN [insights] malformed response (len=%d): %.200s", len(raw), raw)
 		return nil, fmt.Errorf("insights JSON parse: malformed response")
 	}
 	return report, nil
