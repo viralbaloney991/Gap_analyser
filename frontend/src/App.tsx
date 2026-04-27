@@ -150,6 +150,7 @@ function App() {
                 report={insightsReport}
                 insightsError={insightsError}
                 client={clientName}
+                mitreCoverage={data.mitre_coverage}
               />
             </motion.div>
           )}

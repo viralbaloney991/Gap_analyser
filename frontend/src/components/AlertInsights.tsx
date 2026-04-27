@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { SimilarityResult, InsightsReport, NoiseAlert, DetectionFamily, ActionableRecommendation } from '../types';
-import { fetchInsights } from '../services/api';
+import type { SimilarityResult, InsightsReport, MITRECoverageResult, NoiseAlert, DetectionFamily, ActionableRecommendation } from '../types';
+import { fetchInsights, fetchExportNarrative } from '../services/api';
+import { exportTabAsXLSX, exportTabAsPDF, exportFullReportPDF } from '../utils/export';
 
 interface Props {
   data: SimilarityResult;
   report: InsightsReport | null;
   insightsError?: boolean;
   client: string;
+  mitreCoverage: MITRECoverageResult;
 }
 
 type Tab = 'duplicates' | 'families' | 'merge' | 'gaps' | 'noise' | 'unique';
@@ -27,7 +29,7 @@ function noiseTypeLabel(noiseType?: string): string {
   }
 }
 
-export default function AlertInsights({ data, report, insightsError = false, client }: Props) {
+export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage }: Props) {
   const [activeTab, setActiveTab]         = useState<Tab>('duplicates');
   const [localReport, setLocalReport]     = useState<InsightsReport | null>(report);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -42,6 +44,10 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     });
   };
 
+  const [isExporting, setIsExporting]         = useState(false);
+  const [exportError, setExportError]         = useState<string | null>(null);
+  const [showExportMenu, setShowExportMenu]   = useState(false);
+
   const [expandedQueries, setExpandedQueries] = useState<Set<string>>(new Set());
 
   const toggleQuery = (key: string) => {
@@ -50,6 +56,36 @@ export default function AlertInsights({ data, report, insightsError = false, cli
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
+  };
+
+  const handleExportCurrentXLSX = () => {
+    if (activeTab === 'noise' || activeTab === 'families' || activeTab === 'gaps') {
+      exportTabAsXLSX(activeTab as 'noise' | 'families' | 'gaps', data, localReport, client);
+    }
+    setShowExportMenu(false);
+  };
+
+  const handleExportCurrentPDF = () => {
+    if (activeTab === 'noise' || activeTab === 'families' || activeTab === 'gaps') {
+      exportTabAsPDF(activeTab as 'noise' | 'families' | 'gaps', data, localReport, client);
+    }
+    setShowExportMenu(false);
+  };
+
+  const handleExportFullReport = async () => {
+    if (!localReport) return;
+    setShowExportMenu(false);
+    setIsExporting(true);
+    setExportError(null);
+    try {
+      const narrative = await fetchExportNarrative(client);
+      const date = new Date().toISOString().slice(0, 10);
+      exportFullReportPDF(client, data, localReport, mitreCoverage, narrative, date);
+    } catch {
+      setExportError('Export failed. Try again.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const familyGroups = useMemo(() => {
@@ -69,6 +105,13 @@ export default function AlertInsights({ data, report, insightsError = false, cli
   useEffect(() => {
     if (report !== null && !isRegenerating) setLocalReport(report);
   }, [report]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const close = () => setShowExportMenu(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [showExportMenu]);
 
   const effectiveReport = localReport;
   const isLoading = !effectiveReport && !insightsError && !regenError;
@@ -183,6 +226,18 @@ export default function AlertInsights({ data, report, insightsError = false, cli
 
   const hasError = insightsError || regenError;
 
+  const menuItemStyle: React.CSSProperties = {
+    display: 'block',
+    width: '100%',
+    padding: '8px 14px',
+    background: 'transparent',
+    border: 'none',
+    color: '#e5e5e5',
+    cursor: 'pointer',
+    textAlign: 'left',
+    fontSize: 13,
+  };
+
   return (
     <div className="alert-insights">
 
@@ -192,14 +247,43 @@ export default function AlertInsights({ data, report, insightsError = false, cli
         {/* Provider badge */}
         <div className="insights-model-header">
           <span className="insights-model-badge">Claude Opus 4.7</span>
-          <button
-            className="insights-regenerate-btn"
-            onClick={handleRegenerate}
-            disabled={isRegenerating || !client}
-            title="Regenerate insights"
-          >
-            {isRegenerating ? '…' : '↺'}
-          </button>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button
+              className="insights-regenerate-btn"
+              onClick={handleRegenerate}
+              disabled={isRegenerating || !client}
+              title="Regenerate insights"
+            >
+              {isRegenerating ? '…' : '↺'}
+            </button>
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); setShowExportMenu(v => !v); }}
+                disabled={isExporting}
+                className="btn-small"
+              >
+                {isExporting ? 'Generating…' : 'Export ▾'}
+              </button>
+              {showExportMenu && (
+                <div style={{
+                  position: 'absolute', right: 0, top: '110%',
+                  background: '#1e1e1e', border: '1px solid #444',
+                  borderRadius: 6, minWidth: 200, zIndex: 50, overflow: 'hidden'
+                }}>
+                  <button onClick={handleExportCurrentXLSX} style={menuItemStyle}>Current tab → XLSX</button>
+                  <button onClick={handleExportCurrentPDF} style={menuItemStyle}>Current tab → PDF</button>
+                  <hr style={{ margin: 0, borderColor: '#333' }} />
+                  <button
+                    onClick={handleExportFullReport}
+                    disabled={!localReport}
+                    style={{ ...menuItemStyle, opacity: localReport ? 1 : 0.4 }}
+                  >
+                    Full report → PDF
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="insights-panel-scroll">
@@ -537,6 +621,30 @@ export default function AlertInsights({ data, report, insightsError = false, cli
 
         </div>
       </div>
+
+      {exportError && (
+        <div
+          role="alert"
+          onClick={() => setExportError(null)}
+          style={{
+            position: 'fixed', bottom: 24, right: 24,
+            background: '#7f1d1d', color: '#fca5a5',
+            padding: '12px 20px', borderRadius: 8, fontSize: 13, zIndex: 100,
+            cursor: 'pointer',
+          }}
+        >
+          {exportError}
+        </div>
+      )}
+      {isExporting && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24,
+          background: '#1e3a5f', color: '#93c5fd',
+          padding: '12px 20px', borderRadius: 8, fontSize: 13, zIndex: 100,
+        }}>
+          Generating your report, this takes ~20 seconds…
+        </div>
+      )}
     </div>
   );
 }
