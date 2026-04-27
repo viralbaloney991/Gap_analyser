@@ -540,7 +540,16 @@ func (h *Handler) HandleExportNarrative(w http.ResponseWriter, r *http.Request) 
 
 	coralogix.ExtractFeatures(alerts, nil)
 	mitreCoverage := mitre.AnalyzeCoverage(alerts)
-	alertInsights := similarity.Analyze(alerts, nil, 0, mitreCoverage)
+
+	// Fetch event counts so the similarity result matches the one used when
+	// the insights cache was written — without this, the cache key hash diverges
+	// and cachedReport is always nil, causing a 204 every time.
+	exportAlertIDs := make([]string, len(alerts))
+	for i, a := range alerts {
+		exportAlertIDs[i] = a.ID
+	}
+	exportEventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, exportAlertIDs)
+	alertInsights := similarity.Analyze(alerts, exportEventCounts, 0, mitreCoverage)
 
 	var cachedReport *models.InsightsReport
 	if h.cache != nil {

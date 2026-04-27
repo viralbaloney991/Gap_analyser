@@ -82,8 +82,9 @@ export default function AlertInsights({ data, report, insightsError = false, cli
       const narrative = await fetchExportNarrative(client);
       const date = new Date().toISOString().slice(0, 10);
       exportFullReportPDF(client, data, localReport, mitreCoverage, narrative, date, totalAlerts);
-    } catch {
-      setExportError('Export failed. Try again.');
+    } catch (e) {
+      console.error('[export]', e);
+      setExportError(e instanceof Error ? e.message : 'Export failed. Try again.');
     } finally {
       setIsExporting(false);
     }
