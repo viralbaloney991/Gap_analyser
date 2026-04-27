@@ -9,6 +9,7 @@ interface Props {
   insightsError?: boolean;
   client: string;
   mitreCoverage: MITRECoverageResult;
+  totalAlerts: number;
 }
 
 type Tab = 'duplicates' | 'families' | 'merge' | 'gaps' | 'noise' | 'unique';
@@ -29,7 +30,7 @@ function noiseTypeLabel(noiseType?: string): string {
   }
 }
 
-export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage }: Props) {
+export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage, totalAlerts }: Props) {
   const [activeTab, setActiveTab]         = useState<Tab>('duplicates');
   const [localReport, setLocalReport]     = useState<InsightsReport | null>(report);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -80,7 +81,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     try {
       const narrative = await fetchExportNarrative(client);
       const date = new Date().toISOString().slice(0, 10);
-      exportFullReportPDF(client, data, localReport, mitreCoverage, narrative, date);
+      exportFullReportPDF(client, data, localReport, mitreCoverage, narrative, date, totalAlerts);
     } catch {
       setExportError('Export failed. Try again.');
     } finally {

@@ -70,5 +70,8 @@ export async function fetchExportNarrative(client: string): Promise<ExportNarrat
     const err = await res.json().catch(() => ({ error: 'Export failed' }));
     throw new Error(err.error || 'Export narrative failed');
   }
+  if (res.status === 204) {
+    throw new Error('No insights available yet. Please wait for analysis to complete.');
+  }
   return res.json();
 }

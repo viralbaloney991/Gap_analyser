@@ -134,16 +134,18 @@ func EnrichExportNarrative(
 func collectKeyActions(report *models.InsightsReport) []string {
 	var actions []string
 	if report.ActionableGaps != nil {
-		for _, rec := range report.ActionableGaps.NoDetection {
-			actions = append(actions, rec.Prose)
-			if len(actions) >= 5 {
-				return actions
-			}
+		sources := [][]models.ActionableRecommendation{
+			report.ActionableGaps.NoDetection,
+			report.ActionableGaps.WeakDetectionQuality,
+			report.ActionableGaps.MissingSourceAlerts,
+			report.ActionableGaps.AdvancedUseCases,
 		}
-		for _, rec := range report.ActionableGaps.WeakDetectionQuality {
-			actions = append(actions, rec.Prose)
-			if len(actions) >= 5 {
-				return actions
+		for _, src := range sources {
+			for _, rec := range src {
+				actions = append(actions, rec.Prose)
+				if len(actions) >= 5 {
+					return actions
+				}
 			}
 		}
 	}

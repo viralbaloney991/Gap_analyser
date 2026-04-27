@@ -139,6 +139,7 @@ export function exportFullReportPDF(
   mitreCoverage: MITRECoverageResult,
   narrative: ExportNarrativeReport,
   date: string,
+  totalAlerts: number,
 ): void {
   const doc = new jsPDF();
   const pageW = doc.internal.pageSize.getWidth();
@@ -158,9 +159,10 @@ export function exportFullReportPDF(
   doc.text(date, margin, 78);
 
   doc.setFontSize(12);
-  doc.text(`MITRE Coverage: ${mitreCoverage.summary.coverage_percent.toFixed(1)}%`, margin, 100);
-  doc.text(`Detection Families: ${data.families.length}`, margin, 112);
-  doc.text(`Noise Alerts: ${data.noise_alerts?.length ?? 0}`, margin, 124);
+  doc.text(`Total Alerts: ${totalAlerts}`, margin, 100);
+  doc.text(`MITRE Coverage: ${mitreCoverage.summary.coverage_percent.toFixed(1)}%`, margin, 112);
+  doc.text(`Detection Families: ${data.families.length}`, margin, 124);
+  doc.text(`Noise Alerts: ${data.noise_alerts?.length ?? 0}`, margin, 136);
 
   // ── Executive Summary ───────────────────────────────────────────────────
   doc.addPage();

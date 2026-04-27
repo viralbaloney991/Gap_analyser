@@ -42,3 +42,15 @@ func TestHandleExportNarrative_unknownClient(t *testing.T) {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
+
+func TestHandleExportNarrative_invalidJSON(t *testing.T) {
+	h := &Handler{config: &config.Config{Clients: map[string]config.ClientConfig{}}}
+	body := strings.NewReader(`not json`)
+	req := httptest.NewRequest(http.MethodPost, "/api/export/narrative", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.HandleExportNarrative(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
