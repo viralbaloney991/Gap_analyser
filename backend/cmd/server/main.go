@@ -109,6 +109,7 @@ func main() {
 	mux.HandleFunc("/api/analyze", handler.HandleAnalyze)
 	mux.HandleFunc("/api/insights", handler.HandleInsights)
 	mux.HandleFunc("/api/suggestions", handler.HandleSuggestions)
+	mux.HandleFunc("/api/export/narrative", handler.HandleExportNarrative)
 
 	// Serve static frontend files in production.
 	frontendDist := os.Getenv("FRONTEND_DIST")

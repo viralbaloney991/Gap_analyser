@@ -492,6 +492,88 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ir)
 }
 
+// HandleExportNarrative generates an LLM executive narrative for the full PDF report.
+// POST /api/export/narrative { "client": "X" }
+// Result is not cached — always generated fresh.
+func (h *Handler) HandleExportNarrative(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req struct {
+		Client string `json:"client"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	req.Client = strings.TrimSpace(req.Client)
+	if req.Client == "" {
+		writeError(w, http.StatusBadRequest, "missing required field: client")
+		return
+	}
+
+	clientCfg, ok := h.config.Clients[req.Client]
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown client: %s", req.Client))
+		return
+	}
+
+	ctx := r.Context()
+
+	var alerts []*models.AlertDef
+	if h.alertStore != nil {
+		stored, err := h.alertStore.LoadAlerts(ctx, req.Client)
+		if err == nil && len(stored) > 0 {
+			alerts = stored
+		}
+	}
+	if len(alerts) == 0 {
+		var err error
+		alerts, err = fetchAlerts(ctx, clientCfg.Region, clientCfg.APIKey)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("failed to fetch alerts: %v", err))
+			return
+		}
+	}
+
+	coralogix.ExtractFeatures(alerts, nil)
+	mitreCoverage := mitre.AnalyzeCoverage(alerts)
+	alertInsights := similarity.Analyze(alerts, nil, 0, mitreCoverage)
+
+	var cachedReport *models.InsightsReport
+	if h.cache != nil {
+		if key, err := computeInsightsCacheKey(req.Client, alertInsights); err == nil {
+			if cached, ok := h.cache.GetString(ctx, key); ok {
+				var ir models.InsightsReport
+				if json.Unmarshal([]byte(cached), &ir) == nil {
+					cachedReport = &ir
+				}
+			}
+		}
+	}
+
+	insightsProvider, err := resolveInsightsProvider(h.config)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("insights provider unavailable: %v", err))
+		return
+	}
+
+	narrative, narErr := insights.EnrichExportNarrative(ctx, alerts, nil, mitreCoverage, alertInsights, cachedReport, insightsProvider)
+	if narErr != nil {
+		log.Printf("WARN [export] client=%s narrative: %v", req.Client, narErr)
+		writeError(w, http.StatusBadGateway, "export narrative generation failed")
+		return
+	}
+	if narrative == nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, narrative)
+}
+
 // HandleSuggestions generates LLM-powered alert suggestions for a single uncovered technique.
 // POST /api/suggestions { "client": "X", "technique_id": "T1059", "tactic": "execution", "provider": "nvidia" }
 func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
