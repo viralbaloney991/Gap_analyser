@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, ClientInfo, InsightsReport, SuggestionsResponse } from '../types';
+import type { AnalyzeResponse, ClientInfo, ExportNarrativeReport, InsightsReport, SuggestionsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -56,6 +56,19 @@ export async function fetchSuggestions(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Suggestions failed' }));
     throw new Error(err.error || 'Failed to generate suggestions');
+  }
+  return res.json();
+}
+
+export async function fetchExportNarrative(client: string): Promise<ExportNarrativeReport> {
+  const res = await fetch(`${API_BASE}/api/export/narrative`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Export failed' }));
+    throw new Error(err.error || 'Export narrative failed');
   }
   return res.json();
 }
