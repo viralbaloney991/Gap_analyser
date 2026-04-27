@@ -46,6 +46,12 @@ func TestEnrichActionable_validResponse_parsed(t *testing.T) {
 	if rec.QuerySkeleton == "" {
 		t.Error("query_skeleton must not be empty")
 	}
+	if rec.Prose == "" {
+		t.Error("prose must not be empty")
+	}
+	if rec.Prose != "Build T1078 detection on AWS CloudTrail." {
+		t.Errorf("prose: got %q", rec.Prose)
+	}
 	if len(result.WeakDetectionQuality) != 0 {
 		t.Errorf("weak_detection_quality: want 0, got %d", len(result.WeakDetectionQuality))
 	}

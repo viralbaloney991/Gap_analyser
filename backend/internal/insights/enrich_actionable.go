@@ -36,8 +36,8 @@ Rules:
 - Do not fabricate log source names, technique IDs, or field names not present in the input`
 
 type actionableInput struct {
-	Gaps         actionableGapsInput    `json:"gaps"`
-	Integrations []integrationForPrompt `json:"integrations"`
+	Gaps         actionableGapsInput     `json:"gaps"`
+	Integrations []models.IntegrationInfo `json:"integrations"`
 }
 
 type actionableGapsInput struct {
@@ -45,11 +45,6 @@ type actionableGapsInput struct {
 	WeakDetectionQuality []string `json:"weak_detection_quality"`
 	MissingSourceAlerts  []string `json:"missing_source_alerts"`
 	AdvancedUseCases     []string `json:"advanced_use_cases"`
-}
-
-type integrationForPrompt struct {
-	Name       string `json:"name"`
-	AlertCount int    `json:"alert_count"`
 }
 
 // EnrichActionable generates structured, actionable recommendations for four gap
@@ -69,14 +64,6 @@ func EnrichActionable(
 		return nil, nil
 	}
 
-	promptIntegrations := make([]integrationForPrompt, 0, len(integrations))
-	for _, integ := range integrations {
-		promptIntegrations = append(promptIntegrations, integrationForPrompt{
-			Name:       integ.Name,
-			AlertCount: integ.AlertCount,
-		})
-	}
-
 	input := actionableInput{
 		Gaps: actionableGapsInput{
 			NoDetection:          gaps.NoDetection,
@@ -84,7 +71,7 @@ func EnrichActionable(
 			MissingSourceAlerts:  gaps.MissingSourceAlerts,
 			AdvancedUseCases:     gaps.AdvancedUseCases,
 		},
-		Integrations: promptIntegrations,
+		Integrations: integrations,
 	}
 
 	inputJSON, err := json.Marshal(input)
