@@ -234,10 +234,13 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     padding: '8px 14px',
     background: 'transparent',
     border: 'none',
-    color: '#e5e5e5',
+    color: 'var(--text-sec)',
     cursor: 'pointer',
     textAlign: 'left',
-    fontSize: 13,
+    fontFamily: 'var(--font-mono)',
+    fontSize: '0.7rem',
+    letterSpacing: '0.04em',
+    transition: 'color 0.12s, background 0.12s',
   };
 
   return (
@@ -268,19 +271,20 @@ export default function AlertInsights({ data, report, insightsError = false, cli
               </button>
               {showExportMenu && (
                 <div style={{
-                  position: 'absolute', right: 0, top: '110%',
-                  background: '#1e1e1e', border: '1px solid #444',
-                  borderRadius: 6, minWidth: 200, zIndex: 50, overflow: 'hidden'
+                  position: 'absolute', right: 0, top: 'calc(100% + 4px)',
+                  background: 'var(--surface-2)', border: '1px solid var(--border-bright)',
+                  borderRadius: 'var(--radius-md)', minWidth: 200, zIndex: 50, overflow: 'hidden',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
                 }}>
-                  <button onClick={handleExportCurrentXLSX} style={menuItemStyle}>Current tab → XLSX</button>
-                  <button onClick={handleExportCurrentPDF} style={menuItemStyle}>Current tab → PDF</button>
-                  <hr style={{ margin: 0, borderColor: '#333' }} />
+                  <button onClick={handleExportCurrentXLSX} style={menuItemStyle}>Current tab: XLSX</button>
+                  <button onClick={handleExportCurrentPDF} style={menuItemStyle}>Current tab: PDF</button>
+                  <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />
                   <button
                     onClick={handleExportFullReport}
                     disabled={!localReport}
-                    style={{ ...menuItemStyle, opacity: localReport ? 1 : 0.4 }}
+                    style={{ ...menuItemStyle, color: localReport ? 'var(--accent)' : 'var(--text-dim)', opacity: localReport ? 1 : 0.5 }}
                   >
-                    Full report → PDF
+                    Full report: PDF
                   </button>
                 </div>
               )}
@@ -630,9 +634,11 @@ export default function AlertInsights({ data, report, insightsError = false, cli
           onClick={() => setExportError(null)}
           style={{
             position: 'fixed', bottom: 24, right: 24,
-            background: '#7f1d1d', color: '#fca5a5',
-            padding: '12px 20px', borderRadius: 8, fontSize: 13, zIndex: 100,
-            cursor: 'pointer',
+            background: 'var(--danger-dim)', color: 'var(--danger)',
+            border: '1px solid rgba(239,68,68,0.25)',
+            padding: '10px 16px', borderRadius: 'var(--radius-lg)',
+            fontFamily: 'var(--font-mono)', fontSize: '0.7rem',
+            zIndex: 100, cursor: 'pointer',
           }}
         >
           {exportError}
@@ -641,8 +647,11 @@ export default function AlertInsights({ data, report, insightsError = false, cli
       {isExporting && (
         <div style={{
           position: 'fixed', bottom: 24, right: 24,
-          background: '#1e3a5f', color: '#93c5fd',
-          padding: '12px 20px', borderRadius: 8, fontSize: 13, zIndex: 100,
+          background: 'var(--sky-dim)', color: 'var(--sky)',
+          border: '1px solid rgba(56,189,248,0.2)',
+          padding: '10px 16px', borderRadius: 'var(--radius-lg)',
+          fontFamily: 'var(--font-mono)', fontSize: '0.7rem',
+          zIndex: 100,
         }}>
           Generating your report, this takes ~20 seconds…
         </div>
