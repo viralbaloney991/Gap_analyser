@@ -53,6 +53,7 @@ type AlertFeatures struct {
 // (no DataSources and no Entities), making detection quality poor.
 type TechniqueCoverageEntry struct {
 	Name       string `json:"name"`
+	Tactic     string `json:"tactic"`
 	AlertCount int    `json:"alert_count"`
 	Weak       bool   `json:"weak,omitempty"`
 }
@@ -85,11 +86,17 @@ type ActionableGapCategories struct {
 	AdvancedUseCases     []ActionableRecommendation `json:"advanced_use_cases"`
 }
 
+type ExportNarrativeReport struct {
+	ExecutiveSummary   string   `json:"executive_summary"`
+	KeyFindings        []string `json:"key_findings"`
+	RecommendedActions []string `json:"recommended_actions"`
+}
+
 // MITRECoverageResult is the response for MITRE coverage analysis.
 type MITRECoverageResult struct {
 	NavigatorLayer    map[string]any                    `json:"navigator_layer"`
 	Summary           MITRECoverageSummary              `json:"summary"`
-	TechniqueCoverage map[string]TechniqueCoverageEntry `json:"-"` // internal only; not exposed in AnalyzeResponse
+	TechniqueCoverage map[string]TechniqueCoverageEntry `json:"technique_coverage,omitempty"`
 }
 
 type MITRECoverageSummary struct {

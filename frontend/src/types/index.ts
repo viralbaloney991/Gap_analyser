@@ -28,6 +28,13 @@ export interface TacticCoverage {
   covered_subs: number;
 }
 
+export interface TechniqueCoverageEntry {
+  name: string;
+  tactic: string;
+  alert_count: number;
+  weak?: boolean;
+}
+
 export interface MITRECoverageSummary {
   total_techniques: number;
   covered_techniques: number;
@@ -59,6 +66,7 @@ export interface NavigatorLayer {
 export interface MITRECoverageResult {
   navigator_layer: NavigatorLayer;
   summary: MITRECoverageSummary;
+  technique_coverage?: Record<string, TechniqueCoverageEntry>;
 }
 
 export interface DetectionFamily {
@@ -136,6 +144,12 @@ export interface InsightsReport {
   gap_categories: GapCategories;
   actionable_gaps?: ActionableGapCategories;
   noise_explanations?: string[];
+}
+
+export interface ExportNarrativeReport {
+  executive_summary: string;
+  key_findings: string[];
+  recommended_actions: string[];
 }
 
 export interface AnalyzeResponse {

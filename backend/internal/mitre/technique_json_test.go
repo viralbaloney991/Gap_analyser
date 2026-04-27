@@ -147,3 +147,25 @@ func TestAnalyzeCoverage_TechniqueLevel(t *testing.T) {
 		t.Error("T1566: Weak must be false when AlertCount=0")
 	}
 }
+
+func TestAnalyzeCoverage_TechniqueCoverageHasTactic(t *testing.T) {
+	alerts := []*models.AlertDef{
+		{
+			Features: models.AlertFeatures{
+				Techniques:  []string{"T1078"},
+				DataSources: []string{"cloudtrail"},
+			},
+		},
+	}
+	result := AnalyzeCoverage(alerts)
+	entry, ok := result.TechniqueCoverage["T1078"]
+	if !ok {
+		t.Fatal("expected T1078 in TechniqueCoverage")
+	}
+	if entry.Tactic == "" {
+		t.Error("expected Tactic to be populated, got empty string")
+	}
+	if entry.Tactic != "initial-access" {
+		t.Errorf("expected tactic=initial-access, got %q", entry.Tactic)
+	}
+}
