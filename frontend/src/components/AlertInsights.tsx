@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { SimilarityResult, InsightsReport, NoiseAlert, DetectionFamily } from '../types';
+import type { SimilarityResult, InsightsReport, NoiseAlert, DetectionFamily, ActionableRecommendation } from '../types';
 import { fetchInsights } from '../services/api';
 
 interface Props {
@@ -36,6 +36,16 @@ export default function AlertInsights({ data, report, insightsError = false, cli
 
   const toggleCard = (key: string) => {
     setExpandedCards(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const [expandedQueries, setExpandedQueries] = useState<Set<string>>(new Set());
+
+  const toggleQuery = (key: string) => {
+    setExpandedQueries(prev => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
@@ -92,6 +102,65 @@ export default function AlertInsights({ data, report, insightsError = false, cli
         ))}
       </div>
     );
+  };
+
+  const severityColors: Record<string, string> = {
+    critical: '#ef4444',
+    high:     '#f97316',
+    medium:   '#eab308',
+    low:      '#3b82f6',
+  };
+
+  const renderActionableSection = (
+    title: string,
+    actionable: ActionableRecommendation[] | undefined,
+    fallback: string[] | undefined
+  ) => {
+    if (actionable && actionable.length > 0) {
+      return (
+        <div key={title} style={{ marginBottom: 16 }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>{title}</div>
+          {actionable.map((item, i) => {
+            const queryKey = `${title}-${i}`;
+            const expanded = expandedQueries.has(queryKey);
+            return (
+              <div key={queryKey} className="insight-card insight-card--coverage" style={{ marginBottom: 8 }}>
+                <div className="insight-card-header" style={{ marginBottom: 4 }}>
+                  <span
+                    className="badge"
+                    style={{ backgroundColor: severityColors[item.severity] ?? '#6b7280', color: '#fff', marginRight: 8 }}
+                  >
+                    {item.severity.toUpperCase()}
+                  </span>
+                  <span style={{ fontWeight: 600, fontSize: 12 }}>{item.log_source}</span>
+                </div>
+                <div className="insight-card-title" style={{ marginBottom: 6 }}>{item.prose}</div>
+                <button
+                  onClick={() => toggleQuery(queryKey)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60a5fa', fontSize: 12, padding: 0 }}
+                >
+                  {expanded ? '▼ Hide query' : '▶ Show query'}
+                </button>
+                {expanded && (
+                  <div style={{ marginTop: 6 }}>
+                    <pre style={{ background: '#1e1e2e', color: '#cdd6f4', padding: '8px 12px', borderRadius: 4, fontSize: 12, overflowX: 'auto', margin: 0 }}>
+                      {item.query_skeleton}
+                    </pre>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(item.query_skeleton)}
+                      style={{ marginTop: 4, background: 'none', border: '1px solid #4b5563', cursor: 'pointer', color: '#9ca3af', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+    return renderGapSection(title, fallback);
   };
 
   const noiseCount = data.noise_alerts?.length ?? 0;
@@ -378,11 +447,11 @@ export default function AlertInsights({ data, report, insightsError = false, cli
             ) : gapCount > 0 ? (
               <>
                 {renderGapSection('Environment Cleanup', effectiveReport?.gap_categories.environment_cleanup)}
-                {renderGapSection('No Detection', effectiveReport?.gap_categories.no_detection)}
+                {renderActionableSection('No Detection', effectiveReport?.actionable_gaps?.no_detection, effectiveReport?.gap_categories.no_detection)}
                 {renderGapSection('Poor Tactic Coverage', effectiveReport?.gap_categories.poor_tactic_coverage)}
-                {renderGapSection('Weak Detection Quality', effectiveReport?.gap_categories.weak_detection_quality)}
-                {renderGapSection('Advanced Use Cases', effectiveReport?.gap_categories.advanced_use_cases)}
-                {renderGapSection('Missing Source Alerts', effectiveReport?.gap_categories.missing_source_alerts)}
+                {renderActionableSection('Weak Detection Quality', effectiveReport?.actionable_gaps?.weak_detection_quality, effectiveReport?.gap_categories.weak_detection_quality)}
+                {renderActionableSection('Advanced Use Cases', effectiveReport?.actionable_gaps?.advanced_use_cases, effectiveReport?.gap_categories.advanced_use_cases)}
+                {renderActionableSection('Missing Source Alerts', effectiveReport?.actionable_gaps?.missing_source_alerts, effectiveReport?.gap_categories.missing_source_alerts)}
               </>
             ) : (
               <div className="state-empty">
