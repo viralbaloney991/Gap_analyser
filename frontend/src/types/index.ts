@@ -104,6 +104,20 @@ export interface GapCategories {
   missing_source_alerts: string[];
 }
 
+export interface ActionableRecommendation {
+  prose: string;
+  log_source: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  query_skeleton: string;
+}
+
+export interface ActionableGapCategories {
+  no_detection: ActionableRecommendation[];
+  weak_detection_quality: ActionableRecommendation[];
+  missing_source_alerts: ActionableRecommendation[];
+  advanced_use_cases: ActionableRecommendation[];
+}
+
 export interface SimilarityResult {
   families: DetectionFamily[];
   duplicates: DuplicateGroup[];
@@ -120,6 +134,7 @@ export interface InsightsReport {
   recommendations: string[];
   enriched_dups: string[];
   gap_categories: GapCategories;
+  actionable_gaps?: ActionableGapCategories;
   noise_explanations?: string[];
 }
 
