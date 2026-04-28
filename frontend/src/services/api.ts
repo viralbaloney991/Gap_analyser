@@ -8,12 +8,12 @@ export async function fetchClients(): Promise<ClientInfo[]> {
   return res.json();
 }
 
-export async function analyzeClient(client: string, refresh = false): Promise<AnalyzeResponse> {
+export async function analyzeClient(client: string, refresh = false, lookbackDays = 30): Promise<AnalyzeResponse> {
   const url = refresh ? `${API_BASE}/api/analyze?refresh=true` : `${API_BASE}/api/analyze`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ client }),
+    body: JSON.stringify({ client, lookback_days: lookbackDays }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Analysis failed' }));
