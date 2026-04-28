@@ -242,7 +242,6 @@ export default function AlertInsights({ data, report, insightsError = false, cli
         <div className="insights-model-header">
           <span className="insights-model-badge">Claude Opus 4.7</span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <NoisePills days={lookbackDays} onChange={onReanalyze} disabled={isRegenerating || isExporting} />
             <button
               className="insights-regenerate-btn"
               onClick={handleRegenerate}
@@ -539,7 +538,11 @@ export default function AlertInsights({ data, report, insightsError = false, cli
 
           {/* ── NOISE ── */}
           {activeTab === 'noise' && (
-            data.noise_alerts?.length ? (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <NoisePills days={lookbackDays} onChange={onReanalyze} disabled={isRegenerating} />
+              </div>
+            {data.noise_alerts?.length ? (
               data.noise_alerts.map((noise: NoiseAlert, i) => {
                 const key = `noise-${i}`;
                 const isOpen = expandedCards.has(key);
@@ -590,7 +593,8 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 <div className="state-empty__title">No rule-confirmed noisy alerts</div>
                 <div className="state-empty__body">No alerts exceeded the behavioral or structural noise thresholds. LLM-identified noise candidates (e.g. unscoped immediate alerts) appear in Gaps → Environment Cleanup.</div>
               </div>
-            )
+            )}
+          </>
           )}
 
           {/* ── UNIQUE ── */}
