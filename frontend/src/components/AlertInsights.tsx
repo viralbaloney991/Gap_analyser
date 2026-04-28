@@ -642,7 +642,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
           fontFamily: 'var(--font-mono)', fontSize: '0.7rem',
           zIndex: 100,
         }}>
-          Generating your report, this takes ~20 seconds…
+          Generating report…
         </div>
       )}
     </div>
