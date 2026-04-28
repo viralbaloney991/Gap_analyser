@@ -555,16 +555,19 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 ))}
               </div>
               {(() => {
-                const filtered = (data.noise_alerts ?? []).filter((n: NoiseAlert) => {
-                  if (noiseFilter === 'all') return true;
-                  if (noiseFilter === 'behavioral') return n.noise_type === 'behavioral' || n.noise_type === 'both';
-                  return n.noise_type === 'structural' || n.noise_type === 'both';
-                });
+                const allNoise = data.noise_alerts ?? [];
+                const filtered = allNoise
+                  .map((n: NoiseAlert, origIdx: number) => ({ n, origIdx }))
+                  .filter(({ n }: { n: NoiseAlert }) => {
+                    if (noiseFilter === 'all') return true;
+                    if (noiseFilter === 'behavioral') return n.noise_type === 'behavioral' || n.noise_type === 'both';
+                    return n.noise_type === 'structural' || n.noise_type === 'both';
+                  });
                 return filtered.length ? (
-                  filtered.map((noise: NoiseAlert, i: number) => {
-                    const key = `noise-${i}`;
+                  filtered.map(({ n: noise, origIdx }: { n: NoiseAlert; origIdx: number }, i: number) => {
+                    const key = `noise-${origIdx}`;
                     const isOpen = expandedCards.has(key);
-                    const explanation = effectiveReport?.noise_explanations?.[i];
+                    const explanation = effectiveReport?.noise_explanations?.[origIdx];
                     const reasonPreview = noise.reason ?? '';
                     return (
                       <div
