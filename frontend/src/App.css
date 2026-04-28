@@ -861,3 +861,9 @@ html, body, #root {
 .noise-pills__pill--active { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
 .noise-pills__pill--active:hover:not(:disabled) { background: var(--accent); }
 .noise-pills--disabled { opacity: 0.5; pointer-events: none; }
+
+/* Noise tab type filter pills */
+.noise-filter-pills { display: flex; gap: 4px; margin-bottom: 12px; }
+.noise-filter-pill { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase; padding: 3px 10px; border-radius: var(--radius-sm); border: 1px solid var(--border-bright); background: transparent; color: var(--text-sec); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+.noise-filter-pill:hover { background: var(--surface-2); color: var(--text); }
+.noise-filter-pill--active { background: var(--surface-2); border-color: var(--accent); color: var(--accent); font-weight: 600; }
