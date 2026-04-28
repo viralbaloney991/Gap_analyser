@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import type { SimilarityResult, InsightsReport, MITRECoverageResult, NoiseAlert, DetectionFamily, ActionableRecommendation } from '../types';
 import { fetchInsights, fetchExportNarrative } from '../services/api';
 import { exportTabAsXLSX, exportTabAsPDF, exportFullReportPDF } from '../utils/export';
+import NoisePills from './NoisePills';
 
 interface Props {
   data: SimilarityResult;
@@ -10,6 +11,8 @@ interface Props {
   client: string;
   mitreCoverage: MITRECoverageResult;
   totalAlerts: number;
+  lookbackDays: number;
+  onReanalyze: (days: number) => void;
 }
 
 type Tab = 'duplicates' | 'families' | 'merge' | 'gaps' | 'noise' | 'unique';
@@ -30,7 +33,7 @@ function noiseTypeLabel(noiseType?: string): string {
   }
 }
 
-export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage, totalAlerts }: Props) {
+export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage, totalAlerts, lookbackDays, onReanalyze }: Props) {
   const [activeTab, setActiveTab]         = useState<Tab>('duplicates');
   const [localReport, setLocalReport]     = useState<InsightsReport | null>(report);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -228,20 +231,6 @@ export default function AlertInsights({ data, report, insightsError = false, cli
 
   const hasError = insightsError || regenError;
 
-  const menuItemStyle: React.CSSProperties = {
-    display: 'block',
-    width: '100%',
-    padding: '8px 14px',
-    background: 'transparent',
-    border: 'none',
-    color: 'var(--text-sec)',
-    cursor: 'pointer',
-    textAlign: 'left',
-    fontFamily: 'var(--font-mono)',
-    fontSize: '0.7rem',
-    letterSpacing: '0.04em',
-    transition: 'color 0.12s, background 0.12s',
-  };
 
   return (
     <div className="alert-insights">
@@ -253,6 +242,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
         <div className="insights-model-header">
           <span className="insights-model-badge">Claude Opus 4.7</span>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <NoisePills days={lookbackDays} onChange={onReanalyze} disabled={isRegenerating || isExporting} />
             <button
               className="insights-regenerate-btn"
               onClick={handleRegenerate}
@@ -270,22 +260,17 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 {isExporting ? 'Generating…' : 'Export ▾'}
               </button>
               {showExportMenu && (
-                <div style={{
-                  position: 'absolute', right: 0, top: 'calc(100% + 4px)',
-                  background: 'var(--surface-2)', border: '1px solid var(--border-bright)',
-                  borderRadius: 'var(--radius-md)', minWidth: 200, zIndex: 50, overflow: 'hidden',
-                  boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                }}>
-                  <button onClick={handleExportCurrentXLSX} style={menuItemStyle}>Current tab: XLSX</button>
-                  <button onClick={handleExportCurrentPDF} style={menuItemStyle}>Current tab: PDF</button>
-                  <div style={{ height: 1, background: 'var(--border)', margin: '2px 0' }} />
-                  <button
-                    onClick={handleExportFullReport}
-                    disabled={!localReport}
-                    style={{ ...menuItemStyle, color: localReport ? 'var(--accent)' : 'var(--text-dim)', opacity: localReport ? 1 : 0.5 }}
-                  >
-                    Full report: PDF
-                  </button>
+                <div className="export-menu">
+                  <button onClick={handleExportCurrentXLSX} className="export-menu-item">Current tab: XLSX</button>
+                  <button onClick={handleExportCurrentPDF} className="export-menu-item">Current tab: PDF</button>
+                  {localReport && (
+                    <>
+                      <div className="export-menu-divider" />
+                      <button onClick={handleExportFullReport} className="export-menu-item export-menu-item--accent">
+                        Full report: PDF
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>

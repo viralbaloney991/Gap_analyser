@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { fetchClients } from '../services/api';
 import type { ClientInfo } from '../types';
+import NoisePills from './NoisePills';
 
 const REGION_META: Record<string, { label: string; city: string; group: string }> = {
   eu1: { label: 'EU1', city: 'Dublin',    group: 'Europe'       },
@@ -17,9 +18,11 @@ const GROUP_ORDER = ['Europe', 'Americas', 'Asia Pacific'];
 interface Props {
   onAnalyze: (client: string) => void;
   loading: boolean;
+  lookbackDays: number;
+  onLookbackChange: (days: number) => void;
 }
 
-export default function ClientSelector({ onAnalyze, loading }: Props) {
+export default function ClientSelector({ onAnalyze, loading, lookbackDays, onLookbackChange }: Props) {
   const [clients, setClients]         = useState<ClientInfo[]>([]);
   const [selected, setSelected]       = useState('');
   const [fetchError, setFetchError]   = useState('');
@@ -59,6 +62,7 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
         <div className="cs-eyebrow">Alert Analysis Engine</div>
         <h1 className="cs-title">Select a <em>client</em></h1>
         <p className="cs-subtitle">Analyze detection coverage, identify gaps, and reduce alert fatigue.</p>
+        <NoisePills days={lookbackDays} onChange={onLookbackChange} disabled={loading} />
       </div>
 
       {/* Search bar */}

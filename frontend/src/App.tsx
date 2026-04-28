@@ -9,6 +9,8 @@ import { analyzeClient, fetchInsights } from './services/api';
 import type { AnalyzeResponse, InsightsReport } from './types';
 import './App.css';
 
+const VALID_LOOKBACK = [7, 14, 30, 90];
+
 type View = 'form' | 'summary' | 'mitre' | 'insights';
 
 const FADE_UP_TRANSITION: Transition = { duration: 0.2, ease: 'easeOut' };
@@ -28,14 +30,24 @@ function App() {
   const [clientName, setClientName]       = useState('');
   const [insightsReport, setInsightsReport] = useState<InsightsReport | null>(null);
   const [insightsError, setInsightsError] = useState(false);
+  const [lookbackDays, setLookbackDays] = useState<number>(() => {
+    const stored = localStorage.getItem('noise_lookback_days');
+    const parsed = stored ? Number(stored) : 30;
+    return VALID_LOOKBACK.includes(parsed) ? parsed : 30;
+  });
 
-  const handleAnalyze = async (client: string, refresh = false) => {
+  const updateLookback = (days: number) => {
+    setLookbackDays(days);
+    localStorage.setItem('noise_lookback_days', String(days));
+  };
+
+  const handleAnalyze = async (client: string, refresh = false, days = lookbackDays) => {
     setLoading(true);
     setError('');
     setInsightsReport(null);
     setInsightsError(false);
     try {
-      const result = await analyzeClient(client, refresh);
+      const result = await analyzeClient(client, refresh, days);
       setData(result);
       setClientName(client);
       setView('summary');
@@ -120,7 +132,12 @@ function App() {
         <AnimatePresence mode="wait">
           {view === 'form' && (
             <motion.div key="form" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <ClientSelector onAnalyze={handleAnalyze} loading={loading} />
+              <ClientSelector
+                onAnalyze={handleAnalyze}
+                loading={loading}
+                lookbackDays={lookbackDays}
+                onLookbackChange={updateLookback}
+              />
             </motion.div>
           )}
 
@@ -152,6 +169,8 @@ function App() {
                 client={clientName}
                 mitreCoverage={data.mitre_coverage}
                 totalAlerts={data.stats.total_alerts}
+                lookbackDays={lookbackDays}
+                onReanalyze={(days) => { updateLookback(days); handleAnalyze(clientName, false, days); }}
               />
             </motion.div>
           )}

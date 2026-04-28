@@ -571,6 +571,13 @@ html, body, #root {
 .insights-regenerate-btn:disabled   { opacity: 0.5; cursor: not-allowed; }
 .insights-regenerate-btn:hover:not(:disabled) { opacity: 0.9; }
 
+.export-menu { position: absolute; right: 0; top: calc(100% + 4px); background: var(--surface-2); border: 1px solid var(--border-bright); border-radius: var(--radius-md); min-width: 200px; z-index: 50; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
+.export-menu-divider { height: 1px; background: var(--border); margin: 2px 0; }
+.export-menu-item { display: block; width: 100%; padding: 8px 14px; background: transparent; border: none; color: var(--text-sec); cursor: pointer; text-align: left; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.04em; transition: background 0.12s, color 0.12s; }
+.export-menu-item:hover { background: var(--surface); color: var(--text); }
+.export-menu-item--accent { color: var(--accent); }
+.export-menu-item--accent:hover { background: var(--accent-dim); color: var(--accent); }
+
 .insights-panel-scroll { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 20px; }
 
 .insights-summary-text { font-family: var(--font-display); font-size: 0.8rem; color: var(--text-sec); line-height: 1.65; }
@@ -844,3 +851,13 @@ html, body, #root {
 /* Download button */
 .mitre-download-btn { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 5px 11px; border-radius: var(--radius-sm); border: 1px solid var(--border-bright); background: transparent; color: var(--accent); cursor: pointer; transition: all 0.15s; }
 .mitre-download-btn:hover { background: var(--accent-dim); }
+
+/* Noise lookback pills */
+.noise-pills { display: flex; align-items: center; gap: 10px; }
+.noise-pills__label { font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-sec); }
+.noise-pills__group { display: flex; gap: 4px; }
+.noise-pills__pill { font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 0.04em; padding: 4px 9px; border-radius: var(--radius-sm); border: 1px solid var(--border-bright); background: transparent; color: var(--text-sec); cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+.noise-pills__pill:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.noise-pills__pill--active { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+.noise-pills__pill--active:hover:not(:disabled) { background: var(--accent); }
+.noise-pills--disabled { opacity: 0.5; pointer-events: none; }
