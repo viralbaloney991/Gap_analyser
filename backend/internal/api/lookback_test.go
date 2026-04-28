@@ -48,3 +48,27 @@ func TestHandleAnalyze_unknownClient(t *testing.T) {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
+
+func TestHandleAnalyze_missingClient(t *testing.T) {
+	h := &Handler{config: &config.Config{Clients: map[string]config.ClientConfig{}}}
+	body := strings.NewReader(`{"lookback_days":30}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/analyze", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.HandleAnalyze(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestHandleAnalyze_invalidJSON(t *testing.T) {
+	h := &Handler{config: &config.Config{Clients: map[string]config.ClientConfig{}}}
+	body := strings.NewReader(`not json`)
+	req := httptest.NewRequest(http.MethodPost, "/api/analyze", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.HandleAnalyze(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}

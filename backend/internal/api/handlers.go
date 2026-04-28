@@ -425,6 +425,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	for i, a := range alerts {
 		insightsAlertIDs[i] = a.ID
 	}
+	// Always use 30-day window for insights — lookback_days is an analyze-only param.
 	insightsEventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, insightsAlertIDs, 30)
 	if insightsEventCounts == nil {
 		log.Printf("WARN [noise] event counts unavailable for insights client=%s — structural-only", req.Client)
@@ -549,6 +550,7 @@ func (h *Handler) HandleExportNarrative(w http.ResponseWriter, r *http.Request) 
 	for i, a := range alerts {
 		exportAlertIDs[i] = a.ID
 	}
+	// Always use 30-day window for export — lookback_days is an analyze-only param.
 	exportEventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, exportAlertIDs, 30)
 	alertInsights := similarity.Analyze(alerts, exportEventCounts, 0, mitreCoverage)
 
