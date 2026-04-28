@@ -203,13 +203,14 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	// Run MITRE coverage.
 	mitreCoverage := mitre.AnalyzeCoverage(alerts)
 
-	// Fetch 30-day trigger counts for behavioral noise detection.
+	// Fetch trigger counts for behavioral noise detection using the requested lookback window.
 	// Returns nil on failure — findNoiseAlerts falls back to structural-only.
+	lookback := validateLookbackDays(req.LookbackDays)
 	alertIDs := make([]string, len(alerts))
 	for i, a := range alerts {
 		alertIDs[i] = a.ID
 	}
-	eventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, alertIDs)
+	eventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, alertIDs, lookback)
 	if eventCounts == nil {
 		log.Printf("WARN [noise] event counts unavailable for client=%s — structural-only noise", req.Client)
 	}
@@ -424,7 +425,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	for i, a := range alerts {
 		insightsAlertIDs[i] = a.ID
 	}
-	insightsEventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, insightsAlertIDs)
+	insightsEventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, insightsAlertIDs, 30)
 	if insightsEventCounts == nil {
 		log.Printf("WARN [noise] event counts unavailable for insights client=%s — structural-only", req.Client)
 	}
@@ -548,7 +549,7 @@ func (h *Handler) HandleExportNarrative(w http.ResponseWriter, r *http.Request) 
 	for i, a := range alerts {
 		exportAlertIDs[i] = a.ID
 	}
-	exportEventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, exportAlertIDs)
+	exportEventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, exportAlertIDs, 30)
 	alertInsights := similarity.Analyze(alerts, exportEventCounts, 0, mitreCoverage)
 
 	var cachedReport *models.InsightsReport
@@ -558,6 +559,7 @@ func (h *Handler) HandleExportNarrative(w http.ResponseWriter, r *http.Request) 
 				var ir models.InsightsReport
 				if json.Unmarshal([]byte(cached), &ir) == nil {
 					cachedReport = &ir
+					log.Printf("INFO [export] insights cache HIT client=%s", req.Client)
 				}
 			}
 		}
@@ -567,6 +569,19 @@ func (h *Handler) HandleExportNarrative(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("insights provider unavailable: %v", err))
 		return
+	}
+
+	// If insights aren't cached, generate them inline so the export is self-sufficient.
+	// The result is not cached here — export always generates a fresh narrative.
+	if cachedReport == nil {
+		log.Printf("INFO [export] insights cache MISS client=%s — generating inline", req.Client)
+		ir, enrichErr := insights.Enrich(ctx, alertInsights, alerts, nil, mitreCoverage, exportEventCounts, insightsProvider)
+		if enrichErr != nil {
+			log.Printf("WARN [export] inline insights enrich client=%s: %v", req.Client, enrichErr)
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("insights generation failed: %v", enrichErr))
+			return
+		}
+		cachedReport = ir
 	}
 
 	narrative, narErr := insights.EnrichExportNarrative(ctx, alerts, nil, mitreCoverage, alertInsights, cachedReport, insightsProvider)
@@ -978,20 +993,29 @@ func fetchAlerts(ctx context.Context, region, apiKey string) ([]*models.AlertDef
 	return client.FetchActiveAlerts(ctx)
 }
 
-// fetchEventCounts fetches 30-day trigger counts for the given alert IDs.
+// fetchEventCounts fetches trigger counts for the given alert IDs over the specified number of days.
 // Returns nil on any error so callers fall back to structural-only noise detection.
-func fetchEventCounts(ctx context.Context, region, apiKey string, alertIDs []string) map[string]int {
+func fetchEventCounts(ctx context.Context, region, apiKey string, alertIDs []string, days int) map[string]int {
 	client, err := coralogix.NewClient(region, apiKey)
 	if err != nil {
 		return nil
 	}
 	defer client.Close()
-	counts, err := client.FetchAlertEventCounts(ctx, alertIDs, 30)
+	counts, err := client.FetchAlertEventCounts(ctx, alertIDs, days)
 	if err != nil {
 		log.Printf("DEBUG [noise] event count fetch failed: %v", err)
 		return nil
 	}
 	return counts
+}
+
+func validateLookbackDays(days int) int {
+	switch days {
+	case 7, 14, 30, 90:
+		return days
+	default:
+		return 30
+	}
 }
 
 // writeJSON writes a JSON response with the given status code.

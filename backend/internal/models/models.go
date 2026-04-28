@@ -180,7 +180,8 @@ type PairComparison struct {
 
 // API request/response types.
 type ClientAnalyzeRequest struct {
-	Client string `json:"client"`
+	Client       string `json:"client"`
+	LookbackDays int    `json:"lookback_days"`
 }
 
 type AnalyzeResponse struct {
