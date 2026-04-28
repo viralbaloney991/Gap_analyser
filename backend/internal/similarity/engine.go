@@ -218,7 +218,8 @@ func Analyze(
 	uniqueDetections := findUniqueDetections(vectors, matrix, n)
 
 	// Step 7: Noise detection.
-	noiseAlerts := findNoiseAlerts(vectors, alerts, eventCounts, integrationCount)
+	queryIDFThreshold := computeQueryIDFThreshold(vectors, idf)
+	noiseAlerts := findNoiseAlerts(vectors, alerts, eventCounts, integrationCount, idf, queryIDFThreshold)
 
 	return &models.SimilarityResult{
 		Families:         families,
@@ -984,7 +985,7 @@ func computeQueryIDFThreshold(vectors []featureVector, idf idfTable) float64 {
 	return scores[p25]
 }
 
-const behavioralNoiseThreshold = 20 // triggers in 30 days before alert is behaviorally noisy
+const behavioralNoiseThreshold = 10 // triggers in 30 days before alert is behaviorally noisy
 
 // findNoiseAlerts applies the hybrid two-signal noise model.
 //
@@ -1009,6 +1010,8 @@ func findNoiseAlerts(
 	alerts []*models.AlertDef,
 	eventCounts map[string]int,  // alertID → 30-day trigger count; nil = skip behavioral
 	integrationCount int,         // total integrations in org (for structural reason text)
+	idf idfTable,
+	queryIDFThreshold float64,
 ) []models.NoiseAlert {
 	var noisy []models.NoiseAlert
 
@@ -1043,8 +1046,6 @@ func findNoiseAlerts(
 			}
 		}
 
-		isFlowAlert := alert != nil && alert.AlertType == "flow"
-
 		// ── Signal 1: Behavioral ─────────────────────────────────────────
 		var triggerCount int
 		if alert != nil && eventCounts != nil {
@@ -1052,46 +1053,37 @@ func findNoiseAlerts(
 		}
 		isBehavioral := eventCounts != nil && triggerCount > behavioralNoiseThreshold
 
-		// ── Signal 2: Structural (skipped for flow alerts) ───────────────
-		// An alert is structurally noisy when it is unscoped, has no entity
-		// filter, and is a high-volume alert type. When event count data is
-		// available we additionally require triggerCount > 0: an alert that
-		// never fired in 30 days cannot be producing undesired volume, so
-		// flagging it as structural noise would be a false positive (e.g. a
-		// tight Lucene query like "Access Review Deletion" with no scope).
+		// ── Signal 2: Structural ─────────────────────────────────────────
+		// An alert is structurally noisy when it has no entity filter, evidence
+		// of volume, and EITHER:
+		//   (a) is unscoped (no app/subsystem), OR
+		//   (b) has a broad query (wildcard OR low average IDF weight).
 		isStructural := false
-		if !isFlowAlert && alert != nil {
+		isUnscoped := false
+		isBroadQuery := false
+		if alert != nil {
 			app, sub := coralogix.ExtractAppSubsystem(alert.TypeDef)
-			isUnscoped := app == "" && sub == ""
+			isUnscoped = app == "" && sub == ""
 			noEntity := len(v.entities) == 0
-			// logs_threshold and metric_threshold aggregate events over time —
-			// being unscoped means they inherently count too broadly (structural concern).
-			// logs_immediate fires on each individual match — if it fires too often,
-			// that is captured by the behavioral signal (trigger count > threshold);
-			// flagging it structurally would produce false positives for legitimate
-			// event-driven alerts like "Access Review Deletion" that have tight queries
-			// but no entity filter.
-			isHighVolumeType := alert.AlertType == "logs_threshold" ||
-				alert.AlertType == "metric_threshold"
+			isBroadQuery = hasWildcardQuery(v.luceneQuery) ||
+				avgIDF(v.luceneQuery, idf.luceneQuery) < queryIDFThreshold
 			hasEvidenceOfVolume := eventCounts == nil || triggerCount > 0
-			isStructural = isUnscoped && noEntity && isHighVolumeType && hasEvidenceOfVolume
+			isStructural = noEntity && hasEvidenceOfVolume && (isUnscoped || isBroadQuery)
 
 			if !isStructural && !isBehavioral {
 				switch {
-				case !isHighVolumeType:
-					noSignalReasons["type="+alert.AlertType]++
-				case !isUnscoped:
-					noSignalReasons["scoped"]++
 				case !noEntity:
 					noSignalReasons["has_entity"]++
 				case !hasEvidenceOfVolume:
 					noSignalReasons["zero_triggers"]++
+				case !isUnscoped && !isBroadQuery:
+					noSignalReasons["scoped_specific_query"]++
 				default:
 					noSignalReasons["behavioral_below_threshold"]++
 				}
 			}
-		} else if isFlowAlert && !isBehavioral {
-			noSignalReasons["flow_below_threshold"]++
+		} else if !isBehavioral {
+			noSignalReasons["behavioral_below_threshold"]++
 		}
 
 		// ── Neither signal → skip ─────────────────────────────────────────
@@ -1103,7 +1095,7 @@ func findNoiseAlerts(
 		noisy = append(noisy, models.NoiseAlert{
 			Name:            v.alertName,
 			MissingFeatures: buildMissingFeatures(v),
-			Reason:          buildNoiseReason(triggerCount, integrationCount, isBehavioral, isStructural),
+			Reason:          buildNoiseReason(triggerCount, integrationCount, isBehavioral, isUnscoped, isBroadQuery),
 			TriggerCount:    triggerCount,
 			NoiseType:       noiseTypeString(isBehavioral, isStructural),
 		})
@@ -1135,20 +1127,25 @@ func noiseTypeString(isBehavioral, isStructural bool) string {
 	}
 }
 
-// buildNoiseReason returns a specific human-readable reason for the noise classification.
-func buildNoiseReason(triggerCount, integrationCount int, isBehavioral, isStructural bool) string {
+// buildNoiseReason returns a human-readable explanation for why the alert was flagged.
+// isUnscoped and isBroadQuery are the two sub-conditions of the structural signal.
+func buildNoiseReason(triggerCount, integrationCount int, isBehavioral, isUnscoped, isBroadQuery bool) string {
 	var parts []string
 	if isBehavioral {
 		parts = append(parts, fmt.Sprintf(
 			"Fired %d times in the last 30 days — alert is over-triggering.", triggerCount))
 	}
-	if isStructural {
-		if integrationCount >= 10 {
-			parts = append(parts, fmt.Sprintf(
-				"No app/subsystem scoping across an org with %d integrations — fires on all matching log sources.",
-				integrationCount))
+	if isUnscoped || isBroadQuery {
+		if isUnscoped {
+			if integrationCount >= 10 {
+				parts = append(parts, fmt.Sprintf(
+					"No app/subsystem scoping across an org with %d integrations — fires on all matching log sources.",
+					integrationCount))
+			} else {
+				parts = append(parts, "No app/subsystem scoping and no entity filter — alert may fire too broadly.")
+			}
 		} else {
-			parts = append(parts, "No app/subsystem scoping and no entity filter — alert may fire too broadly.")
+			parts = append(parts, "Broad query with no entity filter — fires on matching events across all log sources.")
 		}
 	}
 	return strings.Join(parts, " ")
