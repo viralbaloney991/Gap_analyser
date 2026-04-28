@@ -94,6 +94,21 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     }
   };
 
+  const NOISE_FILTER_LABELS: Record<'all' | 'behavioral' | 'structural', string> = {
+    all: 'All', behavioral: 'Behavioral', structural: 'Structural',
+  };
+
+  const filteredNoise = useMemo(() => {
+    const allNoise = data.noise_alerts ?? [];
+    return allNoise
+      .map((n, origIdx) => ({ n, origIdx }))
+      .filter(({ n }) => {
+        if (noiseFilter === 'all') return true;
+        if (noiseFilter === 'behavioral') return n.noise_type === 'behavioral' || n.noise_type === 'both';
+        return n.noise_type === 'structural' || n.noise_type === 'both';
+      });
+  }, [data.noise_alerts, noiseFilter]);
+
   const familyGroups = useMemo(() => {
     const map = new Map<string, { families: DetectionFamily[]; totalAlerts: number }>();
     (data.families ?? []).forEach(fam => {
@@ -111,6 +126,8 @@ export default function AlertInsights({ data, report, insightsError = false, cli
   useEffect(() => {
     if (report !== null && !isRegenerating) setLocalReport(report);
   }, [report]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { setNoiseFilter('all'); }, [data.noise_alerts]);
 
   useEffect(() => {
     if (!showExportMenu) return;
@@ -550,78 +567,68 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                     className={`noise-filter-pill${noiseFilter === f ? ' noise-filter-pill--active' : ''}`}
                     onClick={() => setNoiseFilter(f)}
                   >
-                    {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)}
+                    {NOISE_FILTER_LABELS[f]}
                   </button>
                 ))}
               </div>
-              {(() => {
-                const allNoise = data.noise_alerts ?? [];
-                const filtered = allNoise
-                  .map((n: NoiseAlert, origIdx: number) => ({ n, origIdx }))
-                  .filter(({ n }: { n: NoiseAlert }) => {
-                    if (noiseFilter === 'all') return true;
-                    if (noiseFilter === 'behavioral') return n.noise_type === 'behavioral' || n.noise_type === 'both';
-                    return n.noise_type === 'structural' || n.noise_type === 'both';
-                  });
-                return filtered.length ? (
-                  filtered.map(({ n: noise, origIdx }: { n: NoiseAlert; origIdx: number }, i: number) => {
-                    const key = `noise-${origIdx}`;
-                    const isOpen = expandedCards.has(key);
-                    const explanation = effectiveReport?.noise_explanations?.[origIdx];
-                    const reasonPreview = noise.reason ?? '';
-                    return (
-                      <div
-                        key={key}
-                        className={`insight-card insight-card--noise${isOpen ? ' insight-card--open' : ''}`}
-                        onClick={() => toggleCard(key)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <div className="insight-card-header">
-                          <div className="insight-card-title">{noise.name}</div>
-                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            <span className={`noise-type-badge noise-type-badge--${noise.noise_type ?? 'structural'}`}>
-                              {noiseTypeLabel(noise.noise_type)}
-                            </span>
-                            {(noise.trigger_count ?? 0) > 0 && (
-                              <span className="noise-trigger-count">Fired {noise.trigger_count}×</span>
-                            )}
-                            <span className="insight-card-chevron">{isOpen ? '▼' : '▶'}</span>
-                          </div>
+              {filteredNoise.length ? (
+                filteredNoise.map(({ n: noise, origIdx }) => {
+                  const key = `noise-${origIdx}`;
+                  const isOpen = expandedCards.has(key);
+                  const explanation = effectiveReport?.noise_explanations?.[origIdx];
+                  const reasonPreview = noise.reason ?? '';
+                  return (
+                    <div
+                      key={key}
+                      className={`insight-card insight-card--noise${isOpen ? ' insight-card--open' : ''}`}
+                      onClick={() => toggleCard(key)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <div className="insight-card-header">
+                        <div className="insight-card-title">{noise.name}</div>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <span className={`noise-type-badge noise-type-badge--${noise.noise_type ?? 'structural'}`}>
+                            {noiseTypeLabel(noise.noise_type)}
+                          </span>
+                          {(noise.trigger_count ?? 0) > 0 && (
+                            <span className="noise-trigger-count">Fired {noise.trigger_count}×</span>
+                          )}
+                          <span className="insight-card-chevron">{isOpen ? '▼' : '▶'}</span>
                         </div>
-                        {reasonPreview && (
-                          <p className="insight-card-noise-preview">{reasonPreview}</p>
-                        )}
-                        {isOpen && (
-                          <>
-                            {explanation && (
-                              <p className="insight-card-body">{explanation}</p>
-                            )}
-                            {noise.missing_features?.length > 0 && (
-                              <div className="missing-features">
-                                {noise.missing_features.map((feat: string, j: number) => (
-                                  <span key={`${j}-${feat}`} className="missing-tag">{feat}</span>
-                                ))}
-                              </div>
-                            )}
-                          </>
-                        )}
                       </div>
-                    );
-                  })
-                ) : (
-                  <div className="state-empty">
-                    <div className="state-empty__icon">◎</div>
-                    <div className="state-empty__title">
-                      {noiseFilter === 'all' ? 'No rule-confirmed noisy alerts' : `No ${noiseFilter} noise alerts`}
+                      {reasonPreview && (
+                        <p className="insight-card-noise-preview">{reasonPreview}</p>
+                      )}
+                      {isOpen && (
+                        <>
+                          {explanation && (
+                            <p className="insight-card-body">{explanation}</p>
+                          )}
+                          {noise.missing_features?.length > 0 && (
+                            <div className="missing-features">
+                              {noise.missing_features.map((feat, j) => (
+                                <span key={`${j}-${feat}`} className="missing-tag">{feat}</span>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
                     </div>
-                    <div className="state-empty__body">
-                      {noiseFilter === 'all'
-                        ? 'No alerts exceeded the behavioral or structural noise thresholds.'
-                        : `No alerts matched the ${noiseFilter} noise filter.`}
-                    </div>
+                  );
+                })
+              ) : (
+                <div className="state-empty">
+                  <div className="state-empty__icon">◎</div>
+                  <div className="state-empty__title">
+                    {noiseFilter === 'all' ? 'No rule-confirmed noisy alerts' : `No ${NOISE_FILTER_LABELS[noiseFilter]} noise alerts`}
                   </div>
-                );
-              })()}
+                  <div className="state-empty__body">
+                    {noiseFilter === 'all'
+                      ? 'No alerts exceeded the behavioral or structural noise thresholds.'
+                      : `No alerts matched the ${NOISE_FILTER_LABELS[noiseFilter].toLowerCase()} noise filter.`}
+                  </div>
+                </div>
+              )}
             </>
           )}
 
