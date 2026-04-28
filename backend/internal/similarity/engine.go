@@ -978,6 +978,9 @@ func computeQueryIDFThreshold(vectors []featureVector, idf idfTable) float64 {
 		scores[i] = avgIDF(v.luceneQuery, idf.luceneQuery)
 	}
 	sort.Float64s(scores)
+	// floor(N * 0.25) gives index 0 for N < 4, making the threshold equal to
+	// scores[0] (the minimum). For very small corpora this effectively disables
+	// the IDF-based broad-query path — only wildcard detection still applies.
 	p25 := int(math.Floor(float64(len(scores)) * 0.25))
 	if p25 >= len(scores) {
 		return 0
@@ -1058,6 +1061,8 @@ func findNoiseAlerts(
 		// of volume, and EITHER:
 		//   (a) is unscoped (no app/subsystem), OR
 		//   (b) has a broad query (wildcard OR low average IDF weight).
+		// isUnscoped and isBroadQuery default to false; they are only set (and
+		// isStructural can only become true) when alert != nil.
 		isStructural := false
 		isUnscoped := false
 		isBroadQuery := false
