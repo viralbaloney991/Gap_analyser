@@ -132,12 +132,7 @@ function App() {
         <AnimatePresence mode="wait">
           {view === 'form' && (
             <motion.div key="form" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <ClientSelector
-                onAnalyze={handleAnalyze}
-                loading={loading}
-                lookbackDays={lookbackDays}
-                onLookbackChange={updateLookback}
-              />
+              <ClientSelector onAnalyze={handleAnalyze} loading={loading} />
             </motion.div>
           )}
 
