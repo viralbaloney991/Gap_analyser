@@ -939,6 +939,51 @@ func findUniqueDetections(vectors []featureVector, matrix [][]float64, n int) []
 // Step 7: Noise Detection
 // ---------------------------------------------------------------------------
 
+// hasWildcardQuery reports whether any token in the query set contains a
+// wildcard character (*) or is the Elasticsearch exists operator (_exists_).
+func hasWildcardQuery(tokens map[string]struct{}) bool {
+	for t := range tokens {
+		if strings.Contains(t, "*") || t == "_exists_" {
+			return true
+		}
+	}
+	return false
+}
+
+// avgIDF returns the mean IDF weight of the query tokens using the provided
+// IDF table. Returns 1.0 (maximum specificity) for an empty token set so that
+// alerts with no query are never treated as broad.
+func avgIDF(tokens map[string]struct{}, idf map[string]float64) float64 {
+	if len(tokens) == 0 {
+		return 1.0
+	}
+	var sum float64
+	for t := range tokens {
+		sum += idfWeight(t, idf)
+	}
+	return sum / float64(len(tokens))
+}
+
+// computeQueryIDFThreshold returns the 25th-percentile average query IDF score
+// across all vectors. Alerts whose query IDF falls below this are considered
+// broad (their query uses predominantly common tokens).
+// Returns 0 for an empty vector slice.
+func computeQueryIDFThreshold(vectors []featureVector, idf idfTable) float64 {
+	if len(vectors) == 0 {
+		return 0
+	}
+	scores := make([]float64, len(vectors))
+	for i, v := range vectors {
+		scores[i] = avgIDF(v.luceneQuery, idf.luceneQuery)
+	}
+	sort.Float64s(scores)
+	p25 := int(math.Floor(float64(len(scores)) * 0.25))
+	if p25 >= len(scores) {
+		return 0
+	}
+	return scores[p25]
+}
+
 const behavioralNoiseThreshold = 20 // triggers in 30 days before alert is behaviorally noisy
 
 // findNoiseAlerts applies the hybrid two-signal noise model.

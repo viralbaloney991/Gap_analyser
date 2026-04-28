@@ -702,3 +702,79 @@ func TestScorePair_cloudflareARecordVsCNAME_notDuplicate(t *testing.T) {
 		t.Errorf("Cloudflare DNS A vs CNAME should NOT be duplicates (identical groupBy): score=%.4f >= threshold=%.2f", score, duplicateThreshold)
 	}
 }
+
+// ── Query analysis helpers ─────────────────────────────────────────────────
+
+func TestHasWildcardQuery_withWildcard(t *testing.T) {
+	tokens := map[string]struct{}{"severity": {}, "error*": {}}
+	if !hasWildcardQuery(tokens) {
+		t.Error("expected true for token containing *")
+	}
+}
+
+func TestHasWildcardQuery_withExists(t *testing.T) {
+	tokens := map[string]struct{}{"_exists_": {}}
+	if !hasWildcardQuery(tokens) {
+		t.Error("expected true for _exists_ token")
+	}
+}
+
+func TestHasWildcardQuery_withoutWildcard(t *testing.T) {
+	tokens := map[string]struct{}{"severity": {}, "error": {}, "okta": {}}
+	if hasWildcardQuery(tokens) {
+		t.Error("expected false for specific tokens")
+	}
+}
+
+func TestHasWildcardQuery_empty(t *testing.T) {
+	if hasWildcardQuery(map[string]struct{}{}) {
+		t.Error("expected false for empty token set")
+	}
+}
+
+func TestAvgIDF_emptyReturns1(t *testing.T) {
+	got := avgIDF(map[string]struct{}{}, nil)
+	if got != 1.0 {
+		t.Errorf("avgIDF empty: want 1.0, got %f", got)
+	}
+}
+
+func TestAvgIDF_unknownTokensReturn1(t *testing.T) {
+	tokens := map[string]struct{}{"raretoken": {}}
+	got := avgIDF(tokens, map[string]float64{})
+	if got != 1.0 {
+		t.Errorf("avgIDF unknown token: want 1.0, got %f", got)
+	}
+}
+
+func TestAvgIDF_knownTokens(t *testing.T) {
+	tokens := map[string]struct{}{"error": {}, "failed": {}}
+	idf := map[string]float64{"error": 0.2, "failed": 0.4}
+	got := avgIDF(tokens, idf)
+	want := 0.3 // (0.2 + 0.4) / 2
+	if math.Abs(got-want) > 1e-9 {
+		t.Errorf("avgIDF: want %f, got %f", want, got)
+	}
+}
+
+func TestComputeQueryIDFThreshold_p25(t *testing.T) {
+	idf := idfTable{luceneQuery: map[string]float64{"a": 0.1, "b": 0.3, "c": 0.7, "d": 0.9}}
+	vectors := []featureVector{
+		{luceneQuery: map[string]struct{}{"c": {}}}, // avgIDF 0.7
+		{luceneQuery: map[string]struct{}{"a": {}}}, // avgIDF 0.1
+		{luceneQuery: map[string]struct{}{"d": {}}}, // avgIDF 0.9
+		{luceneQuery: map[string]struct{}{"b": {}}}, // avgIDF 0.3
+	}
+	threshold := computeQueryIDFThreshold(vectors, idf)
+	want := 0.3 // p25 index=1 after sort [0.1, 0.3, 0.7, 0.9]
+	if math.Abs(threshold-want) > 1e-9 {
+		t.Errorf("computeQueryIDFThreshold: want %f, got %f", want, threshold)
+	}
+}
+
+func TestComputeQueryIDFThreshold_emptyVectors(t *testing.T) {
+	threshold := computeQueryIDFThreshold([]featureVector{}, idfTable{})
+	if threshold != 0 {
+		t.Errorf("empty vectors: want 0, got %f", threshold)
+	}
+}
