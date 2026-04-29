@@ -1109,3 +1109,60 @@ func TestDeriveFamilyName_tier2_expanded_anomaly(t *testing.T) {
 		t.Errorf("want %q, got %q", "Anomaly Detections", got)
 	}
 }
+
+// ── Tier 4 + Tier 5 family naming cascade ────────────────────────────────────
+
+func TestDeriveFamilyName_tier4_nameTokens(t *testing.T) {
+	// No tactics, no techniques, no actions → falls to Tier 4.
+	// "cloudtrail" appears in both members — most frequent non-stop token.
+	vecs := []featureVector{
+		{
+			alertID:    "ct1",
+			alertName:  "Cloudtrail Unusual API Call",
+			nameTokens: map[string]struct{}{"cloudtrail": {}, "unusual": {}, "api": {}, "call": {}},
+		},
+		{
+			alertID:    "ct2",
+			alertName:  "Cloudtrail Config Change",
+			nameTokens: map[string]struct{}{"cloudtrail": {}, "config": {}, "change": {}},
+		},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Cloudtrail Detections" {
+		t.Errorf("want %q, got %q", "Cloudtrail Detections", got)
+	}
+}
+
+func TestDeriveFamilyName_tier4_stopWordFiltered(t *testing.T) {
+	// nameTokens are all stop-words → Tier 4 skips them → falls to Tier 5.
+	vecs := []featureVector{
+		{
+			alertID:     "sw1",
+			alertName:   "Alert Event Log",
+			nameTokens:  map[string]struct{}{"alert": {}, "event": {}, "log": {}},
+			dataSources: map[string]struct{}{"okta": {}},
+		},
+		{
+			alertID:     "sw2",
+			alertName:   "Alert Monitor Log",
+			nameTokens:  map[string]struct{}{"alert": {}, "monitor": {}, "log": {}},
+			dataSources: map[string]struct{}{"okta": {}},
+		},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Okta Detections" {
+		t.Errorf("want %q, got %q", "Okta Detections", got)
+	}
+}
+
+func TestDeriveFamilyName_tier5_dataSource(t *testing.T) {
+	// No tactics, no techniques, no actions, no nameTokens → Tier 5: dataSources.
+	vecs := []featureVector{
+		{alertID: "ds1", alertName: "Alert", dataSources: map[string]struct{}{"okta": {}}},
+		{alertID: "ds2", alertName: "Alert", dataSources: map[string]struct{}{"okta": {}}},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Okta Detections" {
+		t.Errorf("want %q, got %q", "Okta Detections", got)
+	}
+}

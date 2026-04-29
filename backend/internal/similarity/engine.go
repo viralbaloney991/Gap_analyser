@@ -586,6 +586,14 @@ func groupFamilies(vectors []featureVector, matrix [][]float64, n int) []models.
 	return merged
 }
 
+// familyNameStopWords are excluded when building a Tier 4 name from nameTokens
+// because they appear in almost every alert and carry no cluster-specific meaning.
+var familyNameStopWords = map[string]struct{}{
+	"alert": {}, "alerts": {}, "detection": {}, "detections": {},
+	"rule": {}, "rules": {}, "monitor": {}, "monitoring": {},
+	"log": {}, "logs": {}, "event": {}, "events": {},
+}
+
 // deriveFamilyName builds a human-readable family name using a 3-tier strategy:
 // Tier 1: most frequent MITRE tactic → human label
 // Tier 2: action tokens matched against semantic category map
@@ -640,6 +648,44 @@ func deriveFamilyName(vectors []featureVector, members []int, fallbackNum int) s
 		}
 	}
 	if len(freq) == 0 {
+		// Tier 4: most frequent nameToken, excluding generic security terms.
+		nameFreq := make(map[string]int)
+		for _, idx := range members {
+			for tok := range vectors[idx].nameTokens {
+				if _, stop := familyNameStopWords[tok]; !stop {
+					nameFreq[tok]++
+				}
+			}
+		}
+		if len(nameFreq) > 0 {
+			bestTok, bestCnt := "", 0
+			for tok, cnt := range nameFreq {
+				if cnt > bestCnt || (cnt == bestCnt && tok < bestTok) {
+					bestTok = tok
+					bestCnt = cnt
+				}
+			}
+			return toTitle(bestTok) + " Detections"
+		}
+
+		// Tier 5: most frequent data source.
+		dsFreq := make(map[string]int)
+		for _, idx := range members {
+			for src := range vectors[idx].dataSources {
+				dsFreq[src]++
+			}
+		}
+		if len(dsFreq) > 0 {
+			bestSrc, bestCnt := "", 0
+			for src, cnt := range dsFreq {
+				if cnt > bestCnt || (cnt == bestCnt && src < bestSrc) {
+					bestSrc = src
+					bestCnt = cnt
+				}
+			}
+			return toTitle(bestSrc) + " Detections"
+		}
+
 		return fmt.Sprintf("Detection Family %d", fallbackNum)
 	}
 	bestToken := ""
