@@ -570,7 +570,7 @@ func groupFamilies(vectors []featureVector, matrix [][]float64, n int) []models.
 		merged = append(merged, *mergedMap[name])
 	}
 
-	// Sort merged families by size descending for deterministic output.
+	// Sort merged families by size descending (largest family first).
 	sort.Slice(merged, func(i, j int) bool {
 		return len(merged[i].AlertIDs) > len(merged[j].AlertIDs)
 	})

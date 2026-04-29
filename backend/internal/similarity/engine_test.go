@@ -926,4 +926,16 @@ func TestGroupFamilies_mergesSameNamedFamilies(t *testing.T) {
 	if len(f.AlertNames) != 4 {
 		t.Errorf("alert_names: want 4, got %d: %v", len(f.AlertNames), f.AlertNames)
 	}
+	// Verify set membership — a merge that duplicated or dropped an ID would still
+	// pass a length-only check.
+	wantIDs := map[string]bool{"a0": true, "a1": true, "a2": true, "a3": true}
+	for _, id := range f.AlertIDs {
+		if !wantIDs[id] {
+			t.Errorf("unexpected alert ID in merged family: %q", id)
+		}
+		delete(wantIDs, id)
+	}
+	for id := range wantIDs {
+		t.Errorf("alert ID %q missing from merged family", id)
+	}
 }
