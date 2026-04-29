@@ -551,12 +551,31 @@ func groupFamilies(vectors []featureVector, matrix [][]float64, n int) []models.
 		familyNum++
 	}
 
-	// Sort families by size descending for deterministic output.
-	sort.Slice(families, func(i, j int) bool {
-		return len(families[i].AlertIDs) > len(families[j].AlertIDs)
+	// Merge families that received the same name from deriveFamilyName.
+	// Insertion order (first occurrence) determines position before the final sort.
+	mergedMap := make(map[string]*models.DetectionFamily, len(families))
+	mergedOrder := make([]string, 0, len(families))
+	for i := range families {
+		f := &families[i]
+		if existing, ok := mergedMap[f.Name]; ok {
+			existing.AlertIDs   = append(existing.AlertIDs,   f.AlertIDs...)
+			existing.AlertNames = append(existing.AlertNames, f.AlertNames...)
+		} else {
+			mergedMap[f.Name] = f
+			mergedOrder = append(mergedOrder, f.Name)
+		}
+	}
+	merged := make([]models.DetectionFamily, 0, len(mergedOrder))
+	for _, name := range mergedOrder {
+		merged = append(merged, *mergedMap[name])
+	}
+
+	// Sort merged families by size descending for deterministic output.
+	sort.Slice(merged, func(i, j int) bool {
+		return len(merged[i].AlertIDs) > len(merged[j].AlertIDs)
 	})
 
-	return families
+	return merged
 }
 
 // deriveFamilyName builds a human-readable family name using a 3-tier strategy:

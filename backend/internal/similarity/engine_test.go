@@ -866,3 +866,64 @@ func TestFindNoiseAlerts_broadQueryReason(t *testing.T) {
 		t.Errorf("broad-query reason should mention 'Broad query', got: %q", noisy[0].Reason)
 	}
 }
+
+func TestGroupFamilies_mergesSameNamedFamilies(t *testing.T) {
+	// Build two pairs of alerts that will cluster together independently.
+	// Both pairs share the same MITRE tactic so deriveFamilyName gives them
+	// the same label. After the merge pass, only one family must be returned.
+	//
+	// Similarity matrix:
+	//   A0↔A1 = 0.95  (cluster 1)
+	//   A2↔A3 = 0.95  (cluster 2)
+	//   across clusters ≤ 0.10
+	//
+	// Both clusters will be named "Privilege Escalation Detections" because
+	// all four vectors share the privilege-escalation tactic.
+	sharedTactic := []string{"privilege-escalation"}
+	vecs := []featureVector{
+		{alertID: "a0", alertName: "Alert A0", tactics: sharedTactic,
+			dataSources: map[string]struct{}{"aws": {}}, entities: map[string]struct{}{"user": {}},
+			actions: map[string]struct{}{"grant": {}}, conditions: map[string]struct{}{"escalation": {}},
+			techniques: map[string]struct{}{"t1548": {}}},
+		{alertID: "a1", alertName: "Alert A1", tactics: sharedTactic,
+			dataSources: map[string]struct{}{"aws": {}}, entities: map[string]struct{}{"user": {}},
+			actions: map[string]struct{}{"grant": {}}, conditions: map[string]struct{}{"escalation": {}},
+			techniques: map[string]struct{}{"t1548": {}}},
+		{alertID: "a2", alertName: "Alert A2", tactics: sharedTactic,
+			dataSources: map[string]struct{}{"gcp": {}}, entities: map[string]struct{}{"role": {}},
+			actions: map[string]struct{}{"sudo": {}}, conditions: map[string]struct{}{"privilege": {}},
+			techniques: map[string]struct{}{"t1548": {}}},
+		{alertID: "a3", alertName: "Alert A3", tactics: sharedTactic,
+			dataSources: map[string]struct{}{"gcp": {}}, entities: map[string]struct{}{"role": {}},
+			actions: map[string]struct{}{"sudo": {}}, conditions: map[string]struct{}{"privilege": {}},
+			techniques: map[string]struct{}{"t1548": {}}},
+	}
+
+	// Build a similarity matrix where each pair clusters but cross-pair is low.
+	n := len(vecs)
+	matrix := make([][]float64, n)
+	for i := range matrix {
+		matrix[i] = make([]float64, n)
+		matrix[i][i] = 1.0
+	}
+	matrix[0][1] = 0.95; matrix[1][0] = 0.95
+	matrix[2][3] = 0.95; matrix[3][2] = 0.95
+	// cross-cluster pairs stay 0.0 (default)
+
+	families := groupFamilies(vecs, matrix, n)
+
+	// Both clusters share the same name → must be merged into exactly one family.
+	if len(families) != 1 {
+		t.Fatalf("expected 1 merged family, got %d: %v", len(families), families)
+	}
+	f := families[0]
+	if f.Name != "Privilege Escalation Detections" {
+		t.Errorf("family name: want %q, got %q", "Privilege Escalation Detections", f.Name)
+	}
+	if len(f.AlertIDs) != 4 {
+		t.Errorf("alert_ids: want 4, got %d: %v", len(f.AlertIDs), f.AlertIDs)
+	}
+	if len(f.AlertNames) != 4 {
+		t.Errorf("alert_names: want 4, got %d: %v", len(f.AlertNames), f.AlertNames)
+	}
+}
