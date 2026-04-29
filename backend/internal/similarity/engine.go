@@ -168,6 +168,14 @@ var actionCategories = []struct {
 	{[]string{"execute", "run", "inject", "spawn"}, "Execution"},
 	{[]string{"persist", "install", "schedule", "startup"}, "Persistence"},
 	{[]string{"encrypt", "ransom", "destroy"}, "Impact"},
+	{[]string{"connect", "network", "traffic", "firewall"}, "Network"},
+	{[]string{"access", "read", "fetch", "view", "list"}, "Access"},
+	{[]string{"modif", "update", "change", "configur", "patch"}, "Configuration Change"},
+	{[]string{"api", "call", "request", "invoke"}, "API Activity"},
+	{[]string{"credential", "token", "key", "secret", "password", "certif"}, "Credential"},
+	{[]string{"deploy", "launch", "provision", "spawn"}, "Deployment"},
+	{[]string{"backup", "restore", "export", "import", "query"}, "Data Operations"},
+	{[]string{"anomal", "spike", "surge", "threshold", "volume"}, "Anomaly"},
 }
 
 // Analyze performs full similarity analysis on a set of alert definitions.

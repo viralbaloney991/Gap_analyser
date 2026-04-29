@@ -1019,3 +1019,27 @@ func TestBuildMergeSuggestions_pivotOverlap_notVetoed(t *testing.T) {
 		t.Errorf("expected 1 suggestion (shared pivot), got %d", len(suggestions))
 	}
 }
+
+// ── Tier 2 expanded keyword categories ───────────────────────────────────────
+
+func TestDeriveFamilyName_tier2_expanded_network(t *testing.T) {
+	vecs := []featureVector{
+		{alertID: "n1", alertName: "Net Alert", actions: map[string]struct{}{"connect": {}}},
+		{alertID: "n2", alertName: "Net Alert 2", actions: map[string]struct{}{"connect": {}}},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Network Detections" {
+		t.Errorf("want %q, got %q", "Network Detections", got)
+	}
+}
+
+func TestDeriveFamilyName_tier2_expanded_credential(t *testing.T) {
+	vecs := []featureVector{
+		{alertID: "c1", alertName: "Cred Alert", actions: map[string]struct{}{"token": {}}},
+		{alertID: "c2", alertName: "Cred Alert 2", actions: map[string]struct{}{"token": {}}},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Credential Detections" {
+		t.Errorf("want %q, got %q", "Credential Detections", got)
+	}
+}
