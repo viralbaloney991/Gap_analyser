@@ -832,6 +832,9 @@ func buildMergeSuggestions(vectors []featureVector, matrix [][]float64, n int) [
 		if avgSim < mergeAvgThreshold {
 			continue
 		}
+		if hasPivotConflict(vectors, members) {
+			continue
+		}
 
 		ids := make([]string, len(members))
 		names := make([]string, len(members))
@@ -854,6 +857,36 @@ func buildMergeSuggestions(vectors []featureVector, matrix [][]float64, n int) [
 	})
 
 	return suggestions
+}
+
+// hasPivotConflict returns true if any two alerts in the group have non-empty,
+// disjoint groupByCategories sets — indicating they track fundamentally different
+// pivot dimensions and should not be merged.
+// Alerts with empty groupByCategories are skipped (ambiguous scope — no veto).
+func hasPivotConflict(vectors []featureVector, members []int) bool {
+	for i := 0; i < len(members); i++ {
+		a := vectors[members[i]].groupByCategories
+		if len(a) == 0 {
+			continue
+		}
+		for j := i + 1; j < len(members); j++ {
+			b := vectors[members[j]].groupByCategories
+			if len(b) == 0 {
+				continue
+			}
+			shared := false
+			for cat := range a {
+				if _, ok := b[cat]; ok {
+					shared = true
+					break
+				}
+			}
+			if !shared {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // averagePairwiseSimilarity computes the mean similarity across all pairs in

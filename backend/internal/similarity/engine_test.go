@@ -939,3 +939,83 @@ func TestGroupFamilies_mergesSameNamedFamilies(t *testing.T) {
 		t.Errorf("alert ID %q missing from merged family", id)
 	}
 }
+
+// ── Merge suggestion pivot-conflict veto ──────────────────────────────────
+
+func makeMergeVector(name, id string, pivots []string) featureVector {
+	cats := make(map[string]struct{}, len(pivots))
+	for _, p := range pivots {
+		cats[p] = struct{}{}
+	}
+	return featureVector{
+		alertID:           id,
+		alertName:         name,
+		groupByCategories: cats,
+		dataSources:       map[string]struct{}{"aws": {}},
+		entities:          map[string]struct{}{"user": {}},
+		actions:           map[string]struct{}{"login": {}},
+		conditions:        map[string]struct{}{"failed": {}},
+		techniques:        map[string]struct{}{"t1078": {}},
+		luceneQuery:       map[string]struct{}{"eventtype": {}, "failed": {}, "login": {}},
+		nameTokens:        map[string]struct{}{"failed": {}, "login": {}},
+		alertType:         "logs_threshold",
+		timeWindow:        "5m",
+	}
+}
+
+func TestBuildMergeSuggestions_pivotConflict_vetoed(t *testing.T) {
+	// Three highly-similar alerts: two group by "user", one by "ip".
+	// The "user" pair and "ip" alert are disjoint → whole group vetoed.
+	vecs := []featureVector{
+		makeMergeVector("Login Failure A", "lf-1", []string{"user"}),
+		makeMergeVector("Login Failure B", "lf-2", []string{"user"}),
+		makeMergeVector("Login Failure IP", "lf-3", []string{"ip"}),
+	}
+	n := len(vecs)
+
+	// All pairs score above mergeAvgThreshold (0.70) — force via matrix.
+	matrix := make([][]float64, n)
+	for i := range matrix {
+		matrix[i] = make([]float64, n)
+		for j := range matrix[i] {
+			if i == j {
+				matrix[i][j] = 1.0
+			} else {
+				matrix[i][j] = 0.95 // well above both thresholds
+			}
+		}
+	}
+
+	suggestions := buildMergeSuggestions(vecs, matrix, n)
+	if len(suggestions) != 0 {
+		t.Errorf("expected 0 suggestions (pivot conflict vetoed), got %d: %v", len(suggestions), suggestions)
+	}
+}
+
+func TestBuildMergeSuggestions_pivotOverlap_notVetoed(t *testing.T) {
+	// Three alerts: two group by "user", one by "user" and "ip".
+	// All share "user" → no conflict → suggestion allowed.
+	vecs := []featureVector{
+		makeMergeVector("Login Failure A", "lf-4", []string{"user"}),
+		makeMergeVector("Login Failure B", "lf-5", []string{"user"}),
+		makeMergeVector("Login Failure C", "lf-6", []string{"user", "ip"}),
+	}
+	n := len(vecs)
+
+	matrix := make([][]float64, n)
+	for i := range matrix {
+		matrix[i] = make([]float64, n)
+		for j := range matrix[i] {
+			if i == j {
+				matrix[i][j] = 1.0
+			} else {
+				matrix[i][j] = 0.95
+			}
+		}
+	}
+
+	suggestions := buildMergeSuggestions(vecs, matrix, n)
+	if len(suggestions) != 1 {
+		t.Errorf("expected 1 suggestion (shared pivot), got %d", len(suggestions))
+	}
+}
