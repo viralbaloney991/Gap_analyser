@@ -1043,3 +1043,69 @@ func TestDeriveFamilyName_tier2_expanded_credential(t *testing.T) {
 		t.Errorf("want %q, got %q", "Credential Detections", got)
 	}
 }
+
+func TestDeriveFamilyName_tier2_expanded_access(t *testing.T) {
+	vecs := []featureVector{
+		{alertID: "a1", alertName: "A", actions: map[string]struct{}{"read": {}}},
+		{alertID: "a2", alertName: "A", actions: map[string]struct{}{"read": {}}},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Access Detections" {
+		t.Errorf("want %q, got %q", "Access Detections", got)
+	}
+}
+
+func TestDeriveFamilyName_tier2_expanded_configchange(t *testing.T) {
+	vecs := []featureVector{
+		{alertID: "cc1", alertName: "A", actions: map[string]struct{}{"modify": {}}},
+		{alertID: "cc2", alertName: "A", actions: map[string]struct{}{"modify": {}}},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Configuration Change Detections" {
+		t.Errorf("want %q, got %q", "Configuration Change Detections", got)
+	}
+}
+
+func TestDeriveFamilyName_tier2_expanded_apiactivity(t *testing.T) {
+	vecs := []featureVector{
+		{alertID: "ap1", alertName: "A", actions: map[string]struct{}{"invoke": {}}},
+		{alertID: "ap2", alertName: "A", actions: map[string]struct{}{"invoke": {}}},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "API Activity Detections" {
+		t.Errorf("want %q, got %q", "API Activity Detections", got)
+	}
+}
+
+func TestDeriveFamilyName_tier2_expanded_deployment(t *testing.T) {
+	vecs := []featureVector{
+		{alertID: "dp1", alertName: "A", actions: map[string]struct{}{"deploy": {}}},
+		{alertID: "dp2", alertName: "A", actions: map[string]struct{}{"deploy": {}}},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Deployment Detections" {
+		t.Errorf("want %q, got %q", "Deployment Detections", got)
+	}
+}
+
+func TestDeriveFamilyName_tier2_expanded_dataops(t *testing.T) {
+	vecs := []featureVector{
+		{alertID: "do1", alertName: "A", actions: map[string]struct{}{"backup": {}}},
+		{alertID: "do2", alertName: "A", actions: map[string]struct{}{"backup": {}}},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Data Operations Detections" {
+		t.Errorf("want %q, got %q", "Data Operations Detections", got)
+	}
+}
+
+func TestDeriveFamilyName_tier2_expanded_anomaly(t *testing.T) {
+	vecs := []featureVector{
+		{alertID: "an1", alertName: "A", actions: map[string]struct{}{"anomaly": {}}},
+		{alertID: "an2", alertName: "A", actions: map[string]struct{}{"anomaly": {}}},
+	}
+	got := deriveFamilyName(vecs, []int{0, 1}, 1)
+	if got != "Anomaly Detections" {
+		t.Errorf("want %q, got %q", "Anomaly Detections", got)
+	}
+}
