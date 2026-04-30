@@ -188,13 +188,16 @@ function ForceGraph({
   );
 
   // Positions for the currently expanded tactic's techniques
-  const expandedTechs = expandedTactic ? (tacticMap[expandedTactic] ?? []) : [];
+  const expandedTechs  = expandedTactic ? (tacticMap[expandedTactic] ?? []) : [];
+  const coveredTechs   = expandedTechs.filter(t => t.score > 0);
+  const uncoveredCount = expandedTechs.length - coveredTechs.length;
+  const nodeCount      = coveredTechs.length + (uncoveredCount > 0 ? 1 : 0);
   const expandedCenter = expandedTactic ? gridPos[expandedTactic] : null;
   const techPos = expandedCenter
     ? techniqueRadialPositions(
         expandedCenter.cx,
         expandedCenter.cy,
-        expandedTechs.length,
+        nodeCount,
         dims.width,
         dims.height,
       )
@@ -235,13 +238,13 @@ function ForceGraph({
         aria-label="MITRE technique force graph"
         onClick={() => setExpandedTactic(null)}
       >
-        {/* Edges: expanded tactic → its techniques */}
-        {expandedCenter && expandedTechs.map((_, i) => {
+        {/* Edges: expanded tactic → covered techniques + optional summary node */}
+        {expandedCenter && coveredTechs.map((t, i) => {
           const pos = techPos[i];
           if (!pos) return null;
           return (
             <line
-              key={`edge:${expandedTechs[i].techniqueID}:${expandedTechs[i].tactic}`}
+              key={`edge:${t.techniqueID}:${t.tactic}`}
               x1={expandedCenter.cx} y1={expandedCenter.cy}
               x2={pos.cx}           y2={pos.cy}
               stroke="rgba(0,255,100,0.3)"
@@ -250,14 +253,27 @@ function ForceGraph({
             />
           );
         })}
+        {expandedCenter && uncoveredCount > 0 && (() => {
+          const pos = techPos[coveredTechs.length];
+          if (!pos) return null;
+          return (
+            <line
+              key="edge:uncovered-summary"
+              x1={expandedCenter.cx} y1={expandedCenter.cy}
+              x2={pos.cx}           y2={pos.cy}
+              stroke="rgba(128,128,128,0.3)"
+              strokeWidth={1}
+              style={{ pointerEvents: 'none' }}
+            />
+          );
+        })()}
 
-        {/* Technique nodes — only for the expanded tactic */}
-        {expandedTechs.map((t, i) => {
+        {/* Technique nodes — covered techniques for the expanded tactic */}
+        {coveredTechs.map((t, i) => {
           const pos = techPos[i];
           if (!pos) return null;
           const nodeId = `tech:${t.techniqueID}:${t.tactic}`;
           const isSelected = selectedId === nodeId;
-          // White text on red/orange (score ≤ 50), black on yellow/green
           const textFill = t.score <= 50 ? '#fff' : '#000';
           return (
             <g
@@ -289,6 +305,42 @@ function ForceGraph({
             </g>
           );
         })}
+        {/* Summary node for uncovered techniques */}
+        {uncoveredCount > 0 && (() => {
+          const pos = techPos[coveredTechs.length];
+          if (!pos) return null;
+          return (
+            <g
+              key="uncovered-summary"
+              transform={`translate(${pos.cx},${pos.cy})`}
+              style={{ pointerEvents: 'none' }}
+              aria-label={`${uncoveredCount} uncovered techniques`}
+            >
+              <circle r={14} fill="var(--surface-2)" />
+              <text
+                dy="0.35em"
+                textAnchor="middle"
+                fontSize={7}
+                fill="#fff"
+                fontFamily="'IBM Plex Mono', monospace"
+                fontWeight="600"
+                style={{ userSelect: 'none' }}
+              >
+                +{uncoveredCount}
+              </text>
+              <text
+                textAnchor="middle"
+                y={22}
+                fontSize={5.5}
+                fill="rgba(255,255,255,0.6)"
+                fontFamily="'IBM Plex Mono', monospace"
+                style={{ userSelect: 'none' }}
+              >
+                uncovered
+              </text>
+            </g>
+          );
+        })()}
 
         {/* Tactic nodes — always visible, dimmed when another is expanded */}
         {activeTactics.map((tactic) => {
