@@ -19,12 +19,17 @@ func CountAlertsByIntegration(integrations []monday.Integration, alerts []*model
 		integName := normalize(result[i].Name)
 
 		count := 0
+		vendorCount := 0
 		for _, alert := range alerts {
 			if alertMatchesIntegration(alert, apps, subs, integName) {
 				count++
+				if alert.Features.VendorCovered {
+					vendorCount++
+				}
 			}
 		}
 		result[i].AlertCount = count
+		result[i].VendorCoveredCount = vendorCount
 	}
 
 	return result

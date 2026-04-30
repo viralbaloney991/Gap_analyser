@@ -194,10 +194,11 @@ type AnalyzeResponse struct {
 }
 
 type IntegrationInfo struct {
-	Name        string `json:"name"`
-	Application string `json:"application"`
-	Subsystem   string `json:"subsystem"`
-	AlertCount  int    `json:"alert_count"`
+	Name               string `json:"name"`
+	Application        string `json:"application"`
+	Subsystem          string `json:"subsystem"`
+	AlertCount         int    `json:"alert_count"`
+	VendorCoveredCount int    `json:"vendor_covered_count,omitempty"`
 }
 
 type AnalysisStats struct {
