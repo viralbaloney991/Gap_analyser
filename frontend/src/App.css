@@ -277,6 +277,14 @@ html, body, #root {
 .state-empty__title { font-size: 0.9rem; font-weight: 600; color: var(--text-sec); }
 .state-empty__body  { font-family: var(--font-mono); font-size: 0.68rem; color: var(--text-dim); line-height: 1.6; max-width: 260px; }
 
+.vendor-managed-notice {
+  border-left: 3px solid var(--accent);
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin-bottom: 12px;
+}
+
 /* Eyebrow label */
 .eyebrow {
   font-family: var(--font-mono);

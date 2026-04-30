@@ -144,6 +144,7 @@ export interface InsightsReport {
   gap_categories: GapCategories;
   actionable_gaps?: ActionableGapCategories;
   noise_explanations?: string[];
+  all_integrations_vendor_managed?: boolean;
 }
 
 export interface ExportNarrativeReport {

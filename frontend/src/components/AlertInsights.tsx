@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { SimilarityResult, InsightsReport, MITRECoverageResult, NoiseAlert, DetectionFamily, ActionableRecommendation } from '../types';
+import type { SimilarityResult, InsightsReport, MITRECoverageResult, DetectionFamily, ActionableRecommendation } from '../types';
 import { fetchInsights, fetchExportNarrative } from '../services/api';
 import { exportTabAsXLSX, exportTabAsPDF, exportFullReportPDF } from '../utils/export';
 import NoisePills from './NoisePills';
@@ -538,6 +538,12 @@ export default function AlertInsights({ data, report, insightsError = false, cli
               </div>
             ) : gapCount > 0 ? (
               <>
+                {effectiveReport?.all_integrations_vendor_managed && (
+                  <div className="vendor-managed-notice">
+                    All log sources are vendor-managed. Improvement recommendations require
+                    at least one customer-controlled integration.
+                  </div>
+                )}
                 {renderGapSection('Environment Cleanup', effectiveReport?.gap_categories.environment_cleanup)}
                 {renderActionableSection('No Detection', effectiveReport?.actionable_gaps?.no_detection, effectiveReport?.gap_categories.no_detection)}
                 {renderGapSection('Poor Tactic Coverage', effectiveReport?.gap_categories.poor_tactic_coverage)}
