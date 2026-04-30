@@ -223,10 +223,11 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	withAlerts := 0
 	for i, m := range matched {
 		integrationInfos[i] = models.IntegrationInfo{
-			Name:        m.Name,
-			Application: m.Application,
-			Subsystem:   m.Subsystem,
-			AlertCount:  m.AlertCount,
+			Name:               m.Name,
+			Application:        m.Application,
+			Subsystem:          m.Subsystem,
+			AlertCount:         m.AlertCount,
+			VendorCoveredCount: m.VendorCoveredCount,
 		}
 		if m.AlertCount > 0 {
 			withAlerts++
@@ -355,7 +356,18 @@ func (h *Handler) runInsightsBackground(
 			return
 		}
 
-		actionable, aErr := insights.EnrichActionable(bgCtx, ir.GapCategories, integrations, insightsProvider)
+		var customerManaged []models.IntegrationInfo
+		allVendorManaged := len(integrations) > 0
+		for _, info := range integrations {
+			isVendorManaged := info.AlertCount > 0 && info.VendorCoveredCount == info.AlertCount
+			if !isVendorManaged {
+				allVendorManaged = false
+				customerManaged = append(customerManaged, info)
+			}
+		}
+		ir.AllIntegrationsVendorManaged = allVendorManaged
+
+		actionable, aErr := insights.EnrichActionable(bgCtx, ir.GapCategories, customerManaged, insightsProvider)
 		if aErr != nil {
 			log.Printf("WARN [insights-bg] client=%s actionable enrich: %v", client, aErr)
 		}

@@ -158,15 +158,16 @@ type MergeSuggestion struct {
 
 // InsightsReport is the LLM-generated analyst report for a SimilarityResult.
 type InsightsReport struct {
-	Model             string                   `json:"model,omitempty"`
-	Summary           string                   `json:"summary"`
-	TopPriority       []string                 `json:"top_priority"`
-	Strengths         []string                 `json:"strengths"`
-	Recommendations   []string                 `json:"recommendations"`
-	EnrichedDups      []string                 `json:"enriched_dups"`
-	GapCategories     GapCategories            `json:"gap_categories"`
-	ActionableGaps    *ActionableGapCategories `json:"actionable_gaps,omitempty"`
-	NoiseExplanations []string                 `json:"noise_explanations"`
+	Model                        string                   `json:"model,omitempty"`
+	Summary                      string                   `json:"summary"`
+	TopPriority                  []string                 `json:"top_priority"`
+	Strengths                    []string                 `json:"strengths"`
+	Recommendations              []string                 `json:"recommendations"`
+	EnrichedDups                 []string                 `json:"enriched_dups"`
+	GapCategories                GapCategories            `json:"gap_categories"`
+	ActionableGaps               *ActionableGapCategories `json:"actionable_gaps,omitempty"`
+	NoiseExplanations            []string                 `json:"noise_explanations"`
+	AllIntegrationsVendorManaged bool                     `json:"all_integrations_vendor_managed,omitempty"`
 }
 
 type PairComparison struct {
