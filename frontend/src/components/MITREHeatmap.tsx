@@ -77,6 +77,11 @@ function priorityColor(priority: string): string {
   }
 }
 
+function shortName(name: string): string {
+  const trimmed = name.split('(')[0].split('/')[0].trim();
+  return trimmed.length > 18 ? trimmed.slice(0, 17) + '\u2026' : trimmed;
+}
+
 // ---------------------------------------------------------------------------
 // Position helpers (pure — no simulation)
 // ---------------------------------------------------------------------------
@@ -719,6 +724,7 @@ export default function MITREHeatmap({ data, clientName }: Props) {
                           onMouseLeave={() => setTooltip(null)}
                         >
                           <span className="tech-id">{t.techniqueID}</span>
+                          <span className="tech-name">{shortName(t.name ?? '')}</span>
                         </div>
                       );
                     })}
