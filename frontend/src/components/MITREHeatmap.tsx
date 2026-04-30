@@ -306,7 +306,7 @@ function ForceGraph({
           );
         })}
         {/* Summary node for uncovered techniques */}
-        {uncoveredCount > 0 && (() => {
+        {expandedCenter && uncoveredCount > 0 && (() => {
           const pos = techPos[coveredTechs.length];
           if (!pos) return null;
           return (
