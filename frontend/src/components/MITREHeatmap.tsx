@@ -121,14 +121,34 @@ function techniqueRadialPositions(
   canvasHeight: number,
 ): Array<{ cx: number; cy: number }> {
   if (count === 0) return [];
-  const pad = 20;
-  const nodeR = 16;
-  const radius = Math.max(90, Math.sqrt(count) * 30);
-  return Array.from({ length: count }, (_, i) => {
-    const angle = -Math.PI / 2 + (i / count) * 2 * Math.PI;
+  const nodeR   = 16;
+  const gap     = 8;
+  const spacing = 2 * nodeR + gap; // 40px minimum centre-to-centre
+  const pad     = nodeR + 24;      // clearance from canvas edge
+
+  // Largest radius that keeps node centres inside the canvas from this origin
+  const maxRadius = Math.max(90, Math.min(
+    cx - pad,
+    canvasWidth  - cx - pad,
+    cy - pad,
+    canvasHeight - cy - pad,
+  ));
+
+  // Smallest radius that spaces all `count` nodes without overlap
+  const minRadius = (count * spacing) / (2 * Math.PI);
+
+  // Use the spacing-correct radius, but never exceed canvas bounds
+  const radius = Math.max(90, Math.min(minRadius, maxRadius));
+
+  // How many nodes physically fit at this radius without overlap?
+  const maxFit      = Math.max(1, Math.floor((2 * Math.PI * radius) / spacing));
+  const renderCount = Math.min(count, maxFit);
+
+  return Array.from({ length: renderCount }, (_, i) => {
+    const angle = -Math.PI / 2 + (i / renderCount) * 2 * Math.PI;
     return {
-      cx: Math.max(pad + nodeR, Math.min(canvasWidth  - pad - nodeR, cx + radius * Math.cos(angle))),
-      cy: Math.max(pad + nodeR, Math.min(canvasHeight - pad - nodeR, cy + radius * Math.sin(angle))),
+      cx: cx + radius * Math.cos(angle),
+      cy: cy + radius * Math.sin(angle),
     };
   });
 }
@@ -195,18 +215,18 @@ function ForceGraph({
   const expandedTechs   = expandedTactic ? (tacticMap[expandedTactic] ?? []) : [];
   const coveredTechs    = expandedTechs.filter(t => t.score > 0);
   const uncoveredTechs  = expandedTechs.filter(t => t.score === 0);
-  const displayTechs    = graphView === 'covered' ? coveredTechs : uncoveredTechs;
-  const nodeCount       = displayTechs.length;
-  const expandedCenter  = expandedTactic ? gridPos[expandedTactic] : null;
+  const displayTechs   = graphView === 'covered' ? coveredTechs : uncoveredTechs;
+  const expandedCenter = expandedTactic ? gridPos[expandedTactic] : null;
   const techPos = expandedCenter
     ? techniqueRadialPositions(
         expandedCenter.cx,
         expandedCenter.cy,
-        nodeCount,
+        displayTechs.length,
         dims.width,
         dims.height,
       )
     : [];
+  const overflowCount = Math.max(0, displayTechs.length - techPos.length);
 
   const handleTacticClick = (tactic: string) => {
     if ((tacticMap[tactic]?.length ?? 0) === 0) return;
@@ -315,6 +335,21 @@ function ForceGraph({
             </g>
           );
         })}
+
+        {/* Overflow label — shown when not all nodes fit on the ring */}
+        {overflowCount > 0 && expandedCenter && (
+          <text
+            x={expandedCenter.cx}
+            y={expandedCenter.cy + 50}
+            textAnchor="middle"
+            fontSize={8}
+            fill="rgba(248,113,113,0.7)"
+            fontFamily="'IBM Plex Mono', monospace"
+            style={{ pointerEvents: 'none', userSelect: 'none' }}
+          >
+            +{overflowCount} more
+          </text>
+        )}
 
         {/* Tactic nodes — always visible, dimmed when another is expanded */}
         {activeTactics.map((tactic) => {
