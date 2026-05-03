@@ -723,19 +723,21 @@ export default function MITREHeatmap({ data, clientName }: Props) {
           <div className="mitre-stat-divider" />
           <div className="view-toggle">
             <button
+              type="button"
               className={`view-toggle-btn${viewMode === 'heatmap' ? ' view-toggle-btn--active' : ''}`}
               onClick={() => { setViewMode('heatmap'); setTooltip(null); }}
             >
               Heatmap
             </button>
             <button
+              type="button"
               className={`view-toggle-btn${viewMode === 'graph' ? ' view-toggle-btn--active' : ''}`}
               onClick={() => { setViewMode('graph'); setTooltip(null); }}
             >
               Graph
             </button>
           </div>
-          <button className="mitre-download-btn" onClick={downloadLayer}>
+          <button type="button" className="mitre-download-btn" onClick={downloadLayer}>
             ↓ ATT&CK Layer
           </button>
         </div>
