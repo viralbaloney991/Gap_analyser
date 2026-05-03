@@ -343,7 +343,6 @@ function ForceGraph({
               style={{
                 cursor: total > 0 ? 'pointer' : 'default',
                 opacity: isDimmed ? 0.3 : 1,
-                transition: 'opacity 0.2s ease',
               }}
               className="force-node force-node--tactic"
               role="button"
