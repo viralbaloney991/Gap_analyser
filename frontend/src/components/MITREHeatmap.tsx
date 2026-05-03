@@ -208,8 +208,15 @@ function ForceGraph({
 
   const handleTacticClick = (tactic: string) => {
     if ((tacticMap[tactic]?.length ?? 0) === 0) return;
+    const isCollapsing = expandedTactic === tactic;
     setExpandedTactic((prev) => (prev === tactic ? null : tactic));
     onSelectTechnique(null);
+    if (isCollapsing) {
+      setGraphView('covered');
+    } else {
+      const hasCovered = (tacticMap[tactic] ?? []).some(t => t.score > 0);
+      setGraphView(hasCovered ? 'covered' : 'gaps');
+    }
   };
 
   if (techniques.length === 0) {
