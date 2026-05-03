@@ -286,6 +286,7 @@ function ForceGraph({
               role="button"
               aria-label={t.techniqueID}
             >
+              <circle r={22} fill="transparent" />
               <circle
                 r={16}
                 fill={t.color}
@@ -295,7 +296,7 @@ function ForceGraph({
               <text
                 dy="0.35em"
                 textAnchor="middle"
-                fontSize={7.5}
+                fontSize={9}
                 fill={textFill}
                 fontFamily="'IBM Plex Mono', monospace"
                 fontWeight="600"
@@ -347,7 +348,7 @@ function ForceGraph({
                 textAnchor="middle"
                 fontFamily="'IBM Plex Mono', monospace"
                 fontWeight="600"
-                fontSize={8}
+                fontSize={9}
                 fill="#00ff64"
                 style={{ pointerEvents: 'none', userSelect: 'none' }}
               >
@@ -356,7 +357,7 @@ function ForceGraph({
                     {w}
                   </tspan>
                 ))}
-                <tspan x={0} dy={lineH} fontSize={6.5} fill={coverageColor(pct)} fontWeight="400">
+                <tspan x={0} dy={lineH} fontSize={8} fill={coverageColor(pct)} fontWeight="400">
                   {covered}/{total}
                 </tspan>
               </text>
