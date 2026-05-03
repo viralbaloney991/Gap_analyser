@@ -245,7 +245,9 @@ function ForceGraph({
         height={dims.height}
         className="force-graph-svg"
         role="img"
-        aria-label="MITRE technique force graph"
+        aria-label={expandedTactic
+          ? `MITRE force graph — ${TACTIC_LABELS[expandedTactic] ?? expandedTactic} expanded, ${graphView === 'covered' ? coveredTechs.length + ' covered techniques' : uncoveredTechs.length + ' gap techniques'}`
+          : 'MITRE ATT&CK technique force graph'}
         onClick={() => { setExpandedTactic(null); setGraphView('covered'); }}
       >
         {/* Edges: expanded tactic → technique nodes (covered or gap depending on view) */}
@@ -332,6 +334,7 @@ function ForceGraph({
                 transition: 'opacity 0.2s ease',
               }}
               className="force-node force-node--tactic"
+              role="button"
               aria-label={`${label}: ${covered} of ${total} covered`}
             >
               <circle
@@ -370,11 +373,14 @@ function ForceGraph({
       </div>
 
       {expandedTactic && (
-        <div className="graph-tab-strip">
+        <div className="graph-tab-strip" role="tablist">
           <span className="graph-tab-strip__label">
             {TACTIC_LABELS[expandedTactic] ?? expandedTactic}
           </span>
           <button
+            type="button"
+            role="tab"
+            aria-selected={graphView === 'covered'}
             className={`graph-tab${graphView === 'covered' ? ' graph-tab--active graph-tab--covered' : ''}`}
             disabled={coveredTechs.length === 0}
             onClick={() => { setGraphView('covered'); onSelectTechnique(null); }}
@@ -382,6 +388,9 @@ function ForceGraph({
             Covered ({coveredTechs.length})
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={graphView === 'gaps'}
             className={`graph-tab${graphView === 'gaps' ? ' graph-tab--active graph-tab--gaps' : ''}`}
             disabled={uncoveredTechs.length === 0}
             onClick={() => { setGraphView('gaps'); onSelectTechnique(null); }}
