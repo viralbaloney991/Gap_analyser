@@ -368,6 +368,28 @@ function ForceGraph({
         <span className="force-legend-item force-legend-item--partial">Partial</span>
         <span className="force-legend-item force-legend-item--uncovered">Uncovered</span>
       </div>
+
+      {expandedTactic && (
+        <div className="graph-tab-strip">
+          <span className="graph-tab-strip__label">
+            {TACTIC_LABELS[expandedTactic] ?? expandedTactic}
+          </span>
+          <button
+            className={`graph-tab${graphView === 'covered' ? ' graph-tab--active graph-tab--covered' : ''}`}
+            disabled={coveredTechs.length === 0}
+            onClick={() => { setGraphView('covered'); onSelectTechnique(null); }}
+          >
+            Covered ({coveredTechs.length})
+          </button>
+          <button
+            className={`graph-tab${graphView === 'gaps' ? ' graph-tab--active graph-tab--gaps' : ''}`}
+            disabled={uncoveredTechs.length === 0}
+            onClick={() => { setGraphView('gaps'); onSelectTechnique(null); }}
+          >
+            Gaps ({uncoveredTechs.length})
+          </button>
+        </div>
+      )}
     </div>
   );
 }
