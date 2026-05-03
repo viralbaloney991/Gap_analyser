@@ -227,6 +227,16 @@ function ForceGraph({
       )
     : [];
   const overflowCount = Math.max(0, displayTechs.length - techPos.length);
+  // Node elevated above the scrim when selected
+  const focusedNode = (() => {
+    if (!selectedId) return null;
+    for (let i = 0; i < displayTechs.length; i++) {
+      const t = displayTechs[i];
+      const pos = techPos[i];
+      if (pos && `tech:${t.techniqueID}:${t.tactic}` === selectedId) return { t, pos };
+    }
+    return null;
+  })();
 
   const handleTacticClick = (tactic: string) => {
     if ((tacticMap[tactic]?.length ?? 0) === 0) return;
@@ -272,55 +282,171 @@ function ForceGraph({
         aria-label={expandedTactic
           ? `MITRE force graph — ${TACTIC_LABELS[expandedTactic] ?? expandedTactic} expanded, ${graphView === 'covered' ? coveredTechs.length + ' covered techniques' : uncoveredTechs.length + ' gap techniques'}`
           : 'MITRE ATT&CK technique force graph'}
-        onClick={() => { setExpandedTactic(null); setGraphView('covered'); }}
+        onClick={() => { setExpandedTactic(null); setGraphView('covered'); setTooltip(null); }}
       >
-        {/* Edges: expanded tactic → technique nodes (covered or gap depending on view) */}
-        {expandedCenter && displayTechs.map((t, i) => {
-          const pos = techPos[i];
-          if (!pos) return null;
-          return (
-            <line
-              key={`edge:${t.techniqueID}:${t.tactic}`}
-              x1={expandedCenter.cx} y1={expandedCenter.cy}
-              x2={pos.cx}           y2={pos.cy}
-              stroke={graphView === 'gaps' ? 'rgba(180,0,0,0.3)' : 'rgba(0,255,100,0.3)'}
-              strokeWidth={1}
-              style={{ pointerEvents: 'none' }}
-            />
-          );
-        })}
+        {/* ── Backdrop — blurred when a technique is focused ── */}
+        <g className={focusedNode ? 'force-bg force-bg--dim' : 'force-bg'}>
 
-        {/* Technique nodes — covered or gap techniques depending on graphView */}
-        {displayTechs.map((t, i) => {
-          const pos = techPos[i];
-          if (!pos) return null;
-          const nodeId = `tech:${t.techniqueID}:${t.tactic}`;
-          const isSelected = selectedId === nodeId;
+          {/* Edges */}
+          {expandedCenter && displayTechs.map((t, i) => {
+            const pos = techPos[i];
+            if (!pos) return null;
+            return (
+              <line
+                key={`edge:${t.techniqueID}:${t.tactic}`}
+                x1={expandedCenter.cx} y1={expandedCenter.cy}
+                x2={pos.cx}           y2={pos.cy}
+                stroke={graphView === 'gaps' ? 'rgba(180,0,0,0.3)' : 'rgba(0,255,100,0.3)'}
+                strokeWidth={1}
+                style={{ pointerEvents: 'none' }}
+              />
+            );
+          })}
+
+          {/* Technique nodes — skip the focused one (rendered above scrim) */}
+          {displayTechs.map((t, i) => {
+            const pos = techPos[i];
+            if (!pos) return null;
+            const nodeId = `tech:${t.techniqueID}:${t.tactic}`;
+            if (nodeId === selectedId) return null;
+            const textFill = t.score <= 50 ? '#fff' : '#000';
+            const stroke = graphView === 'gaps' ? 'rgba(255,80,80,0.5)' : 'rgba(0,255,100,0.5)';
+            return (
+              <g
+                key={nodeId}
+                tabIndex={0}
+                transform={`translate(${pos.cx},${pos.cy})`}
+                onClick={(e) => { e.stopPropagation(); onSelectTechnique(t); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectTechnique(t); } }}
+                onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY - 8, text: `${t.techniqueID} · ${t.name ?? t.techniqueID}` })}
+                onMouseLeave={() => setTooltip(null)}
+                style={{ cursor: 'pointer' }}
+                className="force-node"
+                role="button"
+                aria-label={t.techniqueID}
+              >
+                <circle r={22} fill="transparent" />
+                <circle r={16} fill={t.color} stroke={stroke} strokeWidth={1.5} />
+                <text
+                  dy="0.35em"
+                  textAnchor="middle"
+                  fontSize={9}
+                  fill={textFill}
+                  fontFamily="'IBM Plex Mono', monospace"
+                  fontWeight="600"
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                >
+                  {t.techniqueID}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Overflow label */}
+          {overflowCount > 0 && expandedCenter && (
+            <text
+              x={expandedCenter.cx}
+              y={expandedCenter.cy + 50}
+              textAnchor="middle"
+              fontSize={8}
+              fill="rgba(248,113,113,0.7)"
+              fontFamily="'IBM Plex Mono', monospace"
+              style={{ pointerEvents: 'none', userSelect: 'none' }}
+            >
+              +{overflowCount} more
+            </text>
+          )}
+
+          {/* Tactic nodes */}
+          {activeTactics.map((tactic) => {
+            const pos = gridPos[tactic];
+            if (!pos) return null;
+            const techs   = tacticMap[tactic] ?? [];
+            const covered = techs.filter((t) => t.score > 0).length;
+            const total   = techs.length;
+            const pct     = total > 0 ? (covered / total) * 100 : 0;
+            const isExpanded = expandedTactic === tactic;
+            const isDimmed   = expandedTactic !== null && !isExpanded;
+            const label  = TACTIC_LABELS[tactic] ?? tactic;
+            const words  = label.split(' ');
+            const lineH  = 10;
+            const startDy = -(words.length - 1) * lineH / 2;
+
+            return (
+              <g
+                key={tactic}
+                tabIndex={total > 0 ? 0 : -1}
+                transform={`translate(${pos.cx},${pos.cy})`}
+                onClick={(e) => { e.stopPropagation(); handleTacticClick(tactic); }}
+                onKeyDown={(e) => { if (total > 0 && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); handleTacticClick(tactic); } }}
+                onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY - 8, text: `${label}: ${covered}/${total} covered (${Math.round(pct)}%)` })}
+                onMouseLeave={() => setTooltip(null)}
+                style={{
+                  cursor: total > 0 ? 'pointer' : 'default',
+                  opacity: isDimmed ? 0.3 : 1,
+                }}
+                className="force-node force-node--tactic"
+                role="button"
+                aria-label={`${label}: ${covered} of ${total} covered`}
+              >
+                <circle
+                  r={34}
+                  fill={isExpanded ? 'rgba(0,255,100,0.15)' : 'rgba(0,255,100,0.08)'}
+                  stroke="#00ff64"
+                  strokeWidth={isExpanded ? 2 : 1.5}
+                />
+                <text
+                  textAnchor="middle"
+                  fontFamily="'IBM Plex Mono', monospace"
+                  fontWeight="600"
+                  fontSize={9}
+                  fill="#00ff64"
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                >
+                  {words.map((w, wi) => (
+                    <tspan key={wi} x={0} dy={wi === 0 ? startDy : lineH}>
+                      {w}
+                    </tspan>
+                  ))}
+                  <tspan x={0} dy={lineH} fontSize={8} fill={coverageColor(pct)} fontWeight="400">
+                    {covered}/{total}
+                  </tspan>
+                </text>
+              </g>
+            );
+          })}
+        </g>
+
+        {/* ── Scrim — click to deselect without collapsing tactic ── */}
+        {focusedNode && (
+          <rect
+            x={0} y={0}
+            width={dims.width} height={dims.height}
+            className="force-scrim"
+            onClick={(e) => { e.stopPropagation(); onSelectTechnique(null); setTooltip(null); }}
+            style={{ cursor: 'default' }}
+          />
+        )}
+
+        {/* ── Focused node — elevated above scrim, scales up ── */}
+        {focusedNode && (() => {
+          const { t, pos } = focusedNode;
           const textFill = t.score <= 50 ? '#fff' : '#000';
-          const unselectedStroke = graphView === 'gaps'
-            ? 'rgba(255,80,80,0.5)'
-            : 'rgba(0,255,100,0.5)';
           return (
             <g
-              key={nodeId}
               tabIndex={0}
               transform={`translate(${pos.cx},${pos.cy})`}
-              onClick={(e) => { e.stopPropagation(); onSelectTechnique(isSelected ? null : t); }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectTechnique(isSelected ? null : t); } }}
+              onClick={(e) => { e.stopPropagation(); onSelectTechnique(null); setTooltip(null); }}
+              onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectTechnique(null); setTooltip(null); } }}
               onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY - 8, text: `${t.techniqueID} · ${t.name ?? t.techniqueID}` })}
               onMouseLeave={() => setTooltip(null)}
               style={{ cursor: 'pointer' }}
-              className={`force-node${isSelected ? ' force-node--selected' : ''}`}
+              className="force-node force-node--selected"
               role="button"
-              aria-label={t.techniqueID}
+              aria-label={`${t.techniqueID} selected — press to deselect`}
             >
               <circle r={22} fill="transparent" />
-              <circle
-                r={16}
-                fill={t.color}
-                stroke={isSelected ? '#fff' : unselectedStroke}
-                strokeWidth={isSelected ? 2 : 1.5}
-              />
+              <circle r={16} fill={t.color} stroke="#fff" strokeWidth={2} />
               <text
                 dy="0.35em"
                 textAnchor="middle"
@@ -334,82 +460,7 @@ function ForceGraph({
               </text>
             </g>
           );
-        })}
-
-        {/* Overflow label — shown when not all nodes fit on the ring */}
-        {overflowCount > 0 && expandedCenter && (
-          <text
-            x={expandedCenter.cx}
-            y={expandedCenter.cy + 50}
-            textAnchor="middle"
-            fontSize={8}
-            fill="rgba(248,113,113,0.7)"
-            fontFamily="'IBM Plex Mono', monospace"
-            style={{ pointerEvents: 'none', userSelect: 'none' }}
-          >
-            +{overflowCount} more
-          </text>
-        )}
-
-        {/* Tactic nodes — always visible, dimmed when another is expanded */}
-        {activeTactics.map((tactic) => {
-          const pos = gridPos[tactic];
-          if (!pos) return null;
-          const techs   = tacticMap[tactic] ?? [];
-          const covered = techs.filter((t) => t.score > 0).length;
-          const total   = techs.length;
-          const pct     = total > 0 ? (covered / total) * 100 : 0;
-          const isExpanded = expandedTactic === tactic;
-          const isDimmed   = expandedTactic !== null && !isExpanded;
-          const label  = TACTIC_LABELS[tactic] ?? tactic;
-          const words  = label.split(' ');
-          const lineH  = 10;
-          // Vertically centre the word stack, then add coverage line below
-          const startDy = -(words.length - 1) * lineH / 2;
-
-          return (
-            <g
-              key={tactic}
-              tabIndex={total > 0 ? 0 : -1}
-              transform={`translate(${pos.cx},${pos.cy})`}
-              onClick={(e) => { e.stopPropagation(); handleTacticClick(tactic); }}
-              onKeyDown={(e) => { if (total > 0 && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); handleTacticClick(tactic); } }}
-              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY - 8, text: `${label}: ${covered}/${total} covered (${Math.round(pct)}%)` })}
-              onMouseLeave={() => setTooltip(null)}
-              style={{
-                cursor: total > 0 ? 'pointer' : 'default',
-                opacity: isDimmed ? 0.3 : 1,
-              }}
-              className="force-node force-node--tactic"
-              role="button"
-              aria-label={`${label}: ${covered} of ${total} covered`}
-            >
-              <circle
-                r={34}
-                fill={isExpanded ? 'rgba(0,255,100,0.15)' : 'rgba(0,255,100,0.08)'}
-                stroke="#00ff64"
-                strokeWidth={isExpanded ? 2 : 1.5}
-              />
-              <text
-                textAnchor="middle"
-                fontFamily="'IBM Plex Mono', monospace"
-                fontWeight="600"
-                fontSize={9}
-                fill="#00ff64"
-                style={{ pointerEvents: 'none', userSelect: 'none' }}
-              >
-                {words.map((w, wi) => (
-                  <tspan key={wi} x={0} dy={wi === 0 ? startDy : lineH}>
-                    {w}
-                  </tspan>
-                ))}
-                <tspan x={0} dy={lineH} fontSize={8} fill={coverageColor(pct)} fontWeight="400">
-                  {covered}/{total}
-                </tspan>
-              </text>
-            </g>
-          );
-        })}
+        })()}
       </svg>
 
     </div>
