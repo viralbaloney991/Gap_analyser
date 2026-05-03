@@ -246,7 +246,7 @@ function ForceGraph({
         className="force-graph-svg"
         role="img"
         aria-label="MITRE technique force graph"
-        onClick={() => setExpandedTactic(null)}
+        onClick={() => { setExpandedTactic(null); setGraphView('covered'); }}
       >
         {/* Edges: expanded tactic → technique nodes (covered or gap depending on view) */}
         {expandedCenter && displayTechs.map((t, i) => {
