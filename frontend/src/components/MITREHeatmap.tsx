@@ -279,8 +279,10 @@ function ForceGraph({
           return (
             <g
               key={nodeId}
+              tabIndex={0}
               transform={`translate(${pos.cx},${pos.cy})`}
               onClick={(e) => { e.stopPropagation(); onSelectTechnique(isSelected ? null : t); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectTechnique(isSelected ? null : t); } }}
               style={{ cursor: 'pointer' }}
               className={`force-node${isSelected ? ' force-node--selected' : ''}`}
               role="button"
@@ -327,8 +329,10 @@ function ForceGraph({
           return (
             <g
               key={tactic}
+              tabIndex={total > 0 ? 0 : -1}
               transform={`translate(${pos.cx},${pos.cy})`}
               onClick={(e) => { e.stopPropagation(); handleTacticClick(tactic); }}
+              onKeyDown={(e) => { if (total > 0 && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); handleTacticClick(tactic); } }}
               style={{
                 cursor: total > 0 ? 'pointer' : 'default',
                 opacity: isDimmed ? 0.3 : 1,
