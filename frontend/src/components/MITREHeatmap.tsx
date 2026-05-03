@@ -149,6 +149,7 @@ function ForceGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ width: 800, height: 540 });
   const [expandedTactic, setExpandedTactic] = useState<string | null>(null);
+  const [graphView, setGraphView] = useState<'covered' | 'gaps'>('covered');
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -164,6 +165,7 @@ function ForceGraph({
     // Reset expanded tactic when the technique dataset changes (e.g. client switch)
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpandedTactic(null);
+    setGraphView('covered');
   }, [techniques]);
 
   // Group techniques by tactic
@@ -188,11 +190,12 @@ function ForceGraph({
   );
 
   // Positions for the currently expanded tactic's techniques
-  const expandedTechs  = expandedTactic ? (tacticMap[expandedTactic] ?? []) : [];
-  const coveredTechs   = expandedTechs.filter(t => t.score > 0);
-  const uncoveredCount = expandedTechs.length - coveredTechs.length;
-  const nodeCount      = coveredTechs.length + (uncoveredCount > 0 ? 1 : 0);
-  const expandedCenter = expandedTactic ? gridPos[expandedTactic] : null;
+  const expandedTechs   = expandedTactic ? (tacticMap[expandedTactic] ?? []) : [];
+  const coveredTechs    = expandedTechs.filter(t => t.score > 0);
+  const uncoveredTechs  = expandedTechs.filter(t => t.score === 0);
+  const displayTechs    = graphView === 'covered' ? coveredTechs : uncoveredTechs;
+  const nodeCount       = displayTechs.length;
+  const expandedCenter  = expandedTactic ? gridPos[expandedTactic] : null;
   const techPos = expandedCenter
     ? techniqueRadialPositions(
         expandedCenter.cx,
