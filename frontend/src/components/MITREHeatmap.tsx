@@ -248,8 +248,8 @@ function ForceGraph({
         aria-label="MITRE technique force graph"
         onClick={() => setExpandedTactic(null)}
       >
-        {/* Edges: expanded tactic → covered techniques + optional summary node */}
-        {expandedCenter && coveredTechs.map((t, i) => {
+        {/* Edges: expanded tactic → technique nodes (covered or gap depending on view) */}
+        {expandedCenter && displayTechs.map((t, i) => {
           const pos = techPos[i];
           if (!pos) return null;
           return (
@@ -257,34 +257,23 @@ function ForceGraph({
               key={`edge:${t.techniqueID}:${t.tactic}`}
               x1={expandedCenter.cx} y1={expandedCenter.cy}
               x2={pos.cx}           y2={pos.cy}
-              stroke="rgba(0,255,100,0.3)"
+              stroke={graphView === 'gaps' ? 'rgba(180,0,0,0.3)' : 'rgba(0,255,100,0.3)'}
               strokeWidth={1}
               style={{ pointerEvents: 'none' }}
             />
           );
         })}
-        {expandedCenter && uncoveredCount > 0 && (() => {
-          const pos = techPos[coveredTechs.length];
-          if (!pos) return null;
-          return (
-            <line
-              key="edge:uncovered-summary"
-              x1={expandedCenter.cx} y1={expandedCenter.cy}
-              x2={pos.cx}           y2={pos.cy}
-              stroke="rgba(128,128,128,0.3)"
-              strokeWidth={1}
-              style={{ pointerEvents: 'none' }}
-            />
-          );
-        })()}
 
-        {/* Technique nodes — covered techniques for the expanded tactic */}
-        {coveredTechs.map((t, i) => {
+        {/* Technique nodes — covered or gap techniques depending on graphView */}
+        {displayTechs.map((t, i) => {
           const pos = techPos[i];
           if (!pos) return null;
           const nodeId = `tech:${t.techniqueID}:${t.tactic}`;
           const isSelected = selectedId === nodeId;
           const textFill = t.score <= 50 ? '#fff' : '#000';
+          const unselectedStroke = graphView === 'gaps'
+            ? 'rgba(255,80,80,0.5)'
+            : 'rgba(0,255,100,0.5)';
           return (
             <g
               key={nodeId}
@@ -298,7 +287,7 @@ function ForceGraph({
               <circle
                 r={16}
                 fill={t.color}
-                stroke={isSelected ? '#fff' : 'rgba(0,255,100,0.5)'}
+                stroke={isSelected ? '#fff' : unselectedStroke}
                 strokeWidth={isSelected ? 2 : 1.5}
               />
               <text
@@ -315,42 +304,6 @@ function ForceGraph({
             </g>
           );
         })}
-        {/* Summary node for uncovered techniques */}
-        {expandedCenter && uncoveredCount > 0 && (() => {
-          const pos = techPos[coveredTechs.length];
-          if (!pos) return null;
-          return (
-            <g
-              key="uncovered-summary"
-              transform={`translate(${pos.cx},${pos.cy})`}
-              style={{ pointerEvents: 'none' }}
-              aria-label={`${uncoveredCount} uncovered techniques`}
-            >
-              <circle r={14} fill="var(--surface-2)" />
-              <text
-                dy="0.35em"
-                textAnchor="middle"
-                fontSize={7}
-                fill="#fff"
-                fontFamily="'IBM Plex Mono', monospace"
-                fontWeight="600"
-                style={{ userSelect: 'none' }}
-              >
-                +{uncoveredCount}
-              </text>
-              <text
-                textAnchor="middle"
-                y={22}
-                fontSize={5.5}
-                fill="rgba(255,255,255,0.6)"
-                fontFamily="'IBM Plex Mono', monospace"
-                style={{ userSelect: 'none' }}
-              >
-                uncovered
-              </text>
-            </g>
-          );
-        })()}
 
         {/* Tactic nodes — always visible, dimmed when another is expanded */}
         {activeTactics.map((tactic) => {
