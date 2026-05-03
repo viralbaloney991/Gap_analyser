@@ -859,7 +859,8 @@ html, body, #root {
 .suggestion-query code   { font-family: var(--font-mono); font-size: 0.62rem; color: var(--text-sec); white-space: pre-wrap; word-break: break-all; line-height: 1.55; }
 
 /* Force graph container */
-.force-graph-container { flex: 1; overflow: hidden; position: relative; }
+.force-graph-root { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.force-graph-container { flex: 1; overflow: hidden; position: relative; min-height: 0; }
 
 /* Force graph legend */
 .force-graph-legend { display: flex; align-items: center; gap: 14px; padding: 6px 12px; border-top: 1px solid var(--border); background: var(--surface); }

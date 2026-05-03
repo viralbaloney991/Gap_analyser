@@ -242,6 +242,7 @@ function ForceGraph({
   }
 
   return (
+    <div className="force-graph-root">
     <div ref={containerRef} className="force-graph-container">
       <svg
         width={dims.width}
@@ -375,6 +376,8 @@ function ForceGraph({
           );
         })}
       </svg>
+
+    </div>
 
       {tooltip && (
         <div className="tech-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
