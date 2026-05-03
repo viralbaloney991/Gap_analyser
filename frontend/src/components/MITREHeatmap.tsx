@@ -150,6 +150,7 @@ function ForceGraph({
   const [dims, setDims] = useState({ width: 800, height: 540 });
   const [expandedTactic, setExpandedTactic] = useState<string | null>(null);
   const [graphView, setGraphView] = useState<'covered' | 'gaps'>('covered');
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -166,6 +167,7 @@ function ForceGraph({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpandedTactic(null);
     setGraphView('covered');
+    setTooltip(null);
   }, [techniques]);
 
   // Group techniques by tactic
@@ -211,6 +213,7 @@ function ForceGraph({
     const isCollapsing = expandedTactic === tactic;
     setExpandedTactic((prev) => (prev === tactic ? null : tactic));
     onSelectTechnique(null);
+    setTooltip(null);
     if (isCollapsing) {
       setGraphView('covered');
     } else {
@@ -283,6 +286,8 @@ function ForceGraph({
               transform={`translate(${pos.cx},${pos.cy})`}
               onClick={(e) => { e.stopPropagation(); onSelectTechnique(isSelected ? null : t); }}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectTechnique(isSelected ? null : t); } }}
+              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY - 8, text: `${t.techniqueID} · ${t.name ?? t.techniqueID}` })}
+              onMouseLeave={() => setTooltip(null)}
               style={{ cursor: 'pointer' }}
               className={`force-node${isSelected ? ' force-node--selected' : ''}`}
               role="button"
@@ -333,6 +338,8 @@ function ForceGraph({
               transform={`translate(${pos.cx},${pos.cy})`}
               onClick={(e) => { e.stopPropagation(); handleTacticClick(tactic); }}
               onKeyDown={(e) => { if (total > 0 && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); handleTacticClick(tactic); } }}
+              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY - 8, text: `${label}: ${covered}/${total} covered (${Math.round(pct)}%)` })}
+              onMouseLeave={() => setTooltip(null)}
               style={{
                 cursor: total > 0 ? 'pointer' : 'default',
                 opacity: isDimmed ? 0.3 : 1,
@@ -370,6 +377,12 @@ function ForceGraph({
         })}
       </svg>
 
+      {tooltip && (
+        <div className="tech-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
+          {tooltip.text}
+        </div>
+      )}
+
       <div className="force-graph-legend">
         <span className="force-legend-item force-legend-item--tactic">Tactic</span>
         <span className="force-legend-item force-legend-item--covered">Covered</span>
@@ -388,7 +401,7 @@ function ForceGraph({
             aria-selected={graphView === 'covered'}
             className={`graph-tab${graphView === 'covered' ? ' graph-tab--active graph-tab--covered' : ''}`}
             disabled={coveredTechs.length === 0}
-            onClick={() => { setGraphView('covered'); onSelectTechnique(null); }}
+            onClick={() => { setGraphView('covered'); onSelectTechnique(null); setTooltip(null); }}
           >
             Covered ({coveredTechs.length})
           </button>
@@ -398,7 +411,7 @@ function ForceGraph({
             aria-selected={graphView === 'gaps'}
             className={`graph-tab${graphView === 'gaps' ? ' graph-tab--active graph-tab--gaps' : ''}`}
             disabled={uncoveredTechs.length === 0}
-            onClick={() => { setGraphView('gaps'); onSelectTechnique(null); }}
+            onClick={() => { setGraphView('gaps'); onSelectTechnique(null); setTooltip(null); }}
           >
             Gaps ({uncoveredTechs.length})
           </button>
@@ -712,13 +725,13 @@ export default function MITREHeatmap({ data, clientName }: Props) {
           <div className="view-toggle">
             <button
               className={`view-toggle-btn${viewMode === 'heatmap' ? ' view-toggle-btn--active' : ''}`}
-              onClick={() => setViewMode('heatmap')}
+              onClick={() => { setViewMode('heatmap'); setTooltip(null); }}
             >
               Heatmap
             </button>
             <button
               className={`view-toggle-btn${viewMode === 'graph' ? ' view-toggle-btn--active' : ''}`}
-              onClick={() => setViewMode('graph')}
+              onClick={() => { setViewMode('graph'); setTooltip(null); }}
             >
               Graph
             </button>
