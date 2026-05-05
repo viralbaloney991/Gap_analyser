@@ -96,6 +96,7 @@ export async function fetchCorrelations(
   logSources: string[],
   coveredTechniques: string[],
   force = false,
+  signal?: AbortSignal,
 ): Promise<CorrelationsResponse> {
   const res = await fetch(`${API_BASE}/api/correlations`, {
     method: 'POST',
@@ -107,6 +108,7 @@ export async function fetchCorrelations(
       covered_techniques: coveredTechniques,
       force,
     }),
+    signal,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Correlations failed' }));

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { SimilarityResult, InsightsReport, MITRECoverageResult, DetectionFamily, ActionableRecommendation, CorrelationSuggestion } from '../types';
 import { fetchInsights, fetchExportNarrative, fetchCorrelations } from '../services/api';
 import { exportTabAsXLSX, exportTabAsPDF, exportFullReportPDF } from '../utils/export';
@@ -134,7 +134,10 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     suggestions: CorrelationSuggestion[];
     loading: boolean;
     cached: boolean;
+    error: boolean;
   } | null>(null);
+
+  const correlationAbortRef = useRef<AbortController | null>(null);
 
   const coveredTechniques = useMemo(
     () =>
@@ -144,17 +147,32 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     [mitreCoverage],
   );
 
-  const openCorrelationDrawer = async (rec: ActionableRecommendation) => {
-    setCorrelationDrawer({ gapProse: rec.prose, suggestions: [], loading: true, cached: false });
+  const openCorrelationDrawer = useCallback(async (rec: ActionableRecommendation) => {
+    // Cancel any previous in-flight request
+    correlationAbortRef.current?.abort();
+    const controller = new AbortController();
+    correlationAbortRef.current = controller;
+
+    setCorrelationDrawer({ gapProse: rec.prose, suggestions: [], loading: true, cached: false, error: false });
     try {
-      const logSources = rec.log_source ? [rec.log_source] : [];
-      const result = await fetchCorrelations(client, rec.prose, logSources, coveredTechniques);
-      setCorrelationDrawer({ gapProse: rec.prose, suggestions: result.suggestions, loading: false, cached: result.cached });
+      const result = await fetchCorrelations(
+        client,
+        rec.prose,
+        rec.log_source ? [rec.log_source] : [],
+        coveredTechniques,
+        false,
+        controller.signal,
+      );
+      if (!controller.signal.aborted) {
+        setCorrelationDrawer({ gapProse: rec.prose, suggestions: result.suggestions, loading: false, cached: result.cached, error: false });
+      }
     } catch (e) {
-      console.warn('[correlations]', e);
-      setCorrelationDrawer(prev => prev ? { ...prev, loading: false } : null);
+      if (!controller.signal.aborted) {
+        console.warn('[correlations]', e);
+        setCorrelationDrawer(prev => prev ? { ...prev, loading: false, error: true } : null);
+      }
     }
-  };
+  }, [client, coveredTechniques]);
 
   const toggleQuery = (key: string) => {
     setExpandedQueries(prev => {
@@ -236,6 +254,21 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
   }, [showExportMenu]);
+
+  // Abort any in-flight correlation fetch on unmount
+  useEffect(() => {
+    return () => { correlationAbortRef.current?.abort(); };
+  }, []);
+
+  // Close drawer on Escape key
+  useEffect(() => {
+    if (!correlationDrawer) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCorrelationDrawer(null);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [correlationDrawer]);
 
   const effectiveReport = localReport;
   const isLoading = !effectiveReport && !insightsError && !regenError;
@@ -826,7 +859,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
       {correlationDrawer && (
         <>
           <div className="corr-backdrop" onClick={() => setCorrelationDrawer(null)} />
-          <div className="corr-drawer">
+          <div className="corr-drawer" role="dialog" aria-modal="true" aria-label="Correlation suggestions">
             <div className="corr-drawer-header">
               <span className="corr-drawer-title" title={correlationDrawer.gapProse}>
                 {correlationDrawer.gapProse.length > 80
@@ -835,7 +868,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
               </span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
                 {correlationDrawer.cached && <span className="corr-cached-badge">Cached</span>}
-                <button type="button" className="corr-close-btn" onClick={() => setCorrelationDrawer(null)}>✕</button>
+                <button type="button" className="corr-close-btn" aria-label="Close" onClick={() => setCorrelationDrawer(null)}>✕</button>
               </div>
             </div>
             <div className="corr-drawer-body">
@@ -845,6 +878,11 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                   <div className="corr-skeleton skeleton" style={{ width: '80%' }} />
                   <div className="corr-skeleton skeleton" style={{ width: '90%' }} />
                 </>
+              ) : correlationDrawer.error ? (
+                <div className="corr-empty">
+                  <div className="corr-empty-icon">⚠</div>
+                  <div>Failed to load suggestions. Please try again.</div>
+                </div>
               ) : correlationDrawer.suggestions.length === 0 ? (
                 <div className="state-empty">
                   <div className="state-empty__icon">◎</div>
