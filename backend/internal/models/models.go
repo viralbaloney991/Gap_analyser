@@ -253,3 +253,30 @@ type AlertSuggestion struct {
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
+
+// CorrelationsRequest is the payload for POST /api/correlations.
+type CorrelationsRequest struct {
+	Client            string   `json:"client"`
+	GapProse          string   `json:"gap_prose"`
+	LogSources        []string `json:"log_sources"`
+	CoveredTechniques []string `json:"covered_techniques"`
+	Provider          string   `json:"provider"` // empty = use configured default
+	Force             bool     `json:"force"`
+}
+
+// CorrelationSuggestion is a single LLM-generated correlation or anomaly rule.
+type CorrelationSuggestion struct {
+	Type               string   `json:"type"`                // "correlation" | "anomaly"
+	Title              string   `json:"title"`
+	Description        string   `json:"description"`
+	InvolvedTechniques []string `json:"involved_techniques"` // for type=correlation, must include >= 1 from covered_techniques
+	QuerySkeleton      string   `json:"query_skeleton"`      // valid Lucene
+	Priority           string   `json:"priority"`            // "critical"|"high"|"medium"|"low"
+}
+
+// CorrelationsResponse is the payload returned by POST /api/correlations.
+type CorrelationsResponse struct {
+	Suggestions []CorrelationSuggestion `json:"suggestions"`
+	Provider    string                  `json:"provider"`
+	Cached      bool                    `json:"cached"`
+}
