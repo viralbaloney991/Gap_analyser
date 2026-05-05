@@ -43,9 +43,9 @@ function App() {
   };
 
   const handleReanalyze = async (days: number) => {
+    if (!data) return;
     const prevDays = lookbackDays;
     updateLookback(days);
-    if (!data) return;
     setNoiseLoading(true);
     try {
       const noiseAlerts = await fetchNoise(clientName, days);

@@ -565,6 +565,8 @@ func (h *Handler) HandleNoise(w http.ResponseWriter, r *http.Request) {
 
 	coralogix.ExtractFeatures(alerts, nil)
 
+	// Pass 0 for integrationCount — Monday not fetched in this path; structural
+	// reason text won't include org integration count but all noise signals are accurate.
 	noiseAlerts := similarity.AnalyzeNoise(alerts, eventCounts, 0)
 	if noiseAlerts == nil {
 		noiseAlerts = []models.NoiseAlert{}
