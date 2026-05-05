@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, ClientInfo, ExportNarrativeReport, InsightsReport, SuggestionsResponse } from '../types';
+import type { AnalyzeResponse, ClientInfo, ExportNarrativeReport, InsightsReport, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -74,4 +74,18 @@ export async function fetchExportNarrative(client: string): Promise<ExportNarrat
     throw new Error('No insights available yet. Please wait for analysis to complete.');
   }
   return res.json();
+}
+
+export async function fetchNoise(client: string, lookbackDays: number): Promise<NoiseAlert[]> {
+  const res = await fetch(`${API_BASE}/api/noise`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client, lookback_days: lookbackDays }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Noise fetch failed' }));
+    throw new Error(err.error || 'Noise fetch failed');
+  }
+  const data: NoiseResponse = await res.json();
+  return data.noise_alerts;
 }

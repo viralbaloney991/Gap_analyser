@@ -5,7 +5,7 @@ import ClientSelector from './components/ClientSelector';
 import IntegrationSummary from './components/IntegrationSummary';
 import MITREHeatmap from './components/MITREHeatmap';
 import AlertInsights from './components/AlertInsights';
-import { analyzeClient, fetchInsights } from './services/api';
+import { analyzeClient, fetchInsights, fetchNoise } from './services/api';
 import type { AnalyzeResponse, InsightsReport } from './types';
 import './App.css';
 
@@ -30,6 +30,7 @@ function App() {
   const [clientName, setClientName]       = useState('');
   const [insightsReport, setInsightsReport] = useState<InsightsReport | null>(null);
   const [insightsError, setInsightsError] = useState(false);
+  const [noiseLoading, setNoiseLoading] = useState(false);
   const [lookbackDays, setLookbackDays] = useState<number>(() => {
     const stored = localStorage.getItem('noise_lookback_days');
     const parsed = stored ? Number(stored) : 30;
@@ -39,6 +40,25 @@ function App() {
   const updateLookback = (days: number) => {
     setLookbackDays(days);
     localStorage.setItem('noise_lookback_days', String(days));
+  };
+
+  const handleReanalyze = async (days: number) => {
+    const prevDays = lookbackDays;
+    updateLookback(days);
+    if (!data) return;
+    setNoiseLoading(true);
+    try {
+      const noiseAlerts = await fetchNoise(clientName, days);
+      setData(prev => prev
+        ? { ...prev, alert_insights: { ...prev.alert_insights!, noise_alerts: noiseAlerts } }
+        : prev
+      );
+    } catch (e) {
+      console.warn('[noise reanalyze]', e);
+      updateLookback(prevDays);
+    } finally {
+      setNoiseLoading(false);
+    }
   };
 
   const handleAnalyze = async (client: string, refresh = false, days = lookbackDays) => {
@@ -165,7 +185,8 @@ function App() {
                 mitreCoverage={data.mitre_coverage}
                 totalAlerts={data.stats.total_alerts}
                 lookbackDays={lookbackDays}
-                onReanalyze={(days) => { updateLookback(days); handleAnalyze(clientName, false, days); }}
+                onReanalyze={handleReanalyze}
+                noiseLoading={noiseLoading}
               />
             </motion.div>
           )}

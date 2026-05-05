@@ -177,3 +177,8 @@ export interface SuggestionsResponse {
   suggestions: AlertSuggestion[];
   log_sources: string[];
 }
+
+export interface NoiseResponse {
+  noise_alerts: NoiseAlert[];
+  lookback_days: number;
+}

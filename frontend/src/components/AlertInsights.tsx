@@ -13,6 +13,7 @@ interface Props {
   totalAlerts: number;
   lookbackDays: number;
   onReanalyze: (days: number) => void;
+  noiseLoading?: boolean;
 }
 
 type Tab = 'duplicates' | 'families' | 'merge' | 'gaps' | 'noise' | 'unique';
@@ -33,7 +34,7 @@ function noiseTypeLabel(noiseType?: string): string {
   }
 }
 
-export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage, totalAlerts, lookbackDays, onReanalyze }: Props) {
+export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage, totalAlerts, lookbackDays, onReanalyze, noiseLoading }: Props) {
   const [activeTab, setActiveTab]         = useState<Tab>('duplicates');
   const [localReport, setLocalReport]     = useState<InsightsReport | null>(report);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -564,7 +565,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
           {activeTab === 'noise' && (
             <>
               <div style={{ marginBottom: 12 }}>
-                <NoisePills days={lookbackDays} onChange={onReanalyze} disabled={isRegenerating} />
+                <NoisePills days={lookbackDays} onChange={onReanalyze} disabled={isRegenerating || (noiseLoading ?? false)} />
               </div>
               <div className="noise-filter-pills">
                 {(['all', 'behavioral', 'structural'] as const).map(f => (
