@@ -431,11 +431,12 @@ func TestFindNoiseAlerts_logsImmediate_structuralWhenUnscoped(t *testing.T) {
 	v := sparseVector("Azure Audit - Access Review Deletion")
 	alert := makeAlert("az-1", "logs_immediate", false, true, nil, "", "")
 
-	// No activity in 30 days → no evidence of volume → not structural, not behavioral.
+	// Event count map has data for a different ID — az-1 resolves to triggerCount=0.
+	// After fix: structural fires regardless, because design is unscoped + no entity.
 	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert},
 		map[string]int{"other-id": 5}, 0, idfTable{}, 0)
-	if len(noisy) != 0 {
-		t.Errorf("logs_immediate with zero triggers should not be noisy: got %v", noisy)
+	if len(noisy) != 1 || noisy[0].NoiseType != "structural" {
+		t.Errorf("logs_immediate unscoped should be structural even when triggerCount=0: got %v", noisy)
 	}
 
 	// 3 triggers, unscoped, no entity → structural noise.
@@ -517,10 +518,41 @@ func TestFindNoiseAlerts_flowAlert_behavioralApplies(t *testing.T) {
 func TestFindNoiseAlerts_flowAlert_structuralAppliesWhenUnscoped(t *testing.T) {
 	v := sparseVector("Flow No Triggers")
 	alert := makeAlert("f-2", "flow", false, true, nil, "", "")
-	// nil eventCounts → hasEvidenceOfVolume = true → structural
+	// Unscoped flow with no entity → structural noise regardless of event counts.
 	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0, idfTable{}, 0)
 	if len(noisy) != 1 || noisy[0].NoiseType != "structural" {
 		t.Errorf("unscoped flow alert should be structural noise: got %v", noisy)
+	}
+}
+
+// TestFindNoiseAlerts_structuralNoise_emptyEventCountsMap covers the production bug:
+// fetchEventCounts returns a non-nil empty map when the API call succeeds but returns
+// no matching events. Under the old code hasEvidenceOfVolume=false blocked structural
+// detection. After the fix, structural fires on design alone.
+func TestFindNoiseAlerts_structuralNoise_emptyEventCountsMap(t *testing.T) {
+	v := sparseVector("Unscoped Alert")
+	alert := makeAlert("u-1", "logs_threshold", false, true, nil, "", "")
+	// Non-nil empty map — the exact shape returned when the fetch succeeds but matches nothing.
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert},
+		map[string]int{}, 0, idfTable{}, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 structural noise alert with empty event count map, got %d: %v", len(noisy), noisy)
+	}
+	if noisy[0].NoiseType != "structural" {
+		t.Errorf("noise_type: want structural, got %q", noisy[0].NoiseType)
+	}
+}
+
+// TestFindNoiseAlerts_structuralNoise_scopedAlertWithEmptyMap verifies that removing
+// hasEvidenceOfVolume does not cause false positives: a scoped alert with an empty
+// event count map must still not be flagged as noisy.
+func TestFindNoiseAlerts_structuralNoise_scopedAlertWithEmptyMap(t *testing.T) {
+	v := sparseVector("Scoped Alert")
+	alert := makeAlert("s-1", "logs_threshold", false, true, nil, "my-app", "auth")
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert},
+		map[string]int{}, 0, idfTable{}, 0)
+	if len(noisy) != 0 {
+		t.Errorf("scoped alert with empty event count map should not be noisy, got %v", noisy)
 	}
 }
 

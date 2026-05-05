@@ -1163,10 +1163,13 @@ func findNoiseAlerts(
 		isBehavioral := eventCounts != nil && triggerCount > behavioralNoiseThreshold
 
 		// ── Signal 2: Structural ─────────────────────────────────────────
-		// An alert is structurally noisy when it has no entity filter, evidence
-		// of volume, and EITHER:
+		// An alert is structurally noisy when it has no entity filter AND EITHER:
 		//   (a) is unscoped (no app/subsystem), OR
 		//   (b) has a broad query (wildcard OR low average IDF weight).
+		// Trigger frequency (hasEvidenceOfVolume) is intentionally NOT required —
+		// structural noise is a design-quality signal, not a frequency signal.
+		// An unscoped, entity-less, broad-query alert is noisy by construction
+		// regardless of whether it has fired recently.
 		// isUnscoped and isBroadQuery default to false; they are only set (and
 		// isStructural can only become true) when alert != nil.
 		isStructural := false
@@ -1178,15 +1181,12 @@ func findNoiseAlerts(
 			noEntity := len(v.entities) == 0
 			isBroadQuery = hasWildcardQuery(v.luceneQuery) ||
 				avgIDF(v.luceneQuery, idf.luceneQuery) < queryIDFThreshold
-			hasEvidenceOfVolume := eventCounts == nil || triggerCount > 0
-			isStructural = noEntity && hasEvidenceOfVolume && (isUnscoped || isBroadQuery)
+			isStructural = noEntity && (isUnscoped || isBroadQuery)
 
 			if !isStructural && !isBehavioral {
 				switch {
 				case !noEntity:
 					noSignalReasons["has_entity"]++
-				case !hasEvidenceOfVolume:
-					noSignalReasons["zero_triggers"]++
 				case !isUnscoped && !isBroadQuery:
 					noSignalReasons["scoped_specific_query"]++
 				default:
