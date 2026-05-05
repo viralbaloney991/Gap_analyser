@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, ClientInfo, ExportNarrativeReport, InsightsReport, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
+import type { AnalyzeResponse, ClientInfo, CorrelationsResponse, ExportNarrativeReport, InsightsReport, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -88,4 +88,29 @@ export async function fetchNoise(client: string, lookbackDays: number): Promise<
   }
   const data: NoiseResponse = await res.json();
   return data.noise_alerts;
+}
+
+export async function fetchCorrelations(
+  client: string,
+  gapProse: string,
+  logSources: string[],
+  coveredTechniques: string[],
+  force = false,
+): Promise<CorrelationsResponse> {
+  const res = await fetch(`${API_BASE}/api/correlations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client,
+      gap_prose: gapProse,
+      log_sources: logSources,
+      covered_techniques: coveredTechniques,
+      force,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Correlations failed' }));
+    throw new Error(err.error || 'Failed to generate correlation suggestions');
+  }
+  return res.json();
 }

@@ -182,3 +182,18 @@ export interface NoiseResponse {
   noise_alerts: NoiseAlert[];
   lookback_days: number;
 }
+
+export interface CorrelationSuggestion {
+  type: 'correlation' | 'anomaly';
+  title: string;
+  description: string;
+  involved_techniques: string[];
+  query_skeleton: string;
+  priority: 'critical' | 'high' | 'medium' | 'low';
+}
+
+export interface CorrelationsResponse {
+  suggestions: CorrelationSuggestion[];
+  provider: string;
+  cached: boolean;
+}
