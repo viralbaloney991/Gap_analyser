@@ -1104,6 +1104,200 @@ func validateLookbackDays(days int) int {
 	}
 }
 
+// buildCorrelationCacheKey returns a stable SHA256 hex key for a (client, gap_prose) pair.
+func buildCorrelationCacheKey(client, gapProse string) string {
+	normalised := strings.ToLower(strings.TrimSpace(gapProse))
+	raw := client + "|" + normalised
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+// mergeCorrelations flattens correlation rows into a deduplicated list.
+// rows must be ordered ASC by generated_at so later rows win dedup conflicts.
+// Returns merged suggestions sorted by priority then title, and the provider of the most recent row.
+func mergeCorrelations(rows []store.CorrelationRow) ([]models.CorrelationSuggestion, string) {
+	type entry struct {
+		sug   models.CorrelationSuggestion
+		genAt time.Time
+	}
+	seen := make(map[string]entry)
+	priorityOrder := map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3}
+	var latestProvider string
+
+	for _, row := range rows {
+		latestProvider = row.Provider
+		var sugs []models.CorrelationSuggestion
+		if err := json.Unmarshal(row.Suggestions, &sugs); err != nil {
+			log.Printf("WARN [correlations] unmarshal cached correlations: %v", err)
+			continue
+		}
+		for _, s := range sugs {
+			key := strings.ToLower(s.Title)
+			existing, exists := seen[key]
+			if !exists || row.GeneratedAt.After(existing.genAt) {
+				seen[key] = entry{sug: s, genAt: row.GeneratedAt}
+			}
+		}
+	}
+
+	merged := make([]models.CorrelationSuggestion, 0, len(seen))
+	for _, e := range seen {
+		merged = append(merged, e.sug)
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		pi := priorityOrder[strings.ToLower(merged[i].Priority)]
+		pj := priorityOrder[strings.ToLower(merged[j].Priority)]
+		if pi != pj {
+			return pi < pj
+		}
+		return strings.ToLower(merged[i].Title) < strings.ToLower(merged[j].Title)
+	})
+	return merged, latestProvider
+}
+
+// HandleCorrelations handles POST /api/correlations.
+// It returns LLM-generated correlation and anomaly suggestions for a single Advanced Use Cases gap item.
+func (h *Handler) HandleCorrelations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req models.CorrelationsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	req.Client = strings.TrimSpace(req.Client)
+	if req.Client == "" {
+		writeError(w, http.StatusBadRequest, "missing required field: client")
+		return
+	}
+	req.GapProse = strings.TrimSpace(req.GapProse)
+	if req.GapProse == "" {
+		writeError(w, http.StatusBadRequest, "missing required field: gap_prose")
+		return
+	}
+
+	if _, ok := h.config.Clients[req.Client]; !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown client: %s", req.Client))
+		return
+	}
+
+	// Resolve LLM provider — same logic as HandleSuggestions.
+	nvidiaKey := h.config.LLM.NvidiaAPIKey
+	if h.config.LLM.NvidiaSuggestionAPIKey != "" {
+		nvidiaKey = h.config.LLM.NvidiaSuggestionAPIKey
+	}
+
+	var provider llm.Provider
+	var err error
+	if req.Provider != "" {
+		provider, err = llm.NewProvider(req.Provider, llm.ProviderConfig{
+			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+			ClaudeModel:     h.config.LLM.ClaudeModel,
+			NvidiaAPIKey:    nvidiaKey,
+			NvidiaModel:     h.config.LLM.NvidiaModel,
+			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
+		})
+	} else {
+		providerName := h.config.LLM.SuggestionProvider
+		if providerName == "" {
+			providerName = h.config.LLM.DefaultProvider
+		}
+		provider, err = llm.NewClassifierProvider(providerName, h.config.LLM.SuggestionModel, llm.ProviderConfig{
+			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+			ClaudeModel:     h.config.LLM.ClaudeModel,
+			NvidiaAPIKey:    nvidiaKey,
+			NvidiaModel:     h.config.LLM.NvidiaModel,
+			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
+		})
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	ctx := r.Context()
+	cacheKey := buildCorrelationCacheKey(req.Client, req.GapProse)
+
+	// Cache hit path.
+	if !req.Force && h.alertStore != nil {
+		cached, cErr := h.alertStore.GetCachedCorrelations(ctx, cacheKey)
+		if cErr != nil {
+			log.Printf("WARN HandleCorrelations client=%s cache lookup: %v", req.Client, cErr)
+		} else if len(cached) > 0 {
+			merged, latestProvider := mergeCorrelations(cached)
+			log.Printf("INFO HandleCorrelations client=%s cache=hit suggestions=%d", req.Client, len(merged))
+			writeJSON(w, http.StatusOK, models.CorrelationsResponse{
+				Suggestions: merged,
+				Provider:    latestProvider,
+				Cached:      true,
+			})
+			return
+		}
+	}
+
+	// Cache miss — call LLM.
+	input := llm.CorrelationInput{
+		GapProse:          req.GapProse,
+		LogSources:        req.LogSources,
+		CoveredTechniques: req.CoveredTechniques,
+	}
+	sugs, llmErr := llm.GenerateCorrelations(ctx, provider, input)
+	if llmErr != nil {
+		log.Printf("WARN HandleCorrelations client=%s llm error: %v", req.Client, llmErr)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("LLM generation failed: %v", llmErr))
+		return
+	}
+
+	effectiveProvider := req.Provider
+	if effectiveProvider == "" {
+		effectiveProvider = h.config.LLM.SuggestionProvider
+		if effectiveProvider == "" {
+			effectiveProvider = h.config.LLM.DefaultProvider
+		}
+	}
+	log.Printf("INFO HandleCorrelations client=%s cache=miss provider=%s suggestions=%d", req.Client, effectiveProvider, len(sugs))
+
+	if len(sugs) > 0 && h.alertStore != nil {
+		sugsJSON, _ := json.Marshal(sugs)
+		if appendErr := h.alertStore.AppendCachedCorrelations(ctx, store.CorrelationRow{
+			CacheKey:    cacheKey,
+			Client:      req.Client,
+			Suggestions: json.RawMessage(sugsJSON),
+			Provider:    effectiveProvider,
+			GeneratedAt: time.Now().UTC(),
+		}); appendErr != nil {
+			log.Printf("WARN HandleCorrelations client=%s cache append: %v", req.Client, appendErr)
+		}
+	}
+
+	// For force requests, re-fetch merged pool; otherwise return LLM result directly.
+	if req.Force && h.alertStore != nil {
+		allRows, fetchErr := h.alertStore.GetCachedCorrelations(ctx, cacheKey)
+		if fetchErr == nil && len(allRows) > 0 {
+			merged, latestProvider := mergeCorrelations(allRows)
+			writeJSON(w, http.StatusOK, models.CorrelationsResponse{
+				Suggestions: merged,
+				Provider:    latestProvider,
+				Cached:      false,
+			})
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, models.CorrelationsResponse{
+		Suggestions: sugs,
+		Provider:    effectiveProvider,
+		Cached:      false,
+	})
+}
+
 // writeJSON writes a JSON response with the given status code.
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
