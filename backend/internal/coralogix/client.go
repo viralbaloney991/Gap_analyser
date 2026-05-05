@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os/exec"
 	"strings"
 	"time"
@@ -152,6 +153,13 @@ func (c *Client) FetchAlertEventCounts(
 		}
 		nextPage = next
 	}
+	matched := 0
+	for _, c := range counts {
+		if c > 0 {
+			matched++
+		}
+	}
+	log.Printf("INFO [noise] event counts: requested=%d matched=%d", len(alertIDs), matched)
 	return counts, nil
 }
 
