@@ -72,6 +72,15 @@ func (s *Store) migrate(ctx context.Context) error {
 			generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 		CREATE INDEX IF NOT EXISTS suggestion_cache_key_idx ON suggestion_cache(cache_key);
+		CREATE TABLE IF NOT EXISTS correlation_cache (
+			id           BIGSERIAL   PRIMARY KEY,
+			cache_key    TEXT        NOT NULL,
+			client       TEXT        NOT NULL,
+			suggestions  JSONB       NOT NULL,
+			provider     TEXT        NOT NULL,
+			generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS correlation_cache_key_idx ON correlation_cache(cache_key);
 	`)
 	return err
 }
@@ -234,6 +243,61 @@ func (s *Store) AppendCachedSuggestions(ctx context.Context, row SuggestionRow) 
 	`, row.CacheKey, row.TechniqueID, row.LogSources, string(row.Suggestions), row.Provider, row.GeneratedAt)
 	if err != nil {
 		return fmt.Errorf("insert suggestion_cache: %w", err)
+	}
+	return nil
+}
+
+// CorrelationRow is one generation of LLM correlation suggestions for a (client, gap_prose) pair.
+type CorrelationRow struct {
+	CacheKey    string
+	Client      string
+	Suggestions json.RawMessage // serialised []models.CorrelationSuggestion
+	Provider    string
+	GeneratedAt time.Time
+}
+
+// GetCachedCorrelations returns all correlation rows for a cache key ordered ASC by generated_at.
+// Returns an empty (non-nil) slice when no rows exist.
+func (s *Store) GetCachedCorrelations(ctx context.Context, cacheKey string) ([]CorrelationRow, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT cache_key, client, suggestions, provider, generated_at
+		FROM correlation_cache
+		WHERE cache_key = $1
+		ORDER BY generated_at ASC
+	`, cacheKey)
+	if err != nil {
+		return nil, fmt.Errorf("query correlation_cache: %w", err)
+	}
+	defer rows.Close()
+
+	var result []CorrelationRow
+	for rows.Next() {
+		var row CorrelationRow
+		var suggestions []byte
+		if err := rows.Scan(&row.CacheKey, &row.Client, &suggestions, &row.Provider, &row.GeneratedAt); err != nil {
+			return nil, fmt.Errorf("scan correlation_cache row: %w", err)
+		}
+		row.Suggestions = json.RawMessage(suggestions)
+		result = append(result, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("correlation_cache rows error: %w", err)
+	}
+	if result == nil {
+		result = []CorrelationRow{}
+	}
+	return result, nil
+}
+
+// AppendCachedCorrelations inserts one new correlation generation row.
+// Existing rows are never modified — the table is append-only.
+func (s *Store) AppendCachedCorrelations(ctx context.Context, row CorrelationRow) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO correlation_cache (cache_key, client, suggestions, provider, generated_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`, row.CacheKey, row.Client, string(row.Suggestions), row.Provider, row.GeneratedAt)
+	if err != nil {
+		return fmt.Errorf("insert correlation_cache: %w", err)
 	}
 	return nil
 }
