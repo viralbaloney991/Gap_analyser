@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 )
 
@@ -22,8 +23,8 @@ func TestCorrelationsRequestRoundtrip(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.Client != req.Client || got.GapProse != req.GapProse {
-		t.Errorf("roundtrip mismatch: got %+v", got)
+	if !reflect.DeepEqual(got, req) {
+		t.Errorf("roundtrip mismatch:\n got  %+v\n want %+v", got, req)
 	}
 }
 
@@ -44,7 +45,35 @@ func TestCorrelationSuggestionRoundtrip(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.Type != sug.Type || got.Priority != sug.Priority {
-		t.Errorf("roundtrip mismatch: got %+v", got)
+	if !reflect.DeepEqual(got, sug) {
+		t.Errorf("roundtrip mismatch:\n got  %+v\n want %+v", got, sug)
+	}
+}
+
+func TestCorrelationsResponseRoundtrip(t *testing.T) {
+	resp := CorrelationsResponse{
+		Suggestions: []CorrelationSuggestion{
+			{
+				Type:               "anomaly",
+				Title:              "T1059 baseline deviation",
+				Description:        "Alert when command execution exceeds 2 std dev from 7-day baseline",
+				InvolvedTechniques: []string{"T1059"},
+				QuerySkeleton:      "subsystemName:sysmon AND ...",
+				Priority:           "medium",
+			},
+		},
+		Provider: "claude",
+		Cached:   true,
+	}
+	data, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got CorrelationsResponse
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !reflect.DeepEqual(got, resp) {
+		t.Errorf("roundtrip mismatch:\n got  %+v\n want %+v", got, resp)
 	}
 }
