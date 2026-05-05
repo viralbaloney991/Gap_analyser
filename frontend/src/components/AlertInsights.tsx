@@ -34,6 +34,79 @@ function noiseTypeLabel(noiseType?: string): string {
   }
 }
 
+type SeverityLevel = 'critical' | 'high' | 'medium' | 'low';
+
+interface TopGap {
+  rank: number;
+  severity: SeverityLevel;
+  categoryLabel: string;
+  prose: string;
+  logSource?: string;
+}
+
+const SEVERITY_WEIGHT: Record<SeverityLevel, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
+const CATEGORY_PRIORITY: Record<string, number> = {
+  no_detection: 6, missing_source_alerts: 5, poor_tactic_coverage: 4,
+  weak_detection_quality: 3, advanced_use_cases: 2, environment_cleanup: 1,
+};
+
+const severityColors: Record<string, string> = {
+  critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#3b82f6',
+};
+
+function coveragePctToSeverity(pct: number): SeverityLevel {
+  if (pct === 0) return 'critical';
+  if (pct < 10)  return 'high';
+  return 'medium';
+}
+
+function computeTopGaps(
+  report: InsightsReport,
+  mitreCoverage: MITRECoverageResult,
+  n = 5,
+): TopGap[] {
+  type Candidate = Omit<TopGap, 'rank'> & { categoryKey: string };
+  const candidates: Candidate[] = [];
+
+  const actionableDefs: Array<{ key: string; label: string; items: ActionableRecommendation[] | undefined }> = [
+    { key: 'no_detection',           label: 'No Detection',          items: report.actionable_gaps?.no_detection },
+    { key: 'missing_source_alerts',  label: 'Missing Source Alerts', items: report.actionable_gaps?.missing_source_alerts },
+    { key: 'weak_detection_quality', label: 'Weak Detection',        items: report.actionable_gaps?.weak_detection_quality },
+    { key: 'advanced_use_cases',     label: 'Advanced Use Cases',    items: report.actionable_gaps?.advanced_use_cases },
+  ];
+  for (const { key, label, items } of actionableDefs) {
+    for (const item of items ?? []) {
+      candidates.push({ severity: item.severity, categoryKey: key, categoryLabel: label, prose: item.prose, logSource: item.log_source });
+    }
+  }
+
+  const breakdown = mitreCoverage.summary.tactic_breakdown ?? {};
+  for (const str of report.gap_categories.poor_tactic_coverage ?? []) {
+    const lower = str.toLowerCase();
+    let sev: SeverityLevel = 'high';
+    for (const [key, tc] of Object.entries(breakdown)) {
+      const name = tc.tactic_name?.toLowerCase() ?? '';
+      if (name && (lower.includes(name) || lower.includes(key.replace(/-/g, ' ')))) {
+        sev = coveragePctToSeverity(tc.percent);
+        break;
+      }
+    }
+    candidates.push({ severity: sev, categoryKey: 'poor_tactic_coverage', categoryLabel: 'Poor Tactic Coverage', prose: str });
+  }
+
+  for (const str of report.gap_categories.environment_cleanup ?? []) {
+    candidates.push({ severity: 'medium', categoryKey: 'environment_cleanup', categoryLabel: 'Environment Cleanup', prose: str });
+  }
+
+  candidates.sort((a, b) => {
+    const sw = SEVERITY_WEIGHT[b.severity] - SEVERITY_WEIGHT[a.severity];
+    return sw !== 0 ? sw : (CATEGORY_PRIORITY[b.categoryKey] ?? 0) - (CATEGORY_PRIORITY[a.categoryKey] ?? 0);
+  });
+
+  return candidates.slice(0, n).map((c, i) => ({ ...c, rank: i + 1 }));
+}
+
 export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage, totalAlerts, lookbackDays, onReanalyze, noiseLoading }: Props) {
   const [activeTab, setActiveTab]         = useState<Tab>('duplicates');
   const [localReport, setLocalReport]     = useState<InsightsReport | null>(report);
@@ -171,13 +244,6 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     );
   };
 
-  const severityColors: Record<string, string> = {
-    critical: '#ef4444',
-    high:     '#f97316',
-    medium:   '#eab308',
-    low:      '#3b82f6',
-  };
-
   const renderActionableSection = (
     title: string,
     actionable: ActionableRecommendation[] | undefined,
@@ -229,6 +295,10 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     }
     return renderGapSection(title, fallback);
   };
+
+  const topGaps = useMemo(() =>
+    effectiveReport ? computeTopGaps(effectiveReport, mitreCoverage) : [],
+  [effectiveReport, mitreCoverage]);
 
   const noiseCount = data.noise_alerts?.length ?? 0;
   const gapCount = effectiveReport
@@ -539,6 +609,33 @@ export default function AlertInsights({ data, report, insightsError = false, cli
               </div>
             ) : gapCount > 0 ? (
               <>
+                {topGaps.length > 0 && (
+                  <div className="top-gaps-card">
+                    <div className="top-gaps-title">Top {topGaps.length} Gaps · Immediate Attention</div>
+                    {topGaps.map(gap => (
+                      <div
+                        key={`${gap.categoryLabel}-${gap.rank}`}
+                        className="top-gaps-item"
+                        style={{ animationDelay: `${(gap.rank - 1) * 55}ms` }}
+                      >
+                        <span className="top-gaps-rank">{String(gap.rank).padStart(2, '0')}</span>
+                        <div className="top-gaps-body">
+                          <div className="top-gaps-meta">
+                            <span
+                              className="badge"
+                              style={{ backgroundColor: severityColors[gap.severity] ?? '#6b7280', color: '#fff', fontSize: '0.58rem' }}
+                            >
+                              {gap.severity.toUpperCase()}
+                            </span>
+                            <span className="top-gaps-category">{gap.categoryLabel}</span>
+                            {gap.logSource && <span className="top-gaps-source">{gap.logSource}</span>}
+                          </div>
+                          <div className="top-gaps-prose">{gap.prose}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {effectiveReport?.all_integrations_vendor_managed && (
                   <div className="vendor-managed-notice">
                     All log sources are vendor-managed. Improvement recommendations require
