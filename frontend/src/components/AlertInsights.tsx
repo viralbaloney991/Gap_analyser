@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import type { SimilarityResult, InsightsReport, MITRECoverageResult, DetectionFamily, ActionableRecommendation } from '../types';
-import { fetchInsights, fetchExportNarrative } from '../services/api';
+import type { SimilarityResult, InsightsReport, MITRECoverageResult, DetectionFamily, ActionableRecommendation, CorrelationSuggestion } from '../types';
+import { fetchInsights, fetchExportNarrative, fetchCorrelations } from '../services/api';
 import { exportTabAsXLSX, exportTabAsPDF, exportFullReportPDF } from '../utils/export';
 import NoisePills from './NoisePills';
 
@@ -129,6 +129,33 @@ export default function AlertInsights({ data, report, insightsError = false, cli
   const [expandedQueries, setExpandedQueries] = useState<Set<string>>(new Set());
   const [noiseFilter, setNoiseFilter] = useState<'all' | 'behavioral' | 'structural'>('all');
 
+  const [correlationDrawer, setCorrelationDrawer] = useState<{
+    gapProse: string;
+    suggestions: CorrelationSuggestion[];
+    loading: boolean;
+    cached: boolean;
+  } | null>(null);
+
+  const coveredTechniques = useMemo(
+    () =>
+      Object.entries(mitreCoverage.technique_coverage ?? {})
+        .filter(([, v]) => v.alert_count > 0)
+        .map(([k]) => k),
+    [mitreCoverage],
+  );
+
+  const openCorrelationDrawer = async (rec: ActionableRecommendation) => {
+    setCorrelationDrawer({ gapProse: rec.prose, suggestions: [], loading: true, cached: false });
+    try {
+      const logSources = rec.log_source ? [rec.log_source] : [];
+      const result = await fetchCorrelations(client, rec.prose, logSources, coveredTechniques);
+      setCorrelationDrawer({ gapProse: rec.prose, suggestions: result.suggestions, loading: false, cached: result.cached });
+    } catch (e) {
+      console.warn('[correlations]', e);
+      setCorrelationDrawer(prev => prev ? { ...prev, loading: false } : null);
+    }
+  };
+
   const toggleQuery = (key: string) => {
     setExpandedQueries(prev => {
       const next = new Set(prev);
@@ -247,7 +274,8 @@ export default function AlertInsights({ data, report, insightsError = false, cli
   const renderActionableSection = (
     title: string,
     actionable: ActionableRecommendation[] | undefined,
-    fallback: string[] | undefined
+    fallback: string[] | undefined,
+    onCorrelate?: (rec: ActionableRecommendation) => void,
   ) => {
     if (actionable && actionable.length > 0) {
       return (
@@ -286,6 +314,15 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                       Copy
                     </button>
                   </div>
+                )}
+                {onCorrelate && (
+                  <button
+                    type="button"
+                    className="corr-suggest-btn"
+                    onClick={() => onCorrelate(item)}
+                  >
+                    Suggest correlations →
+                  </button>
                 )}
               </div>
             );
@@ -646,7 +683,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 {renderActionableSection('No Detection', effectiveReport?.actionable_gaps?.no_detection, effectiveReport?.gap_categories.no_detection)}
                 {renderGapSection('Poor Tactic Coverage', effectiveReport?.gap_categories.poor_tactic_coverage)}
                 {renderActionableSection('Weak Detection Quality', effectiveReport?.actionable_gaps?.weak_detection_quality, effectiveReport?.gap_categories.weak_detection_quality)}
-                {renderActionableSection('Advanced Use Cases', effectiveReport?.actionable_gaps?.advanced_use_cases, effectiveReport?.gap_categories.advanced_use_cases)}
+                {renderActionableSection('Advanced Use Cases', effectiveReport?.actionable_gaps?.advanced_use_cases, effectiveReport?.gap_categories.advanced_use_cases, openCorrelationDrawer)}
                 {renderActionableSection('Missing Source Alerts', effectiveReport?.actionable_gaps?.missing_source_alerts, effectiveReport?.gap_categories.missing_source_alerts)}
               </>
             ) : (
@@ -783,6 +820,101 @@ export default function AlertInsights({ data, report, insightsError = false, cli
         }}>
           Generating report…
         </div>
+      )}
+
+      {/* Correlation suggestions drawer */}
+      {correlationDrawer && (
+        <>
+          <div className="corr-backdrop" onClick={() => setCorrelationDrawer(null)} />
+          <div className="corr-drawer">
+            <div className="corr-drawer-header">
+              <span className="corr-drawer-title" title={correlationDrawer.gapProse}>
+                {correlationDrawer.gapProse.length > 80
+                  ? correlationDrawer.gapProse.slice(0, 80) + '…'
+                  : correlationDrawer.gapProse}
+              </span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+                {correlationDrawer.cached && <span className="corr-cached-badge">Cached</span>}
+                <button type="button" className="corr-close-btn" onClick={() => setCorrelationDrawer(null)}>✕</button>
+              </div>
+            </div>
+            <div className="corr-drawer-body">
+              {correlationDrawer.loading ? (
+                <>
+                  <div className="corr-skeleton skeleton" />
+                  <div className="corr-skeleton skeleton" style={{ width: '80%' }} />
+                  <div className="corr-skeleton skeleton" style={{ width: '90%' }} />
+                </>
+              ) : correlationDrawer.suggestions.length === 0 ? (
+                <div className="state-empty">
+                  <div className="state-empty__icon">◎</div>
+                  <div className="state-empty__title">No suggestions generated</div>
+                  <div className="state-empty__body">The LLM could not produce correlation rules for this gap. Try regenerating.</div>
+                </div>
+              ) : (
+                <>
+                  {(['correlation', 'anomaly'] as const).map(type => {
+                    const items = correlationDrawer.suggestions.filter(s => s.type === type);
+                    if (!items.length) return null;
+                    return (
+                      <div key={type} className="corr-section">
+                        <div className="corr-section-title">
+                          {type === 'correlation' ? 'Correlation Rules' : 'Anomaly Rules'}
+                        </div>
+                        {items.map((sug, i) => {
+                          const corrKey = `${type}-${i}`;
+                          const isOpen = expandedQueries.has(`corr-${corrKey}`);
+                          return (
+                            <div key={corrKey} className="corr-card">
+                              <div className="corr-card-meta">
+                                <span
+                                  className="badge"
+                                  style={{ backgroundColor: severityColors[sug.priority] ?? '#6b7280', color: sug.priority === 'medium' ? '#000' : '#fff', fontSize: '0.58rem' }}
+                                >
+                                  {sug.priority.toUpperCase()}
+                                </span>
+                                <span className="corr-card-title">{sug.title}</span>
+                              </div>
+                              <p className="corr-card-desc">{sug.description}</p>
+                              {sug.involved_techniques.length > 0 && (
+                                <div className="corr-techniques">
+                                  {sug.involved_techniques.map(t => (
+                                    <span key={t} className="corr-technique-chip">{t}</span>
+                                  ))}
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => toggleQuery(`corr-${corrKey}`)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60a5fa', fontSize: 12, padding: 0, marginTop: 4 }}
+                              >
+                                {isOpen ? '▼ Hide query' : '▶ Show query'}
+                              </button>
+                              {isOpen && (
+                                <div style={{ marginTop: 6 }}>
+                                  <pre style={{ background: '#1e1e2e', color: '#cdd6f4', padding: '8px 12px', borderRadius: 4, fontSize: 12, overflowX: 'auto', margin: 0 }}>
+                                    {sug.query_skeleton}
+                                  </pre>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigator.clipboard.writeText(sug.query_skeleton)}
+                                    style={{ marginTop: 4, background: 'none', border: '1px solid #4b5563', cursor: 'pointer', color: '#9ca3af', fontSize: 11, padding: '2px 8px', borderRadius: 4 }}
+                                  >
+                                    Copy
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
