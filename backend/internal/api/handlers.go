@@ -506,6 +506,76 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ir)
 }
 
+// HandleNoise re-runs only the noise detection step for a different lookback window.
+// POST /api/noise { "client": "X", "lookback_days": 7 }
+// Response: { "noise_alerts": [...], "lookback_days": 7 }
+func (h *Handler) HandleNoise(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req models.NoiseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	req.Client = strings.TrimSpace(req.Client)
+	if req.Client == "" {
+		writeError(w, http.StatusBadRequest, "missing required field: client")
+		return
+	}
+
+	clientCfg, ok := h.config.Clients[req.Client]
+	if !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown client: %s", req.Client))
+		return
+	}
+
+	lookback := validateLookbackDays(req.LookbackDays)
+	ctx := r.Context()
+
+	// Load alerts — store-first, same strategy as HandleInsights.
+	var alerts []*models.AlertDef
+	if h.alertStore != nil {
+		stored, err := h.alertStore.LoadAlerts(ctx, req.Client)
+		if err == nil && len(stored) > 0 {
+			alerts = stored
+		}
+	}
+	if len(alerts) == 0 {
+		var err error
+		alerts, err = fetchAlerts(ctx, clientCfg.Region, clientCfg.APIKey)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Sprintf("failed to fetch alerts: %v", err))
+			return
+		}
+	}
+
+	alertIDs := make([]string, len(alerts))
+	for i, a := range alerts {
+		alertIDs[i] = a.ID
+	}
+	eventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, alertIDs, lookback)
+	if eventCounts == nil {
+		log.Printf("WARN [noise] event counts unavailable client=%s lookback=%d — structural-only", req.Client, lookback)
+	} else {
+		log.Printf("INFO [noise] event counts: requested=%d matched=%d client=%s lookback=%d", len(alertIDs), len(eventCounts), req.Client, lookback)
+	}
+
+	coralogix.ExtractFeatures(alerts, nil)
+
+	noiseAlerts := similarity.AnalyzeNoise(alerts, eventCounts, 0)
+	if noiseAlerts == nil {
+		noiseAlerts = []models.NoiseAlert{}
+	}
+
+	writeJSON(w, http.StatusOK, models.NoiseResponse{
+		NoiseAlerts:  noiseAlerts,
+		LookbackDays: lookback,
+	})
+}
+
 // HandleExportNarrative generates an LLM executive narrative for the full PDF report.
 // POST /api/export/narrative { "client": "X" }
 // Result is not cached — always generated fresh.

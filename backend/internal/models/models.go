@@ -128,6 +128,18 @@ type NoiseAlert struct {
 	NoiseType       string   `json:"noise_type,omitempty"`
 }
 
+// NoiseRequest is the request body for POST /api/noise.
+type NoiseRequest struct {
+	Client       string `json:"client"`
+	LookbackDays int    `json:"lookback_days"`
+}
+
+// NoiseResponse is the response for POST /api/noise.
+type NoiseResponse struct {
+	NoiseAlerts  []NoiseAlert `json:"noise_alerts"`
+	LookbackDays int `json:"lookback_days"`
+}
+
 // SimilarityResult is the response for alert insight analysis.
 type SimilarityResult struct {
 	Families         []DetectionFamily `json:"families"`

@@ -108,6 +108,7 @@ func main() {
 	mux.HandleFunc("/api/clients", handler.HandleClients)
 	mux.HandleFunc("/api/analyze", handler.HandleAnalyze)
 	mux.HandleFunc("/api/insights", handler.HandleInsights)
+	mux.HandleFunc("/api/noise", handler.HandleNoise)
 	mux.HandleFunc("/api/suggestions", handler.HandleSuggestions)
 	mux.HandleFunc("/api/export/narrative", handler.HandleExportNarrative)
 
