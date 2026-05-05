@@ -238,6 +238,24 @@ func Analyze(
 	}
 }
 
+// AnalyzeNoise runs only the noise detection step of the similarity pipeline.
+// It skips pairwise scoring, family grouping, duplicate detection, and merge
+// suggestions — making it suitable for re-running noise with a different lookback
+// window without re-running the full O(n²) analysis.
+func AnalyzeNoise(
+	alerts []*models.AlertDef,
+	eventCounts map[string]int,
+	integrationCount int,
+) []models.NoiseAlert {
+	if len(alerts) == 0 {
+		return nil
+	}
+	vectors := buildFeatureVectors(alerts)
+	idf := buildIDF(vectors)
+	threshold := computeQueryIDFThreshold(vectors, idf)
+	return findNoiseAlerts(vectors, alerts, eventCounts, integrationCount, idf, threshold)
+}
+
 // tokenizeLucene splits a Lucene query string into a lowercase token set.
 //
 // Two-pass approach:

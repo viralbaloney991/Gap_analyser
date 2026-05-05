@@ -899,6 +899,39 @@ func TestFindNoiseAlerts_broadQueryReason(t *testing.T) {
 	}
 }
 
+func TestAnalyzeNoise_nilAlerts_returnsNil(t *testing.T) {
+	result := AnalyzeNoise(nil, nil, 0)
+	if result != nil {
+		t.Errorf("expected nil for nil alerts, got %v", result)
+	}
+}
+
+func TestAnalyzeNoise_emptyAlerts_returnsNil(t *testing.T) {
+	result := AnalyzeNoise([]*models.AlertDef{}, nil, 0)
+	if result != nil {
+		t.Errorf("expected nil for empty alerts, got %v", result)
+	}
+}
+
+func TestAnalyzeNoise_unscopedAlert_returnsStructuralNoise(t *testing.T) {
+	alert := makeAlert("u-1", "logs_threshold", false, true, nil, "", "")
+	result := AnalyzeNoise([]*models.AlertDef{alert}, map[string]int{}, 0)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 noise alert for unscoped alert, got %d: %v", len(result), result)
+	}
+	if result[0].NoiseType != "structural" {
+		t.Errorf("expected structural, got %q", result[0].NoiseType)
+	}
+}
+
+func TestAnalyzeNoise_scopedAlert_notFlagged(t *testing.T) {
+	alert := makeAlert("s-1", "logs_threshold", false, true, nil, "my-app", "auth")
+	result := AnalyzeNoise([]*models.AlertDef{alert}, map[string]int{}, 0)
+	if len(result) != 0 {
+		t.Errorf("scoped alert should not be noise, got %v", result)
+	}
+}
+
 func TestGroupFamilies_mergesSameNamedFamilies(t *testing.T) {
 	// Build two pairs of alerts that will cluster together independently.
 	// Both pairs share the same MITRE tactic so deriveFamilyName gives them
