@@ -1106,8 +1106,9 @@ func validateLookbackDays(days int) int {
 
 // buildCorrelationCacheKey returns a stable SHA256 hex key for a (client, gap_prose) pair.
 func buildCorrelationCacheKey(client, gapProse string) string {
-	normalised := strings.ToLower(strings.TrimSpace(gapProse))
-	raw := client + "|" + normalised
+	normalisedClient := strings.ToLower(client)
+	normalisedGap := strings.ToLower(strings.TrimSpace(gapProse))
+	raw := normalisedClient + "|" + normalisedGap
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }
@@ -1250,8 +1251,8 @@ func (h *Handler) HandleCorrelations(w http.ResponseWriter, r *http.Request) {
 	}
 	sugs, llmErr := llm.GenerateCorrelations(ctx, provider, input)
 	if llmErr != nil {
-		log.Printf("WARN HandleCorrelations client=%s llm error: %v", req.Client, llmErr)
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("LLM generation failed: %v", llmErr))
+		log.Printf("ERROR HandleCorrelations client=%s llm error: %v", req.Client, llmErr)
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("LLM generation failed: %v", llmErr))
 		return
 	}
 
@@ -1280,7 +1281,9 @@ func (h *Handler) HandleCorrelations(w http.ResponseWriter, r *http.Request) {
 	// For force requests, re-fetch merged pool; otherwise return LLM result directly.
 	if req.Force && h.alertStore != nil {
 		allRows, fetchErr := h.alertStore.GetCachedCorrelations(ctx, cacheKey)
-		if fetchErr == nil && len(allRows) > 0 {
+		if fetchErr != nil {
+			log.Printf("WARN HandleCorrelations client=%s force pool fetch: %v", req.Client, fetchErr)
+		} else if len(allRows) > 0 {
 			merged, latestProvider := mergeCorrelations(allRows)
 			writeJSON(w, http.StatusOK, models.CorrelationsResponse{
 				Suggestions: merged,

@@ -65,6 +65,10 @@ func TestBuildCorrelationCacheKey_stable(t *testing.T) {
 	if key1 != key3 {
 		t.Error("buildCorrelationCacheKey should trim whitespace before hashing")
 	}
+	keyCased := buildCorrelationCacheKey("ACME", "T1059 threshold alert, no anomaly layer")
+	if key1 != keyCased {
+		t.Error("buildCorrelationCacheKey should be case-insensitive for client")
+	}
 	keyOther := buildCorrelationCacheKey("other-client", "T1059 threshold alert, no anomaly layer")
 	if key1 == keyOther {
 		t.Error("buildCorrelationCacheKey should differ for different clients")
