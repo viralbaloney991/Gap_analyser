@@ -90,19 +90,26 @@ func (c *Client) grpcCall(ctx context.Context, method, body string) ([]byte, err
 	return stdout.Bytes(), nil
 }
 
-// eventCountReqPagination is the pagination block for ListAlertEvents requests.
-type eventCountReqPagination struct {
-	PageSize int    `json:"pageSize"`
-	Page     string `json:"page,omitempty"`
+// eventsCountReqBody is the request body for EventsService/ListEventsCount.
+// Field names use proto3 camelCase JSON transcoding.
+type eventsCountReqBody struct {
+	AlertIDs       []string                 `json:"alertIds"`
+	TimestampRange eventCountTimestampRange `json:"timestampRange"`
 }
 
-// eventCountTimestampRange is the time window for ListAlertEvents requests.
+// eventCountTimestampRange is the time window for event count requests.
 type eventCountTimestampRange struct {
 	From string `json:"from"`
 	To   string `json:"to"`
 }
 
-// eventCountReqBody is the request body for ListAlertEvents.
+// eventCountReqPagination is kept for ListAlertEvents-based tests.
+type eventCountReqPagination struct {
+	PageSize int    `json:"pageSize"`
+	Page     string `json:"page,omitempty"`
+}
+
+// eventCountReqBody is kept for ListAlertEvents-based tests.
 // Field names use proto3 camelCase JSON transcoding (alertIds, timestampRange, pageSize).
 type eventCountReqBody struct {
 	AlertIDs       []string                 `json:"alertIds"`
@@ -111,7 +118,8 @@ type eventCountReqBody struct {
 }
 
 // FetchAlertEventCounts returns the trigger count for each alert ID over the
-// past [days] days. Uses EventsService/ListAlertEvents with pagination.
+// past [days] days. Uses EventsService/ListEventsCount which returns aggregate
+// counts directly — no pagination needed.
 // Returns a map of alertID → count; IDs not in the response have count 0.
 // If the call fails, returns nil, err — the caller falls back to structural-only.
 func (c *Client) FetchAlertEventCounts(
@@ -129,37 +137,29 @@ func (c *Client) FetchAlertEventCounts(
 	now := time.Now().UTC()
 	from := now.AddDate(0, 0, -days)
 
-	counts := make(map[string]int, len(alertIDs))
-	var nextPage string
-	const pageSize = 1000
-
-	for {
-		var body eventCountReqBody
-		body.AlertIDs = alertIDs
-		body.TimestampRange.From = from.Format(time.RFC3339)
-		body.TimestampRange.To = now.Format(time.RFC3339)
-		body.Pagination.PageSize = pageSize
-		body.Pagination.Page = nextPage
-
-		bodyJSON, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("marshal event count request: %w", err)
-		}
-
-		raw, err := c.grpcCall(ctx, "com.coralogixapis.events.v3.EventsService/ListAlertEvents", string(bodyJSON))
-		if err != nil {
-			return nil, err
-		}
-
-		next, err := parseAlertEventsResponse(raw, counts)
-		if err != nil {
-			return nil, err
-		}
-		if next == "" {
-			break
-		}
-		nextPage = next
+	body := eventsCountReqBody{
+		AlertIDs: alertIDs,
+		TimestampRange: eventCountTimestampRange{
+			From: from.Format(time.RFC3339),
+			To:   now.Format(time.RFC3339),
+		},
 	}
+
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal event count request: %w", err)
+	}
+
+	raw, err := c.grpcCall(ctx, "com.coralogixapis.events.v3.EventsService/ListEventsCount", string(bodyJSON))
+	if err != nil {
+		return nil, err
+	}
+
+	counts, err := parseEventCountResponse(raw)
+	if err != nil {
+		return nil, err
+	}
+
 	matched := 0
 	for _, c := range counts {
 		if c > 0 {
