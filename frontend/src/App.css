@@ -109,6 +109,8 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 6px;
+  overflow: hidden;
+  max-width: 320px;
 }
 
 .app-breadcrumb span { color: var(--text-sec); }
@@ -560,7 +562,7 @@ html, body, #root {
 .coverage-pct         { font-family: var(--font-display); font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; color: var(--accent); }
 .coverage-label       { font-family: var(--font-mono); font-size: 0.6rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; }
 
-.integration-table-wrap { flex: 1; overflow-y: auto; }
+.integration-table-wrap { flex: 1; overflow-y: auto; overflow-x: auto; }
 
 .integration-table { width: 100%; border-collapse: collapse; }
 .integration-table thead tr { position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--border); }
@@ -879,7 +881,7 @@ html, body, #root {
 .detail-panel {
   position: fixed;
   bottom: 24px; right: 24px;
-  width: 320px;
+  width: min(320px, calc(100vw - 48px));
   max-height: calc(100vh - 48px); /* 24px bottom offset + 24px top breathing room */
   display: flex;
   flex-direction: column;
