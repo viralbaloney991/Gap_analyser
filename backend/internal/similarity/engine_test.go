@@ -415,6 +415,29 @@ func TestFindNoiseAlerts_nonSecurityBehavioralNoise(t *testing.T) {
 	}
 }
 
+func TestFindNoiseAlerts_nonSecurityAtThreshold_noNoise(t *testing.T) {
+	v := sparseVector("Ops Alert At Threshold")
+	alert := makeAlert("ops-thresh", "logs_threshold", false, false, nil, "aws", "ebs")
+	counts := map[string]int{"ops-thresh": 10} // exactly 10 — not > 10
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, counts, 0, idfTable{}, 0)
+	if len(noisy) != 0 {
+		t.Errorf("non-security alert at threshold (10) should not be noisy, got %v", noisy)
+	}
+}
+
+func TestFindNoiseAlerts_nonSecurityAboveThreshold_noisy(t *testing.T) {
+	v := sparseVector("Ops Alert Above Threshold")
+	alert := makeAlert("ops-above", "logs_threshold", false, false, nil, "aws", "ebs")
+	counts := map[string]int{"ops-above": 11} // 11 > 10 — behavioral fires
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, counts, 0, idfTable{}, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("non-security alert above threshold (11) should be behavioral noise, got %d", len(noisy))
+	}
+	if noisy[0].NoiseType != "behavioral" {
+		t.Errorf("noise_type: want behavioral, got %q", noisy[0].NoiseType)
+	}
+}
+
 func TestFindNoiseAlerts_structuralNoise_unscopedHighVolume(t *testing.T) {
 	v := sparseVector("Generic Threshold")
 	alert := makeAlert("t-1", "logs_threshold", false, true, nil, "", "")

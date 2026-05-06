@@ -1125,7 +1125,8 @@ const behavioralNoiseThreshold = 10 // triggers in 30 days before alert is behav
 //
 //   - Vendor-covered alerts: intentionally sparse, vendor does detection internally.
 //   - Building blocks (flow_alert=building block): fragments by design.
-//   - Non-security alerts: outside the scope of security noise analysis.
+//   - Non-security alerts: excluded from structural noise analysis only;
+//     behavioral noise still applies if event counts exceed the threshold.
 //
 // Flow alerts skip structural (assessed via building blocks) but ARE checked for
 // behavioral noise — a flow firing too often is genuinely noisy.
