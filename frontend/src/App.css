@@ -196,6 +196,24 @@ html, body, #root {
 .btn-small:hover { background: var(--accent-dim); }
 .btn-small:disabled { opacity: 0.5; cursor: not-allowed; }
 
+/* ── Focus rings (keyboard navigation) ───────────────────────────── */
+.btn:focus-visible,
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-small:focus-visible,
+.btn-generate:focus-visible,
+.btn-icon:focus-visible,
+.tab-btn:focus-visible,
+.region-card:focus-visible,
+.export-menu-item:focus-visible,
+.insights-regenerate-btn:focus-visible,
+.cs-cta__btn:focus-visible,
+.corr-suggest-btn:focus-visible,
+.corr-close-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Badges */
 .badge {
   display: inline-block;
@@ -243,6 +261,9 @@ html, body, #root {
 @keyframes shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; background: var(--surface-2); }
 }
 
 /* Error state */
@@ -690,6 +711,9 @@ html, body, #root {
 @keyframes tgFadeIn {
   from { opacity: 0; transform: translateX(-6px); }
   to   { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .top-gaps-item { animation: none; }
 }
 .insight-card--duplicate.insight-card--open,
 .insight-card--family.insight-card--open,
