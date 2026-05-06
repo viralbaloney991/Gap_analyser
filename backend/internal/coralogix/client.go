@@ -90,6 +90,26 @@ func (c *Client) grpcCall(ctx context.Context, method, body string) ([]byte, err
 	return stdout.Bytes(), nil
 }
 
+// eventCountReqPagination is the pagination block for ListAlertEvents requests.
+type eventCountReqPagination struct {
+	PageSize int    `json:"pageSize"`
+	Page     string `json:"page,omitempty"`
+}
+
+// eventCountTimestampRange is the time window for ListAlertEvents requests.
+type eventCountTimestampRange struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
+// eventCountReqBody is the request body for ListAlertEvents.
+// Field names use proto3 camelCase JSON transcoding (alertIds, timestampRange, pageSize).
+type eventCountReqBody struct {
+	AlertIDs       []string                 `json:"alertIds"`
+	TimestampRange eventCountTimestampRange `json:"timestampRange"`
+	Pagination     eventCountReqPagination  `json:"pagination"`
+}
+
 // FetchAlertEventCounts returns the trigger count for each alert ID over the
 // past [days] days. Uses EventsService/ListAlertEvents with pagination.
 // Returns a map of alertID → count; IDs not in the response have count 0.
@@ -109,25 +129,12 @@ func (c *Client) FetchAlertEventCounts(
 	now := time.Now().UTC()
 	from := now.AddDate(0, 0, -days)
 
-	type pagination struct {
-		PageSize int    `json:"page_size"`
-		Page     string `json:"page,omitempty"`
-	}
-	type reqBody struct {
-		AlertIDs       []string `json:"alert_ids"`
-		TimestampRange struct {
-			From string `json:"from"`
-			To   string `json:"to"`
-		} `json:"timestamp_range"`
-		Pagination pagination `json:"pagination"`
-	}
-
 	counts := make(map[string]int, len(alertIDs))
 	var nextPage string
 	const pageSize = 1000
 
 	for {
-		var body reqBody
+		var body eventCountReqBody
 		body.AlertIDs = alertIDs
 		body.TimestampRange.From = from.Format(time.RFC3339)
 		body.TimestampRange.To = now.Format(time.RFC3339)
