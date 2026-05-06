@@ -518,17 +518,19 @@ export default function AlertInsights({ data, report, insightsError = false, cli
       <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Tabs */}
-        <div className="insights-tabs">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              className={`tab-btn${activeTab === tab.key ? ' tab-btn--active' : ''}`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {tab.label}
-              <span className="tab-count">{tab.count}</span>
-            </button>
-          ))}
+        <div className="insights-tabs-wrap">
+          <div className="insights-tabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                className={`tab-btn${activeTab === tab.key ? ' tab-btn--active' : ''}`}
+                onClick={() => setActiveTab(tab.key)}
+              >
+                {tab.label}
+                <span className="tab-count">{tab.count}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tab content */}

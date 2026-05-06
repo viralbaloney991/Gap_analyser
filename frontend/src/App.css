@@ -640,7 +640,17 @@ html, body, #root {
 .signal-label          { font-family: var(--font-mono); font-size: 0.56rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); }
 
 /* Tabs */
-.insights-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; padding: 0 20px; gap: 2px; overflow-x: auto; }
+.insights-tabs-wrap { position: relative; flex-shrink: 0; }
+.insights-tabs-wrap::after {
+  content: '';
+  position: absolute;
+  right: 0; top: 0; bottom: 1px;
+  width: 40px;
+  background: linear-gradient(to right, transparent, var(--bg-mid));
+  pointer-events: none;
+}
+.insights-tabs { display: flex; border-bottom: 1px solid var(--border); padding: 0 20px; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.insights-tabs::-webkit-scrollbar { display: none; }
 
 .tab-btn { font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 14px 14px 12px; color: var(--text-dim); cursor: pointer; border: none; background: none; border-bottom: 2px solid transparent; transition: all 0.15s; white-space: nowrap; display: flex; align-items: center; gap: 7px; }
 .tab-btn:hover     { color: var(--text-sec); }
