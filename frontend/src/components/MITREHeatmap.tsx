@@ -171,6 +171,11 @@ function ForceGraph({
   const [expandedTactic, setExpandedTactic] = useState<string | null>(null);
   const [graphView, setGraphView] = useState<'covered' | 'gaps'>('covered');
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const clampTooltip = (x: number, y: number, text: string) => ({
+    x: Math.min(x, window.innerWidth  - Math.min(text.length * 7 + 24, 320)),
+    y: Math.min(y, window.innerHeight - 36),
+    text,
+  });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -318,7 +323,7 @@ function ForceGraph({
                 transform={`translate(${pos.cx},${pos.cy})`}
                 onClick={(e) => { e.stopPropagation(); onSelectTechnique(t); }}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectTechnique(t); } }}
-                onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY - 8, text: `${t.techniqueID} · ${t.name ?? t.techniqueID}` })}
+                onMouseEnter={(e) => setTooltip(clampTooltip(e.clientX + 12, e.clientY - 8, `${t.techniqueID} · ${t.name ?? t.techniqueID}`))}
                 onMouseLeave={() => setTooltip(null)}
                 style={{ cursor: 'pointer' }}
                 className="force-node"
@@ -379,7 +384,7 @@ function ForceGraph({
                 transform={`translate(${pos.cx},${pos.cy})`}
                 onClick={(e) => { e.stopPropagation(); handleTacticClick(tactic); }}
                 onKeyDown={(e) => { if (total > 0 && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); e.stopPropagation(); handleTacticClick(tactic); } }}
-                onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY - 8, text: `${label}: ${covered}/${total} covered (${Math.round(pct)}%)` })}
+                onMouseEnter={(e) => setTooltip(clampTooltip(e.clientX + 12, e.clientY - 8, `${label}: ${covered}/${total} covered (${Math.round(pct)}%)`))}
                 onMouseLeave={() => setTooltip(null)}
                 style={{
                   cursor: total > 0 ? 'pointer' : 'default',
@@ -428,36 +433,47 @@ function ForceGraph({
           />
         )}
 
-        {/* ── Focused node — elevated above scrim, scales up ── */}
+        {/* ── Focused node — elevated above scrim, larger geometry + pop animation ── */}
         {focusedNode && (() => {
           const { t, pos } = focusedNode;
-          const textFill = t.score <= 50 ? '#fff' : '#000';
+          const rawName = t.name ?? '';
+          const displayName = rawName.length > 16 ? rawName.slice(0, 15) + '…' : rawName;
           return (
             <g
               tabIndex={0}
               transform={`translate(${pos.cx},${pos.cy})`}
               onClick={(e) => { e.stopPropagation(); onSelectTechnique(null); setTooltip(null); }}
               onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectTechnique(null); setTooltip(null); } }}
-              onMouseEnter={(e) => setTooltip({ x: e.clientX + 12, y: e.clientY - 8, text: `${t.techniqueID} · ${t.name ?? t.techniqueID}` })}
-              onMouseLeave={() => setTooltip(null)}
               style={{ cursor: 'pointer' }}
               className="force-node force-node--selected"
               role="button"
               aria-label={`${t.techniqueID} selected — press to deselect`}
             >
-              <circle r={22} fill="transparent" />
-              <circle r={16} fill={t.color} stroke="#fff" strokeWidth={2} />
+              <circle r={36} fill={t.color} stroke="#fff" strokeWidth={2.5} />
               <text
-                dy="0.35em"
+                dy={displayName ? '-5' : '0.35em'}
                 textAnchor="middle"
-                fontSize={9}
-                fill={textFill}
+                fontSize={11}
+                fill="#fff"
                 fontFamily="'IBM Plex Mono', monospace"
-                fontWeight="600"
+                fontWeight="700"
                 style={{ pointerEvents: 'none', userSelect: 'none' }}
               >
                 {t.techniqueID}
               </text>
+              {displayName && (
+                <text
+                  dy="9"
+                  textAnchor="middle"
+                  fontSize={7.5}
+                  fill="rgba(255,255,255,0.8)"
+                  fontFamily="'IBM Plex Mono', monospace"
+                  fontWeight="400"
+                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                >
+                  {displayName}
+                </text>
+              )}
             </g>
           );
         })()}
@@ -701,6 +717,11 @@ export default function MITREHeatmap({ data, clientName }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('heatmap');
   const [selectedTechnique, setSelectedTechnique] = useState<NavigatorTechnique | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  const clampTooltip = (x: number, y: number, text: string) => ({
+    x: Math.min(x, window.innerWidth  - Math.min(text.length * 7 + 24, 320)),
+    y: Math.min(y, window.innerHeight - 36),
+    text,
+  });
 
   const containerRef       = useRef<HTMLDivElement>(null);
   const toolbarRef         = useRef<HTMLDivElement>(null);
@@ -870,11 +891,7 @@ export default function MITREHeatmap({ data, clientName }: Props) {
                             e.stopPropagation();
                             handleSelectTechnique(isActive ? null : t);
                           }}
-                          onMouseEnter={(e) => setTooltip({
-                            x: e.clientX + 12,
-                            y: e.clientY - 8,
-                            text: `${t.techniqueID} · ${t.name ?? t.techniqueID}`,
-                          })}
+                          onMouseEnter={(e) => setTooltip(clampTooltip(e.clientX + 12, e.clientY - 8, `${t.techniqueID} · ${t.name ?? t.techniqueID}`))}
                           onMouseLeave={() => setTooltip(null)}
                         >
                           <span className="tech-id">{t.techniqueID}</span>
