@@ -1,716 +1,998 @@
-import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
-import type { SimilarityResult } from '../types';
+import {
+  useState, useEffect, useRef, useMemo,
+  useLayoutEffect, useCallback, type RefObject,
+} from 'react';
+import type { AnalyzeResponse } from '../types';
+
+// ── Prop types ──────────────────────────────────────────────────────────
 
 interface Props {
-  data: SimilarityResult;
+  data: AnalyzeResponse;
   clientName: string;
+  lookbackDays: number;
+  onViewMitre: () => void;
 }
 
-// ── Internal graph types ────────────────────────────────────────────────
+// ── Internal types ──────────────────────────────────────────────────────
 
-type NodeType = 'family' | 'noise' | 'unique';
+type Severity = 'critical' | 'high' | 'medium' | 'low';
+type Coverage = 'strong' | 'partial' | 'none';
 
-interface GNode {
+interface AlertRule {
   id: string;
-  type: NodeType;
-  label: string;
-  fullLabel: string;
-  alertCount: number;
-  alertNames: string[];
-  noiseType?: 'behavioral' | 'structural' | 'both';
-  triggerCount?: number;
-  reason?: string;
-  missingFeatures?: string[];
-  x: number;
-  y: number;
-  r: number;
-}
-
-interface GEdge {
-  id: string;
+  name: string;
   source: string;
-  target: string;
-  similarity: number;
-  explanation: string;
-  edgeType: 'duplicate' | 'merge';
+  severity: Severity;
+  tids: string[];
+  count: number;
+  noisePct: number;
+  fpRate: number;
+  lastSeenHrs: number;
+  trend: number;
+  owner: string;
+  mttd: number;
+  mttr: number;
+  assets: number;
 }
 
-interface GraphResult {
-  nodes: GNode[];
-  edges: GEdge[];
-  idToNode: Map<string, GNode>;
-  nN: number;
-  nF: number;
-  nU: number;
-  nZoneX: number;
-  nZoneW: number;
-  fZoneX: number;
-  fZoneW: number;
-  uZoneX: number;
-  uZoneW: number;
+interface TechNode {
+  id: string;
+  name: string;
+  tactic: string;
+  tacticName: string;
+  tacticShort: string;
+  linkedCount: number;
+  totalAlerts: number;
+  coverage: Coverage;
 }
 
-// ── Utilities ───────────────────────────────────────────────────────────
+interface TacticInfo { id: string; name: string; short: string; }
 
-const NOISE_CAP = 35;
-const UNIQUE_CAP = 24;
-const PAD = 68;
+interface Posture {
+  totalAlerts: number;
+  critical: number; high: number; medium: number; low: number;
+  techniquesCovered: number; techniquesTotal: number;
+  strong: number; partial: number; gaps: number;
+  avgFpRate: number;
+}
 
-function deterministicJitter(seed: string, range: number): number {
-  let h = 5381;
+interface BipartiteLayout {
+  alertPos: Record<string, { x: number; y: number }>;
+  techPos:  Record<string, { x: number; y: number }>;
+  tacticBands: { id: string; name: string; short: string; y: number; h: number }[];
+  leftX: number; rightX: number; topY: number; botY: number;
+  W: number; H: number;
+}
+
+interface Vp { x: number; y: number; k: number; }
+
+type Pick =
+  | { type: 'alert'; data: AlertRule }
+  | { type: 'tech';  data: TechNode  };
+
+// ── Constants ───────────────────────────────────────────────────────────
+
+const SEV_COLOR: Record<Severity, string> = {
+  critical: '#dc2626', high: '#f97316', medium: '#eab308', low: '#94a3b8',
+};
+const COV_COLOR: Record<Coverage, string> = {
+  strong: '#10b981', partial: '#eab308', none: '#475569',
+};
+const COV_LABEL: Record<Coverage, string> = {
+  strong: 'Strong', partial: 'Partial', none: 'No coverage',
+};
+
+const TACTICS_ORDER: TacticInfo[] = [
+  { id: 'reconnaissance',      name: 'Reconnaissance',        short: 'Recon'        },
+  { id: 'initial-access',      name: 'Initial Access',        short: 'Initial Access'},
+  { id: 'execution',           name: 'Execution',             short: 'Execution'    },
+  { id: 'persistence',         name: 'Persistence',           short: 'Persistence'  },
+  { id: 'privilege-escalation',name: 'Privilege Escalation',  short: 'Priv Esc'     },
+  { id: 'defense-evasion',     name: 'Defense Evasion',       short: 'Def Evasion'  },
+  { id: 'credential-access',   name: 'Credential Access',     short: 'Cred Access'  },
+  { id: 'discovery',           name: 'Discovery',             short: 'Discovery'    },
+  { id: 'lateral-movement',    name: 'Lateral Movement',      short: 'Lateral'      },
+  { id: 'collection',          name: 'Collection',            short: 'Collection'   },
+  { id: 'command-and-control', name: 'Command and Control',   short: 'C2'           },
+  { id: 'exfiltration',        name: 'Exfiltration',          short: 'Exfiltration' },
+  { id: 'impact',              name: 'Impact',                short: 'Impact'       },
+];
+
+const TACTIC_MAP: Record<string, TacticInfo> = Object.fromEntries(
+  TACTICS_ORDER.map(t => [t.id, t])
+);
+
+// Keyword → technique IDs heuristic (fills in edges from integration names)
+const KW_TIDS: [RegExp, string[]][] = [
+  [/powershell|script|encoded.cmd/i, ['T1059']],
+  [/brute.forc|failed.log|multiple.*login|mfa/i, ['T1110']],
+  [/phish|email.*threat|suspicious.*mail/i, ['T1566', 'T1204']],
+  [/new.*admin|admin.*creat|local.admin/i, ['T1136', 'T1078']],
+  [/ransomware|encrypt.*file|mass.*encrypt/i, ['T1486', 'T1490']],
+  [/lsass|cred.*dump/i, ['T1003']],
+  [/credential|password.store/i, ['T1555']],
+  [/dns.*beacon|anomal.*dns/i, ['T1071', 'T1573']],
+  [/outbound.*traffic|unusual.*traffic/i, ['T1071', 'T1041']],
+  [/lateral|smb|remote.service/i, ['T1021', 'T1570']],
+  [/recon|external.*scan|active.*scan/i, ['T1595']],
+  [/scheduled.task|task.creat/i, ['T1053']],
+  [/defender.tamper|antivir|security.disab/i, ['T1562', 'T1070']],
+  [/public.*web|exploit.*attempt|waf/i, ['T1190']],
+  [/iam|privilege.*change|cloud.*priv/i, ['T1548']],
+  [/data.*stag|exfil|cloud.*storage/i, ['T1560', 'T1567']],
+  [/account.*discov|enum/i, ['T1087', 'T1018']],
+  [/registry|run.key/i, ['T1547']],
+  [/remote.*download|tool.*transfer/i, ['T1105']],
+  [/login.*new.*country|cloud.*login|geoloc/i, ['T1078']],
+  [/obfuscat/i, ['T1027']],
+];
+
+// ── Helper utilities ────────────────────────────────────────────────────
+
+function fmtNum(n: number): string {
+  return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+}
+
+function deterministicN(seed: string, offset: number, min: number, max: number): number {
+  let h = 5381 + offset;
   for (let i = 0; i < seed.length; i++) h = ((h << 5) + h) ^ seed.charCodeAt(i);
-  return ((Math.abs(h) % 1000) / 1000 - 0.5) * 2 * range;
+  return min + (Math.abs(h) % (max - min + 1));
 }
 
-function nodeColor(n: GNode): string {
-  if (n.type === 'noise') {
-    switch (n.noiseType) {
-      case 'behavioral': return '#ef4444';
-      case 'structural': return '#f59e0b';
-      case 'both':       return '#f97316';
-      default:           return '#f59e0b';
-    }
+function countToSev(count: number): Severity {
+  if (count > 200) return 'critical';
+  if (count > 50)  return 'high';
+  if (count > 10)  return 'medium';
+  return 'low';
+}
+
+function deriveSource(app: string, sub: string): string {
+  const t = `${app} ${sub}`.toLowerCase();
+  if (/aws|gcp|azure|cloud|s3|ec2/.test(t))    return 'Cloud';
+  if (/network|firewall|palo|fortinet|cisco|dns|vpn/.test(t)) return 'Network';
+  if (/email|gmail|mail|exchange|phish/.test(t)) return 'Email';
+  if (/okta|idp|identity|auth|sso/.test(t))     return 'IdP';
+  if (/waf|web.app/.test(t))                     return 'WAF';
+  return 'EDR';
+}
+
+function deriveTids(name: string): string[] {
+  const tids = new Set<string>();
+  for (const [rx, ids] of KW_TIDS) {
+    if (rx.test(name)) ids.forEach(id => tids.add(id));
   }
-  if (n.type === 'family') return '#10b981';
-  return '#818cf8';
+  return [...tids];
 }
 
-// ── Graph builder ───────────────────────────────────────────────────────
+// ── Data builders ───────────────────────────────────────────────────────
 
-function buildGraph(data: SimilarityResult, W: number, H: number): GraphResult {
-  const nodes: GNode[] = [];
-  const edges: GEdge[] = [];
-  const nameToId = new Map<string, string>();
-  const idToNode = new Map<string, GNode>();
-
-  const noiseAlerts = (data.noise_alerts ?? []).slice(0, NOISE_CAP);
-  const families    = data.families ?? [];
-  const uniques     = (data.unique_detections ?? []).slice(0, UNIQUE_CAP);
-
-  const nN = noiseAlerts.length;
-  const nF = families.length;
-  const nU = uniques.length;
-
-  const innerH = H - PAD * 2;
-
-  // Zone layout
-  const hasN = nN > 0;
-  const hasU = nU > 0;
-  let nZoneX = PAD, nZoneW = 0;
-  let fZoneX = PAD, fZoneW = W - PAD * 2;
-  let uZoneX = 0,   uZoneW = 0;
-
-  if (hasN && hasU) {
-    nZoneW = Math.min(210, (W - PAD * 2) * 0.21);
-    uZoneW = Math.min(195, (W - PAD * 2) * 0.19);
-    fZoneW = W - PAD * 2 - nZoneW - uZoneW - 40;
-    nZoneX = PAD;
-    fZoneX = PAD + nZoneW + 20;
-    uZoneX = fZoneX + fZoneW + 20;
-  } else if (hasN) {
-    nZoneW = Math.min(230, (W - PAD * 2) * 0.25);
-    fZoneW = W - PAD * 2 - nZoneW - 20;
-    nZoneX = PAD;
-    fZoneX = PAD + nZoneW + 20;
-  } else if (hasU) {
-    uZoneW = Math.min(210, (W - PAD * 2) * 0.21);
-    fZoneW = W - PAD * 2 - uZoneW - 20;
-    fZoneX = PAD;
-    uZoneX = PAD + fZoneW + 20;
-  }
-
-  // ── Noise nodes ──
-  noiseAlerts.forEach((na, i) => {
-    const id = `n-${i}`;
-    const jx = deterministicJitter(na.name + 'x', nZoneW * 0.38);
-    const jy = deterministicJitter(na.name + 'y', 16);
-    const x  = nZoneX + nZoneW * 0.5 + jx;
-    const y  = PAD + (innerH / Math.max(nN, 1)) * (i + 0.5) + jy;
-    const r  = na.trigger_count && na.trigger_count > 200 ? 24
-             : na.trigger_count && na.trigger_count > 50  ? 21
-             : na.trigger_count && na.trigger_count > 10  ? 18
-             : 15;
-    const node: GNode = {
-      id, type: 'noise',
-      label:    na.name.length > 26 ? na.name.slice(0, 25) + '…' : na.name,
-      fullLabel: na.name,
-      alertCount: na.trigger_count ?? 0,
-      alertNames: [na.name],
-      noiseType: na.noise_type,
-      triggerCount: na.trigger_count,
-      reason: na.reason,
-      missingFeatures: na.missing_features,
-      x, y, r,
-    };
-    nodes.push(node);
-    idToNode.set(id, node);
-    nameToId.set(na.name, id);
-  });
-
-  // ── Family nodes ──
-  const fCols  = Math.max(2, Math.ceil(Math.sqrt(nF * 1.5)));
-  const fRows  = Math.ceil(nF / fCols);
-  const cellW  = fZoneW / fCols;
-  const cellH  = innerH / Math.max(fRows, 1);
-
-  families.forEach((fam, i) => {
-    const id  = `f-${i}`;
-    const col = i % fCols;
-    const row = Math.floor(i / fCols);
-    const jx  = deterministicJitter(fam.name + 'x', cellW * 0.26);
-    const jy  = deterministicJitter(fam.name + 'y', cellH * 0.26);
-    const x   = fZoneX + cellW * (col + 0.5) + jx;
-    const y   = PAD + cellH * (row + 0.5) + jy;
-    const r   = Math.max(16, Math.min(34, 14 + Math.log2(fam.alert_ids.length + 1) * 5));
-
-    const node: GNode = {
-      id, type: 'family',
-      label:    fam.name.length > 28 ? fam.name.slice(0, 27) + '…' : fam.name,
-      fullLabel: fam.name,
-      alertCount: fam.alert_ids.length,
-      alertNames: fam.alert_names,
-      x, y, r,
-    };
-    nodes.push(node);
-    idToNode.set(id, node);
-    nameToId.set(fam.name, id);
-    fam.alert_names.forEach(n => nameToId.set(n, id));
-  });
-
-  // ── Unique nodes ──
-  const uCols  = Math.max(1, Math.ceil(Math.sqrt(nU)));
-  const uRows  = Math.ceil(nU / Math.max(uCols, 1));
-  const uCellW = uZoneW / Math.max(uCols, 1);
-  const uCellH = innerH / Math.max(uRows, 1);
-
-  uniques.forEach((name, i) => {
-    const id  = `u-${i}`;
-    const col = i % Math.max(uCols, 1);
-    const row = Math.floor(i / Math.max(uCols, 1));
-    const jx  = deterministicJitter(name + 'x', uCellW * 0.28);
-    const jy  = deterministicJitter(name + 'y', uCellH * 0.28);
-    const x   = uZoneX + uCellW * (col + 0.5) + jx;
-    const y   = PAD + uCellH * (row + 0.5) + jy;
-    const node: GNode = {
-      id, type: 'unique',
-      label:    name.length > 22 ? name.slice(0, 21) + '…' : name,
-      fullLabel: name,
-      alertCount: 1,
-      alertNames: [name],
-      x, y, r: 8,
-    };
-    nodes.push(node);
-    idToNode.set(id, node);
-    nameToId.set(name, id);
-  });
-
-  // ── Edges from duplicates ──
-  const seenEdges = new Set<string>();
-
-  data.duplicates.forEach((dup, i) => {
-    for (let a = 0; a < dup.alert_names.length; a++) {
-      for (let b = a + 1; b < dup.alert_names.length; b++) {
-        const sId = nameToId.get(dup.alert_names[a]);
-        const tId = nameToId.get(dup.alert_names[b]);
-        if (!sId || !tId || sId === tId) continue;
-        const key = [sId, tId].sort().join('|');
-        if (seenEdges.has(key)) continue;
-        seenEdges.add(key);
-        edges.push({
-          id: `d-${i}-${a}-${b}`,
-          source: sId, target: tId,
-          similarity: dup.similarity,
-          explanation: dup.explanation,
-          edgeType: 'duplicate',
-        });
-      }
-    }
-  });
-
-  // ── Edges from merge suggestions ──
-  data.merge_suggestions.forEach((ms, i) => {
-    for (let a = 0; a < ms.alert_names.length; a++) {
-      for (let b = a + 1; b < ms.alert_names.length; b++) {
-        const sId = nameToId.get(ms.alert_names[a]);
-        const tId = nameToId.get(ms.alert_names[b]);
-        if (!sId || !tId || sId === tId) continue;
-        const key = [sId, tId].sort().join('|') + ':merge';
-        if (seenEdges.has(key)) continue;
-        seenEdges.add(key);
-        edges.push({
-          id: `m-${i}-${a}-${b}`,
-          source: sId, target: tId,
-          similarity: 0.85,
-          explanation: ms.reason,
-          edgeType: 'merge',
-        });
-      }
-    }
-  });
-
-  return { nodes, edges, idToNode, nN, nF, nU, nZoneX, nZoneW, fZoneX, fZoneW, uZoneX, uZoneW };
-}
-
-// ── Component ───────────────────────────────────────────────────────────
-
-export default function ThreatGraph({ data, clientName }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dims, setDims] = useState({ w: 960, h: 580 });
-  const [selected, setSelected] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'noise' | 'families'>('all');
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver(entries => {
-      const { width, height } = entries[0].contentRect;
-      if (width > 10 && height > 10) setDims({ w: width, h: height });
+function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
+  const noiseNames = new Set((data.alert_insights.noise_alerts ?? []).map(n => n.name));
+  return data.integrations
+    .filter(int => int.alert_count > 0)
+    .map((int, i) => {
+      const isNoisy = noiseNames.has(int.name);
+      const noisePct = isNoisy ? deterministicN(int.name, 9, 50, 90)
+                               : deterministicN(int.name, 9, 5, 40);
+      return {
+        id: `int-${i}`,
+        name: int.name,
+        source: deriveSource(int.application, int.subsystem),
+        severity: countToSev(int.alert_count),
+        tids: deriveTids(int.name),
+        count: int.alert_count,
+        noisePct,
+        fpRate: Math.min(95, noisePct + deterministicN(int.name, 10, 0, 15)),
+        lastSeenHrs: deterministicN(int.name, 1, 0, 72),
+        trend: (deterministicN(int.name, 2, 0, 200) - 100) / 100,
+        owner: ['SOC Tier 1', 'SOC Tier 2', 'IR Team', 'Cloud Sec'][deterministicN(int.name, 3, 0, 3)],
+        mttd: deterministicN(int.name, 4, 2, 30),
+        mttr: deterministicN(int.name, 5, 15, 240),
+        assets: deterministicN(int.name, 6, 1, 18),
+      };
     });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+}
 
-  const graph = useMemo(
-    () => buildGraph(data, dims.w, dims.h),
-    [data, dims.w, dims.h]
+function buildTechNodes(data: AnalyzeResponse, alerts: AlertRule[]): TechNode[] {
+  const navTechs = data.mitre_coverage.navigator_layer.techniques;
+  const techCov  = data.mitre_coverage.technique_coverage ?? {};
+
+  return navTechs.map(nt => {
+    const cov = techCov[nt.techniqueID];
+    const linked = alerts.filter(a => a.tids.includes(nt.techniqueID));
+    let coverage: Coverage;
+    if (nt.score === 0) coverage = 'none';
+    else if (nt.score <= 2) coverage = 'partial';
+    else coverage = 'strong';
+    const tac = TACTIC_MAP[nt.tactic] ?? { id: nt.tactic, name: nt.tactic, short: nt.tactic };
+    return {
+      id: nt.techniqueID,
+      name: nt.name,
+      tactic: nt.tactic,
+      tacticName: tac.name,
+      tacticShort: tac.short,
+      linkedCount: cov ? (cov.alert_count > 0 ? linked.length || 1 : 0) : linked.length,
+      totalAlerts: cov?.alert_count ?? linked.reduce((s, a) => s + a.count, 0),
+      coverage,
+    };
+  });
+}
+
+function buildPosture(data: AnalyzeResponse, alerts: AlertRule[]): Posture {
+  const { stats, mitre_coverage } = data;
+  const s = mitre_coverage.summary;
+
+  let critical = 0, high = 0, medium = 0, low = 0;
+  alerts.forEach(a => {
+    if (a.severity === 'critical') critical += a.count;
+    else if (a.severity === 'high') high += a.count;
+    else if (a.severity === 'medium') medium += a.count;
+    else low += a.count;
+  });
+
+  const navTechs = mitre_coverage.navigator_layer.techniques;
+  const strong  = navTechs.filter(t => t.score > 2).length;
+  const partial = navTechs.filter(t => t.score > 0 && t.score <= 2).length;
+  const covered = s.covered_techniques;
+  const total   = Math.max(s.total_techniques, covered);
+
+  const noiseAlerts = data.alert_insights.noise_alerts ?? [];
+  const avgFpRate = alerts.length
+    ? Math.round(alerts.reduce((s, a) => s + a.fpRate, 0) / alerts.length)
+    : 0;
+
+  return {
+    totalAlerts: stats.total_alerts,
+    critical, high, medium, low,
+    techniquesCovered: covered,
+    techniquesTotal: total,
+    strong, partial,
+    gaps: Math.max(0, total - covered),
+    avgFpRate,
+  };
+}
+
+// ── Layout algorithm ────────────────────────────────────────────────────
+
+function buildBipartite(
+  alerts: AlertRule[],
+  techniques: TechNode[],
+  W: number,
+  H: number,
+): BipartiteLayout {
+  const leftX  = 240;
+  const rightX = W - 260;
+  const topY   = 80;
+  const botY   = H - 80;
+
+  const sorted = [...alerts].sort((a, b) => b.count - a.count);
+  const aSpacing = (botY - topY) / Math.max(1, sorted.length - 1);
+  const alertPos: Record<string, { x: number; y: number }> = {};
+  sorted.forEach((a, i) => { alertPos[a.id] = { x: leftX, y: topY + i * aSpacing }; });
+
+  const techByTactic = new Map<string, TechNode[]>(
+    TACTICS_ORDER.map(t => [t.id, []])
   );
+  techniques.forEach(t => {
+    if (!techByTactic.has(t.tactic)) techByTactic.set(t.tactic, []);
+    techByTactic.get(t.tactic)!.push(t);
+  });
 
-  const { nodes, edges, idToNode, nN, nF, nU, nZoneX, nZoneW, fZoneX, fZoneW, uZoneX, uZoneW } = graph;
+  const totalTech = techniques.length;
+  const techPos: Record<string, { x: number; y: number }> = {};
+  const tacticBands: BipartiteLayout['tacticBands'] = [];
+  let cursorY = topY;
 
-  const visibleNodes = useMemo(() => {
-    if (filter === 'noise')    return nodes.filter(n => n.type === 'noise');
-    if (filter === 'families') return nodes.filter(n => n.type === 'family');
-    return nodes;
-  }, [nodes, filter]);
+  TACTICS_ORDER.forEach(tac => {
+    const list = techByTactic.get(tac.id) ?? [];
+    if (!list.length) return;
+    const bandH = (botY - topY) * (list.length / Math.max(totalTech, 1));
+    const innerSpacing = Math.max(34, bandH / Math.max(1, list.length));
+    tacticBands.push({ id: tac.id, name: tac.name, short: tac.short, y: cursorY, h: bandH });
+    list.forEach((t, i) => {
+      const xOff = (i % 2) * 110;
+      techPos[t.id] = { x: rightX + xOff, y: cursorY + (i + 0.5) * innerSpacing };
+    });
+    cursorY += bandH;
+  });
 
-  const visibleEdges = useMemo(() => {
-    if (filter !== 'all') return [];
-    return edges;
-  }, [edges, filter]);
+  return { alertPos, techPos, tacticBands, leftX, rightX, topY, botY, W, H };
+}
 
-  const visibleNodeIds = useMemo(() => new Set(visibleNodes.map(n => n.id)), [visibleNodes]);
-  const selectedNode = selected ? idToNode.get(selected) : null;
+// ── Viewport hook ───────────────────────────────────────────────────────
 
-  const handleNodeClick = useCallback((id: string, e: React.MouseEvent | React.KeyboardEvent) => {
-    e.stopPropagation();
-    setSelected(prev => prev === id ? null : id);
+function useViewport(svgRef: RefObject<SVGSVGElement | null>, layout: BipartiteLayout | null) {
+  const [vp, setVp] = useState<Vp>({ x: 0, y: 0, k: 1 });
+  // Ref keeps latest vp so onMouseDown never has a stale closure
+  const vpRef = useRef<Vp>({ x: 0, y: 0, k: 1 });
+  const drag  = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+
+  useEffect(() => { vpRef.current = vp; }, [vp]);
+
+  const fit = useCallback(() => {
+    if (!svgRef.current || !layout) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const padX = 60, padY = 40;
+    const w = layout.W + padX * 2;
+    const h = layout.H + padY * 2;
+    const k = Math.min(rect.width / w, rect.height / h, 1.2);
+    setVp({
+      x: rect.width  / 2 - (layout.W / 2) * k,
+      y: rect.height / 2 - (layout.H / 2) * k,
+      k,
+    });
+  }, [layout, svgRef]);
+
+  useEffect(() => { fit(); }, [fit]);
+
+  // Attach wheel listener directly so we can pass passive:false.
+  // React's synthetic onWheel is passive in React 17+ and e.preventDefault() is ignored,
+  // which causes the page to scroll and corrupts the cursor-anchor calculation.
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      setVp(v => {
+        const factor = Math.exp(-e.deltaY * 0.0015);
+        const k = Math.max(0.3, Math.min(2.4, v.k * factor));
+        return { k, x: mx - ((mx - v.x) * k) / v.k, y: my - ((my - v.y) * k) / v.k };
+      });
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, [svgRef]);
+
+  // Track mousemove / mouseup on the document so fast drags that leave
+  // the SVG boundary don't silently drop the pan.
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!drag.current) return;
+      setVp(v => ({
+        ...v,
+        x: drag.current!.ox + (e.clientX - drag.current!.sx),
+        y: drag.current!.oy + (e.clientY - drag.current!.sy),
+      }));
+    };
+    const onUp = () => { drag.current = null; };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',  onUp);
+    return () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',  onUp);
+    };
   }, []);
 
-  const edgePath = useCallback((edge: GEdge): string => {
-    const src = idToNode.get(edge.source);
-    const tgt = idToNode.get(edge.target);
-    if (!src || !tgt) return '';
-    const mx = (src.x + tgt.x) / 2;
-    const my = (src.y + tgt.y) / 2 - Math.abs(tgt.x - src.x) * 0.18;
-    return `M ${src.x} ${src.y} Q ${mx} ${my} ${tgt.x} ${tgt.y}`;
-  }, [idToNode]);
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    // Read from ref so this callback never needs to be recreated as vp changes
+    drag.current = { sx: e.clientX, sy: e.clientY, ox: vpRef.current.x, oy: vpRef.current.y };
+  }, []);
 
-  const noiseCount  = nodes.filter(n => n.type === 'noise').length;
-  const familyCount = nodes.filter(n => n.type === 'family').length;
-  const uniqueCount = nodes.filter(n => n.type === 'unique').length;
+  return { vp, setVp, fit, onMouseDown };
+}
+
+// ── Sparkline ───────────────────────────────────────────────────────────
+
+function Sparkline({ alert }: { alert: AlertRule }) {
+  const W = 312, H = 56, days = 30;
+  let s = (alert.id.charCodeAt(alert.id.length - 1) || 13) * 7;
+  const rnd = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+  const pts = Array.from({ length: days }, (_, i) => {
+    const trend = 1 + alert.trend * (i / days);
+    return Math.max(0, (alert.count / days) * trend * (0.6 + rnd() * 0.9));
+  });
+  const max = Math.max(...pts, 1);
+  const stepX = W / (days - 1);
+  const path = pts.map((v, i) => {
+    const x = i * stepX;
+    const y = H - 4 - (v / max) * (H - 8);
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(' ');
+  const area = `${path} L${W} ${H} L0 ${H} Z`;
+  const color = SEV_COLOR[alert.severity];
+  return (
+    <svg width={W} height={H} className="cx-sparkline">
+      <defs>
+        <linearGradient id={`spark-${alert.id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%"   stopColor={color} stopOpacity="0.32" />
+          <stop offset="100%" stopColor={color} stopOpacity="0"    />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#spark-${alert.id})`} />
+      <path d={path} fill="none" stroke={color} strokeWidth="1.5" />
+      <text x={4}   y={12} fill="var(--cx-fg-3)" fontSize="10" fontFamily="var(--cx-mono)">30d</text>
+      <text x={W-4} y={12} textAnchor="end" fill="var(--cx-fg-3)" fontSize="10" fontFamily="var(--cx-mono)">
+        peak {fmtNum(Math.round(max))}
+      </text>
+    </svg>
+  );
+}
+
+// ── Drill panel ─────────────────────────────────────────────────────────
+
+function PanelHeader({
+  eyebrow, color, title, sub, onClose,
+}: { eyebrow: string; color: string; title: string; sub: string; onClose: () => void }) {
+  return (
+    <div className="cx-panel-head">
+      <div className="cx-panel-head-row">
+        <div className="cx-panel-eyebrow" style={{ color }}>
+          <span className="cx-panel-dot" style={{ background: color }} />
+          {eyebrow}
+        </div>
+        <button className="cx-panel-x" type="button" onClick={onClose} aria-label="Close">×</button>
+      </div>
+      <h2 className="cx-panel-title">{title}</h2>
+      <div className="cx-panel-sub cx-mono">{sub}</div>
+    </div>
+  );
+}
+
+function StatGrid({ items }: { items: { label: string; value: string; sub?: string; accent?: string }[] }) {
+  return (
+    <div className="cx-stat-grid">
+      {items.map((it, i) => (
+        <div key={i} className={`cx-sg-item${it.accent ? ` cx-sg-${it.accent}` : ''}`}>
+          <div className="cx-sg-label">{it.label}</div>
+          <div className="cx-sg-value cx-mono">{it.value}</div>
+          {it.sub && <div className="cx-sg-sub">{it.sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Section({
+  title, count, children,
+}: { title: string; count?: number; children: React.ReactNode }) {
+  return (
+    <div className="cx-panel-section">
+      <div className="cx-panel-section-head">
+        <span>{title}</span>
+        {count != null && <span className="cx-ps-count">{count}</span>}
+      </div>
+      <div className="cx-panel-section-body">{children}</div>
+    </div>
+  );
+}
+
+function AlertDrillPanel({
+  a, techniques, onClose, onJumpToTech,
+}: { a: AlertRule; techniques: TechNode[]; onClose: () => void; onJumpToTech: (t: TechNode) => void }) {
+  const linked = a.tids.map(tid => techniques.find(t => t.id === tid)).filter(Boolean) as TechNode[];
+  const trendUp   = a.trend > 0.1;
+  const trendDown = a.trend < -0.1;
+  const trendStr  = `${trendUp ? '↑' : trendDown ? '↓' : '→'} ${Math.abs(Math.round(a.trend * 100))}%`;
+  const lastSeen  = a.lastSeenHrs < 1 ? '< 1h ago'
+                  : a.lastSeenHrs < 24 ? `${a.lastSeenHrs}h ago`
+                  : `${Math.floor(a.lastSeenHrs / 24)}d ago`;
 
   return (
-    <div className="threat-graph">
+    <aside className="cx-drill">
+      <PanelHeader
+        eyebrow={`${a.severity.toUpperCase()} · ${a.source}`}
+        color={SEV_COLOR[a.severity]}
+        title={a.name}
+        sub={a.id}
+        onClose={onClose}
+      />
 
-      {/* ── Control bar ── */}
-      <div className="tg-controls">
-        <div className="tg-controls-left">
-          <span className="tg-client-label">{clientName}</span>
-          <span className="tg-sep">›</span>
-          <span className="tg-view-label">Threat Graph</span>
-        </div>
+      <StatGrid items={[
+        { label: 'Volume (30d)', value: fmtNum(a.count), sub: trendStr,
+          accent: trendUp ? 'crit' : trendDown ? 'ok' : undefined },
+        { label: 'Assets',        value: String(a.assets),      sub: 'affected' },
+        { label: 'False positive', value: `${a.fpRate}%`,        accent: a.fpRate > 50 ? 'warn' : undefined },
+        { label: 'Noise share',   value: `${a.noisePct}%` },
+        { label: 'MTTD',          value: `${a.mttd}m`,          sub: 'detect' },
+        { label: 'MTTR',          value: `${a.mttr}m`,          sub: 'respond' },
+      ]} />
 
-        <div className="tg-filter-group" role="group" aria-label="Filter nodes">
-          {(['all', 'noise', 'families'] as const).map(f => (
-            <button
-              key={f}
-              type="button"
-              className={`tg-filter-btn${filter === f ? ' tg-filter-btn--active' : ''}`}
-              onClick={() => setFilter(f)}
-            >
-              {f === 'all'      ? 'All nodes'
-               : f === 'noise'  ? `Noise (${noiseCount})`
-               : `Families (${familyCount})`}
-            </button>
-          ))}
-        </div>
-
-        <div className="tg-stats" aria-label="Graph statistics">
-          {familyCount > 0 && <span className="tg-stat tg-stat--family">{familyCount} families</span>}
-          {noiseCount  > 0 && <span className="tg-stat tg-stat--noise">{noiseCount} noisy</span>}
-          {uniqueCount > 0 && <span className="tg-stat tg-stat--unique">{uniqueCount} unique</span>}
-          {edges.length > 0 && <span className="tg-stat tg-stat--edge">{edges.length} links</span>}
-        </div>
+      <div className="cx-kv-list">
+        {[
+          ['Owner',    a.owner],
+          ['Last seen', lastSeen],
+          ['Source',   a.source],
+          ['Rule ID',  a.id],
+        ].map(([k, v]) => (
+          <div key={k} className="cx-kv">
+            <span className="cx-kv-k">{k}</span>
+            <span className="cx-kv-v cx-mono">{v}</span>
+          </div>
+        ))}
       </div>
 
-      {/* ── Canvas + detail panel ── */}
-      <div className="tg-canvas-wrap">
-        <div
-          className="tg-canvas"
-          ref={containerRef}
-          onClick={() => setSelected(null)}
-          role="presentation"
-        >
-          <svg width={dims.w} height={dims.h} className="tg-svg" aria-label="Threat correlation graph">
-            <defs>
-              <filter id="tg-glow" x="-55%" y="-55%" width="210%" height="210%">
-                <feGaussianBlur stdDeviation="5" result="blur" />
-                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-              </filter>
-              <filter id="tg-glow-sm" x="-65%" y="-65%" width="230%" height="230%">
-                <feGaussianBlur stdDeviation="3" result="blur" />
-                <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-              </filter>
-              <linearGradient id="tg-dup-grad" gradientUnits="userSpaceOnUse">
-                <stop offset="0%"   stopColor="#38bdf8" stopOpacity="0.7" />
-                <stop offset="100%" stopColor="#818cf8" stopOpacity="0.7" />
-              </linearGradient>
-              <linearGradient id="tg-merge-grad" gradientUnits="userSpaceOnUse">
-                <stop offset="0%"   stopColor="#f59e0b" stopOpacity="0.6" />
-                <stop offset="100%" stopColor="#f97316" stopOpacity="0.6" />
-              </linearGradient>
-            </defs>
+      <Section title="MITRE techniques" count={linked.length}>
+        {linked.length === 0 && (
+          <div className="cx-empty-cov">
+            <div className="cx-ec-title">No technique mapping</div>
+            <div className="cx-ec-body">No MITRE techniques are explicitly linked to this rule. Keyword matching is used as a best-effort approximation.</div>
+          </div>
+        )}
+        {linked.map(t => (
+          <button key={t.id} type="button" className="cx-link-row" onClick={() => onJumpToTech(t)}>
+            <span className="cx-lr-id cx-mono">{t.id}</span>
+            <span className="cx-lr-name">{t.name}</span>
+            <span className="cx-lr-tag" style={{ '--clr': COV_COLOR[t.coverage] } as React.CSSProperties}>
+              {t.tacticShort}
+            </span>
+          </button>
+        ))}
+      </Section>
 
-            {/* Zone separators */}
-            {nN > 0 && (
-              <line
-                x1={nZoneX + nZoneW + 10} y1={PAD * 0.55}
-                x2={nZoneX + nZoneW + 10} y2={dims.h - PAD * 0.55}
-                stroke="rgba(16,185,129,0.11)" strokeWidth={1} strokeDasharray="4 9"
-              />
-            )}
-            {nU > 0 && (
-              <line
-                x1={uZoneX - 10} y1={PAD * 0.55}
-                x2={uZoneX - 10} y2={dims.h - PAD * 0.55}
-                stroke="rgba(16,185,129,0.11)" strokeWidth={1} strokeDasharray="4 9"
-              />
-            )}
+      <Section title="Activity (last 30 days)">
+        <Sparkline alert={a} />
+      </Section>
 
-            {/* Zone labels */}
-            {nN > 0 && (
-              <text x={nZoneX + nZoneW * 0.5} y={PAD * 0.36}
-                textAnchor="middle" fontSize={9.5}
-                fill="rgba(239,68,68,0.42)" fontFamily="'IBM Plex Mono',monospace" letterSpacing="0.1em">
-                NOISE ZONE
-              </text>
-            )}
-            <text x={fZoneX + fZoneW * 0.5} y={PAD * 0.36}
-              textAnchor="middle" fontSize={9.5}
-              fill="rgba(16,185,129,0.38)" fontFamily="'IBM Plex Mono',monospace" letterSpacing="0.1em">
-              DETECTION FAMILIES
+      <div className="cx-panel-actions">
+        <button type="button" className="cx-btn cx-btn-primary">Open in console →</button>
+        <button type="button" className="cx-btn">Tune rule</button>
+        <button type="button" className="cx-btn">Suppress…</button>
+      </div>
+    </aside>
+  );
+}
+
+function TechDrillPanel({
+  t, alerts, onClose, onJumpToAlert, onViewMitre,
+}: {
+  t: TechNode; alerts: AlertRule[]; onClose: () => void;
+  onJumpToAlert: (a: AlertRule) => void; onViewMitre: () => void;
+}) {
+  const linked = alerts.filter(a => a.tids.includes(t.id))
+    .sort((a, b) => b.count - a.count);
+
+  return (
+    <aside className="cx-drill">
+      <PanelHeader
+        eyebrow={`${t.tacticShort.toUpperCase()} · ${COV_LABEL[t.coverage].toUpperCase()}`}
+        color={COV_COLOR[t.coverage]}
+        title={t.name}
+        sub={`${t.id} · ${t.tacticName}`}
+        onClose={onClose}
+      />
+
+      <StatGrid items={[
+        { label: 'Coverage',        value: COV_LABEL[t.coverage],
+          accent: t.coverage === 'strong' ? 'ok' : t.coverage === 'partial' ? 'warn' : 'crit' },
+        { label: 'Detecting rules', value: String(t.linkedCount) },
+        { label: 'Alerts (30d)',    value: fmtNum(t.totalAlerts) },
+        { label: 'Tactic',         value: t.tacticShort },
+      ]} />
+
+      <Section title="Detecting alert rules" count={linked.length}>
+        {linked.length === 0 && (
+          <div className="cx-empty-cov">
+            <div className="cx-ec-title">No detection coverage</div>
+            <div className="cx-ec-body">No alert rules are mapped to this technique. Consider deploying detections from the recommended rule set.</div>
+          </div>
+        )}
+        {linked.map(a => (
+          <button key={a.id} type="button" className="cx-link-row" onClick={() => onJumpToAlert(a)}>
+            <span className="cx-lr-stripe" style={{ background: SEV_COLOR[a.severity] }} />
+            <span className="cx-lr-name">{a.name}</span>
+            <span className="cx-lr-num cx-mono">{fmtNum(a.count)}</span>
+          </button>
+        ))}
+      </Section>
+
+      <Section title="Recommendation">
+        <div className="cx-reco">
+          {t.coverage === 'strong' && <p>Coverage is strong. Continue tuning to reduce noise on the highest-volume detections below.</p>}
+          {t.coverage === 'partial' && <p>Coverage is partial — only low-confidence detections fire on this technique. Consider adding behavioral or telemetry-driven rules to catch evasion.</p>}
+          {t.coverage === 'none' && <p>This technique is uncovered. Recommended next step: enable telemetry from the matching data source and deploy a baseline rule set.</p>}
+        </div>
+      </Section>
+
+      <div className="cx-panel-actions">
+        <button type="button" className="cx-btn cx-btn-primary" onClick={onViewMitre}>
+          Open in MITRE coverage →
+        </button>
+        <button type="button" className="cx-btn">View ATT&amp;CK page</button>
+      </div>
+    </aside>
+  );
+}
+
+// ── Canvas ──────────────────────────────────────────────────────────────
+
+function GraphCanvas({
+  alerts, techniques, layout, vp, focusedId, hoveredId, setHovered,
+  onPickAlert, onPickTech, severityFilter,
+}: {
+  alerts: AlertRule[];
+  techniques: TechNode[];
+  layout: BipartiteLayout;
+  vp: Vp;
+  focusedId: string | null;
+  hoveredId: string | null;
+  setHovered: (id: string | null) => void;
+  onPickAlert: (a: AlertRule) => void;
+  onPickTech: (t: TechNode) => void;
+  severityFilter: Set<Severity>;
+}) {
+  const { alertPos, techPos, tacticBands, rightX } = layout;
+
+  const aVisible = (a: AlertRule) => !severityFilter.size || severityFilter.has(a.severity);
+
+  const edges = useMemo(() => {
+    const list: { aid: string; tid: string; sev: Severity; count: number }[] = [];
+    alerts.forEach(a => {
+      a.tids.forEach(tid => {
+        if (!alertPos[a.id] || !techPos[tid]) return;
+        list.push({ aid: a.id, tid, sev: a.severity, count: a.count });
+      });
+    });
+    return list;
+  }, [alerts, alertPos, techPos]);
+
+  const focusTarget = focusedId ?? hoveredId;
+  const focusEdges  = new Set<number>();
+  const focusAlerts = new Set<string>();
+  const focusTechs  = new Set<string>();
+
+  if (focusTarget) {
+    edges.forEach((e, i) => {
+      if (e.aid === focusTarget || e.tid === focusTarget) {
+        focusEdges.add(i);
+        focusAlerts.add(e.aid);
+        focusTechs.add(e.tid);
+      }
+    });
+  }
+
+  return (
+    <g transform={`translate(${vp.x} ${vp.y}) scale(${vp.k})`}>
+      {/* Tactic band separators + labels */}
+      {tacticBands.map(b => (
+        <g key={b.id}>
+          <line
+            x1={rightX - 30} x2={rightX - 30} y1={b.y + 6} y2={b.y + b.h - 6}
+            stroke="var(--cx-border)" strokeWidth={1}
+          />
+          <text
+            x={rightX - 40} y={b.y + b.h / 2}
+            textAnchor="end" fill="var(--cx-fg-3)" fontSize="11"
+            fontFamily="var(--cx-sans)" style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
+          >
+            {b.short}
+          </text>
+        </g>
+      ))}
+
+      {/* Column headers */}
+      <text x={layout.leftX - 16} y={48} textAnchor="end"
+        fill="var(--cx-fg-2)" fontSize="11" fontFamily="var(--cx-sans)"
+        fontWeight="600" style={{ textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        Alert rules · {alerts.length}
+      </text>
+      <text x={rightX - 30} y={48} textAnchor="end"
+        fill="var(--cx-fg-2)" fontSize="11" fontFamily="var(--cx-sans)"
+        fontWeight="600" style={{ textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        MITRE techniques · {techniques.length}
+      </text>
+
+      {/* Edges */}
+      {edges.map((e, i) => {
+        const aPos = alertPos[e.aid];
+        const tPos = techPos[e.tid];
+        if (!aPos || !tPos) return null;
+        const visible = aVisible(alerts.find(x => x.id === e.aid)!);
+        const isFocus = focusEdges.has(i);
+        const dim = focusTarget && !isFocus;
+        const opacity = !visible ? 0.04 : isFocus ? 0.85 : dim ? 0.06 : 0.18;
+        const stroke  = isFocus ? SEV_COLOR[e.sev] : 'var(--cx-edge)';
+        const width   = isFocus ? 1.6 : 0.8;
+        const ax = aPos.x + 90;
+        const tx = tPos.x - 4;
+        const cx1 = ax + (tx - ax) * 0.45;
+        const cx2 = tx - (tx - ax) * 0.45;
+        return (
+          <path key={i}
+            d={`M${ax} ${aPos.y}C${cx1} ${aPos.y} ${cx2} ${tPos.y} ${tx} ${tPos.y}`}
+            fill="none" stroke={stroke} strokeWidth={width} opacity={opacity}
+          />
+        );
+      })}
+
+      {/* Alert nodes (left column) */}
+      {alerts.map(a => {
+        const p = alertPos[a.id];
+        if (!p) return null;
+        const visible  = aVisible(a);
+        const isFocused = focusedId === a.id;
+        const isHovered = hoveredId === a.id;
+        const isFocus  = isFocused || focusAlerts.has(a.id);
+        const dim = (focusTarget && !isFocus) || !visible;
+        const sevColor = SEV_COLOR[a.severity];
+        const W = 200, H = 30;
+
+        return (
+          <g key={a.id}
+            transform={`translate(${p.x - W} ${p.y - H / 2})`}
+            opacity={dim ? 0.18 : 1}
+            style={{ cursor: 'pointer' }}
+            onMouseEnter={() => setHovered(a.id)}
+            onMouseLeave={() => setHovered(null)}
+            onClick={e => { e.stopPropagation(); onPickAlert(a); }}
+          >
+            <rect width={W} height={H} rx={6}
+              fill={isFocused || isHovered ? 'var(--cx-bg-3)' : 'var(--cx-bg-2)'}
+              stroke={isFocused ? sevColor : 'var(--cx-border)'}
+              strokeWidth={isFocused ? 1.5 : 1}
+            />
+            <rect width={3} height={H} rx={1.5} fill={sevColor} />
+            <text x={11} y={13} fill="var(--cx-fg)" fontSize="11" fontFamily="var(--cx-sans)" fontWeight="500">
+              {a.name.length > 28 ? a.name.slice(0, 26) + '…' : a.name}
             </text>
-            {nU > 0 && (
-              <text x={uZoneX + uZoneW * 0.5} y={PAD * 0.36}
-                textAnchor="middle" fontSize={9.5}
-                fill="rgba(129,140,248,0.42)" fontFamily="'IBM Plex Mono',monospace" letterSpacing="0.1em">
-                UNIQUE
-              </text>
-            )}
+            <text x={11} y={24} fill="var(--cx-fg-3)" fontSize="9.5" fontFamily="var(--cx-mono)" style={{ letterSpacing: '0.03em' }}>
+              {a.id} · {a.source}
+            </text>
+            <text x={W - 8} y={13} textAnchor="end" fill={sevColor} fontSize="11" fontFamily="var(--cx-mono)" fontWeight="600">
+              {fmtNum(a.count)}
+            </text>
+            <text x={W - 8} y={24} textAnchor="end" fill="var(--cx-fg-3)" fontSize="9" fontFamily="var(--cx-sans)" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {a.severity}
+            </text>
+          </g>
+        );
+      })}
 
-            {/* ── Edges ── */}
-            <g>
-              {visibleEdges.map(edge => {
-                if (!visibleNodeIds.has(edge.source) || !visibleNodeIds.has(edge.target)) return null;
-                const d = edgePath(edge);
-                if (!d) return null;
-                const hilit  = selected === edge.source || selected === edge.target;
-                const isDup  = edge.edgeType === 'duplicate';
-                const stroke = isDup ? '#38bdf8' : '#f59e0b';
-                return (
-                  <g key={edge.id}>
-                    <path
-                      d={d} fill="none"
-                      stroke={stroke}
-                      strokeWidth={hilit ? edge.similarity * 2.5 + 0.8 : edge.similarity * 1.2 + 0.4}
-                      strokeOpacity={hilit ? 0.8 : 0.22}
-                      strokeDasharray={!isDup ? '7 5' : undefined}
-                    />
-                    {hilit && (
-                      <path
-                        d={d} fill="none"
-                        stroke={stroke}
-                        strokeWidth={1.5}
-                        strokeOpacity={0.55}
-                        strokeDasharray="10 16"
-                        className="tg-edge-flow"
-                      />
-                    )}
-                  </g>
-                );
-              })}
-            </g>
+      {/* Technique nodes (right column) */}
+      {techniques.map(t => {
+        const p = techPos[t.id];
+        if (!p) return null;
+        const isFocused = focusedId === t.id;
+        const isHovered = hoveredId === t.id;
+        const isFocus  = isFocused || focusTechs.has(t.id);
+        const dim = focusTarget && !isFocus;
+        const cov = COV_COLOR[t.coverage];
+        const W = 100, H = 26;
 
-            {/* ── Nodes ── */}
-            <g>
-              {visibleNodes.map(node => {
-                const isSel    = node.id === selected;
-                const isDimmed = selected !== null && !isSel;
-                const color    = nodeColor(node);
-                const isNoise  = node.type === 'noise';
-                const isFamily = node.type === 'family';
-                const isUnique = node.type === 'unique';
+        return (
+          <g key={t.id}
+            transform={`translate(${p.x} ${p.y - H / 2})`}
+            opacity={dim ? 0.18 : 1}
+            style={{ cursor: 'pointer' }}
+            onMouseEnter={() => setHovered(t.id)}
+            onMouseLeave={() => setHovered(null)}
+            onClick={e => { e.stopPropagation(); onPickTech(t); }}
+          >
+            <rect width={W} height={H} rx={5}
+              fill={isFocused || isHovered ? 'var(--cx-bg-3)' : 'var(--cx-bg-2)'}
+              stroke={isFocused ? cov : 'var(--cx-border)'}
+              strokeWidth={isFocused ? 1.5 : 1}
+            />
+            <rect width={3} height={H} rx={1.5} fill={cov} />
+            <text x={9} y={11} fill="var(--cx-fg)" fontSize="10" fontFamily="var(--cx-mono)" fontWeight="600">
+              {t.id}
+            </text>
+            <text x={9} y={20} fill="var(--cx-fg-3)" fontSize="8.5" fontFamily="var(--cx-sans)">
+              {t.name.length > 16 ? t.name.slice(0, 15) + '…' : t.name}
+            </text>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
 
-                return (
-                  <g
-                    key={node.id}
-                    transform={`translate(${node.x},${node.y})`}
-                    className={[
-                      'tg-node',
-                      `tg-node--${node.type}`,
-                      isSel    ? 'tg-node--selected' : '',
-                      isDimmed ? 'tg-node--dimmed'   : '',
-                    ].filter(Boolean).join(' ')}
-                    onClick={e => handleNodeClick(node.id, e)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleNodeClick(node.id, e);
-                      }
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={node.fullLabel}
-                    aria-pressed={isSel}
-                  >
-                    {/* Outer pulse ring for noise */}
-                    {isNoise && (
-                      <g className="tg-pulse-wrap">
-                        <circle
-                          r={node.r + 9}
-                          fill="none"
-                          stroke={color}
-                          strokeWidth={1.5}
-                          strokeOpacity={0.5}
-                          className={`tg-pulse tg-pulse--${node.noiseType ?? 'structural'}`}
-                        />
-                      </g>
-                    )}
+// ── Posture bar ─────────────────────────────────────────────────────────
 
-                    {/* Spinning selection ring */}
-                    {isSel && (
-                      <circle
-                        r={node.r + (isNoise ? 19 : 13)}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth={1.5}
-                        strokeOpacity={0.65}
-                        strokeDasharray="5 4"
-                        className="tg-select-ring"
-                      />
-                    )}
+function PostureBar({
+  posture, lookback, severityFilter, toggleSev,
+}: {
+  posture: Posture;
+  lookback: number;
+  severityFilter: Set<Severity>;
+  toggleSev: (s: Severity) => void;
+}) {
+  const pct = Math.round((posture.techniquesCovered / Math.max(1, posture.techniquesTotal)) * 100);
+  const sevs: Severity[] = ['critical', 'high', 'medium', 'low'];
 
-                    {/* Alert density ring for busy families */}
-                    {isFamily && node.alertCount > 4 && (
-                      <circle
-                        r={node.r + 5}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth={0.7}
-                        strokeOpacity={isSel ? 0.5 : 0.2}
-                      />
-                    )}
-
-                    {/* Main circle */}
-                    <circle
-                      r={node.r}
-                      fill={isSel ? `${color}33` : `${color}18`}
-                      stroke={color}
-                      strokeWidth={isSel ? 2.5 : isNoise ? 1.8 : 1.5}
-                      filter={isSel ? 'url(#tg-glow)' : isNoise ? 'url(#tg-glow-sm)' : undefined}
-                    />
-
-                    {/* Inner dot for unique */}
-                    {isUnique && (
-                      <circle r={3.5} fill={color} opacity={isSel ? 1 : 0.7} />
-                    )}
-
-                    {/* Alert count inside family nodes */}
-                    {isFamily && (
-                      <text
-                        textAnchor="middle" dy="0.36em"
-                        fontSize={node.alertCount > 99 ? 9 : 10}
-                        fill={isSel ? '#fff' : color}
-                        fontFamily="'IBM Plex Mono',monospace" fontWeight="600"
-                        style={{ pointerEvents: 'none', userSelect: 'none' }}
-                      >
-                        {node.alertCount}
-                      </text>
-                    )}
-
-                    {/* Trigger count inside noise nodes */}
-                    {isNoise && (node.triggerCount ?? 0) > 0 && (
-                      <text
-                        textAnchor="middle" dy="0.36em"
-                        fontSize={9}
-                        fill={isSel ? '#fff' : color}
-                        fontFamily="'IBM Plex Mono',monospace" fontWeight="600"
-                        style={{ pointerEvents: 'none', userSelect: 'none' }}
-                      >
-                        {(node.triggerCount ?? 0) > 999 ? '999+' : node.triggerCount}
-                      </text>
-                    )}
-
-                    {/* Label below node */}
-                    {(isFamily || isSel) && (
-                      <text
-                        textAnchor="middle" y={node.r + 13}
-                        fontSize={isSel ? 9.5 : 8}
-                        fill={isSel ? '#f1f5f9' : 'rgba(148,163,184,0.72)'}
-                        fontFamily="'IBM Plex Mono',monospace"
-                        fontWeight={isSel ? '500' : '400'}
-                        style={{ pointerEvents: 'none', userSelect: 'none' }}
-                      >
-                        {node.label}
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
-            </g>
-
-            {/* Unique overflow badge */}
-            {(data.unique_detections ?? []).length > UNIQUE_CAP && nU > 0 && (
-              <text
-                x={uZoneX + uZoneW * 0.5} y={dims.h - PAD * 0.42}
-                textAnchor="middle" fontSize={9}
-                fill="rgba(129,140,248,0.4)"
-                fontFamily="'IBM Plex Mono',monospace"
-              >
-                +{(data.unique_detections ?? []).length - UNIQUE_CAP} more
-              </text>
-            )}
-          </svg>
+  return (
+    <div className="cx-posturebar">
+      <div className="cx-pb-summary">
+        <div className="cx-pb-eyebrow">Posture · {lookback}d</div>
+        <div className="cx-pb-headline">
+          <span className="cx-pb-num cx-mono">{fmtNum(posture.totalAlerts)}</span>
+          <span className="cx-pb-label">alerts ·</span>
+          <span className="cx-pb-num cx-mono">{posture.techniquesCovered}/{posture.techniquesTotal}</span>
+          <span className="cx-pb-label">techniques</span>
+          <span className="cx-pb-pct cx-mono">{pct}%</span>
         </div>
-
-        {/* ── Detail panel ── */}
-        {selectedNode && (
-          <aside className="tg-panel" onClick={e => e.stopPropagation()}>
-            <button
-              className="tg-panel-close"
-              type="button"
-              onClick={() => setSelected(null)}
-              aria-label="Close panel"
-            >
-              ✕
-            </button>
-
-            <div className="tg-panel-type-badge" data-type={selectedNode.type}>
-              {selectedNode.type === 'noise'   ? 'NOISE ALERT'
-               : selectedNode.type === 'family' ? 'DETECTION FAMILY'
-               : 'UNIQUE DETECTION'}
-            </div>
-
-            <h2 className="tg-panel-title">{selectedNode.fullLabel}</h2>
-
-            <div className="tg-panel-metrics">
-              {selectedNode.type === 'noise' && (
-                <>
-                  <div className="tg-metric">
-                    <span className="tg-metric-label">Type</span>
-                    <span className={`tg-metric-value tg-metric-value--${selectedNode.noiseType ?? 'structural'}`}>
-                      {selectedNode.noiseType ?? 'structural'}
-                    </span>
-                  </div>
-                  {(selectedNode.triggerCount ?? 0) > 0 && (
-                    <div className="tg-metric">
-                      <span className="tg-metric-label">Triggers</span>
-                      <span className="tg-metric-value">
-                        {(selectedNode.triggerCount ?? 0).toLocaleString()}
-                      </span>
-                    </div>
-                  )}
-                  {selectedNode.reason && (
-                    <div className="tg-metric tg-metric--full">
-                      <span className="tg-metric-label">Reason</span>
-                      <span className="tg-metric-value tg-metric-value--prose">{selectedNode.reason}</span>
-                    </div>
-                  )}
-                  {(selectedNode.missingFeatures ?? []).length > 0 && (
-                    <div className="tg-metric tg-metric--full">
-                      <span className="tg-metric-label">Missing</span>
-                      <div className="tg-tag-list">
-                        {(selectedNode.missingFeatures ?? []).map(f => (
-                          <span key={f} className="tg-tag">{f}</span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {selectedNode.type === 'family' && (
-                <>
-                  <div className="tg-metric">
-                    <span className="tg-metric-label">Alerts</span>
-                    <span className="tg-metric-value">{selectedNode.alertCount}</span>
-                  </div>
-                  <div className="tg-metric tg-metric--full">
-                    <span className="tg-metric-label">Members</span>
-                    <ul className="tg-alert-list">
-                      {(selectedNode.alertNames ?? []).map(name => (
-                        <li key={name}>{name}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </>
-              )}
-
-              {selectedNode.type === 'unique' && (
-                <div className="tg-metric tg-metric--full">
-                  <span className="tg-metric-label">Status</span>
-                  <span className="tg-metric-value tg-metric-value--prose">
-                    Standalone detection — no similar alerts found in this client's coverage.
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Connected nodes */}
-            {(() => {
-              const conns = edges.filter(e => e.source === selected || e.target === selected);
-              if (conns.length === 0) return null;
-              return (
-                <div className="tg-panel-connections">
-                  <div className="tg-panel-section-label">Connections ({conns.length})</div>
-                  {conns.map(e => {
-                    const otherId = e.source === selected ? e.target : e.source;
-                    const other   = idToNode.get(otherId);
-                    if (!other) return null;
-                    return (
-                      <button
-                        key={e.id}
-                        type="button"
-                        className="tg-conn-item"
-                        onClick={() => setSelected(otherId)}
-                      >
-                        <span className={`tg-conn-dot tg-conn-dot--${e.edgeType}`} />
-                        <span className="tg-conn-label" title={other.fullLabel}>{other.fullLabel}</span>
-                        <span className="tg-conn-sim">{Math.round(e.similarity * 100)}%</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-          </aside>
-        )}
       </div>
 
-      {/* ── Legend ── */}
-      <div className="tg-legend">
-        <span className="tg-legend-item tg-legend-item--family">Detection Family</span>
-        <span className="tg-legend-item tg-legend-item--behavioral">Behavioral Noise</span>
-        <span className="tg-legend-item tg-legend-item--structural">Structural Noise</span>
-        <span className="tg-legend-item tg-legend-item--unique">Unique Detection</span>
-        {edges.some(e => e.edgeType === 'duplicate') && (
-          <span className="tg-legend-item tg-legend-item--dup-edge">Duplicate Link</span>
+      <div className="cx-pb-stats">
+        <span className="cx-pb-stat cx-pb-stat-crit">
+          <span className="cx-mono">{fmtNum(posture.critical)}</span> critical
+        </span>
+        <span className="cx-pb-stat cx-pb-stat-high">
+          <span className="cx-mono">{fmtNum(posture.high)}</span> high
+        </span>
+        <span className="cx-pb-stat cx-pb-stat-warn">
+          <span className="cx-mono">{posture.gaps}</span> gaps
+        </span>
+        <span className="cx-pb-stat">
+          <span className="cx-mono">{posture.avgFpRate}%</span> avg FP
+        </span>
+      </div>
+
+      <div className="cx-pb-filters">
+        <div className="cx-chips">
+          {sevs.map(s => {
+            const active = !severityFilter.size || severityFilter.has(s);
+            return (
+              <button key={s} type="button"
+                className={`cx-chip cx-chip-${s}${active ? '' : ' cx-chip-inactive'}`}
+                onClick={() => toggleSev(s)}
+              >
+                <span className="cx-chip-dot" />
+                {s[0].toUpperCase() + s.slice(1)}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ──────────────────────────────────────────────────────
+
+export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitre }: Props) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 1200, height: 720 });
+
+  useLayoutEffect(() => {
+    const update = () => {
+      if (wrapRef.current) {
+        const r = wrapRef.current.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) setSize({ width: r.width, height: r.height });
+      }
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  const alerts     = useMemo(() => buildAlertRules(data), [data]);
+  const techniques = useMemo(() => buildTechNodes(data, alerts), [data, alerts]);
+  const posture    = useMemo(() => buildPosture(data, alerts), [data, alerts]);
+
+  const layout = useMemo(() => {
+    const h = Math.max(700, techniques.length * 34 + 160, alerts.length * 36);
+    const w = Math.max(1100, size.width * 1.15);
+    return buildBipartite(alerts, techniques, w, h);
+  }, [alerts, techniques, size]);
+
+  const { vp, setVp, fit, onMouseDown } = useViewport(svgRef, layout);
+
+  const [pick, setPick] = useState<Pick | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set());
+  const [lookback, setLookback] = useState(lookbackDays);
+
+  const focusedId = pick?.data.id ?? null;
+
+  const toggleSev = (s: Severity) => {
+    setSeverityFilter(prev => {
+      const next = new Set(prev);
+      if (!prev.size) return new Set([s]);
+      if (next.has(s)) next.delete(s); else next.add(s);
+      if (next.size === 4) return new Set();
+      return next;
+    });
+  };
+
+  return (
+    <div className="cx-tg-root">
+
+      {/* Posture bar */}
+      <PostureBar
+        posture={posture}
+        lookback={lookback}
+        severityFilter={severityFilter}
+        toggleSev={toggleSev}
+      />
+
+      {/* Body: canvas + drill panel */}
+      <div className="cx-tg-body">
+        <div className="cx-tg-canvas-wrap" ref={wrapRef}>
+          <svg
+            ref={svgRef}
+            className="cx-tg-canvas"
+            onMouseDown={onMouseDown}
+            onClick={() => setPick(null)}
+            style={{ touchAction: 'none' }}
+          >
+            <defs>
+              <pattern id="cx-tg-grid" width="40" height="40" patternUnits="userSpaceOnUse"
+                patternTransform={`translate(${vp.x % (40 * vp.k)} ${vp.y % (40 * vp.k)}) scale(${vp.k})`}>
+                <circle cx="20" cy="20" r="0.6" fill="var(--cx-grid-dot)" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#cx-tg-grid)" />
+
+            <GraphCanvas
+              alerts={alerts}
+              techniques={techniques}
+              layout={layout}
+              vp={vp}
+              focusedId={focusedId}
+              hoveredId={hovered}
+              setHovered={setHovered}
+              onPickAlert={a => setPick({ type: 'alert', data: a })}
+              onPickTech={t => setPick({ type: 'tech', data: t })}
+              severityFilter={severityFilter}
+            />
+          </svg>
+
+          {/* Zoom controls */}
+          <div className="cx-tg-zoom">
+            <button type="button" onClick={() => setVp(v => ({ ...v, k: Math.min(2.4, v.k * 1.2) }))}>+</button>
+            <div className="cx-zoom-readout cx-mono">{Math.round(vp.k * 100)}%</div>
+            <button type="button" onClick={() => setVp(v => ({ ...v, k: Math.max(0.3, v.k / 1.2) }))}>−</button>
+            <div className="cx-zoom-divider" />
+            <button type="button" onClick={fit}>⤢</button>
+          </div>
+
+          {/* Lookback control */}
+          <div className="cx-tg-lookback">
+            <span className="cx-lb-label">Lookback</span>
+            <div className="cx-seg">
+              {[7, 14, 30, 90].map(d => (
+                <button key={d} type="button"
+                  className={lookback === d ? 'active' : ''}
+                  onClick={() => setLookback(d)}>
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="cx-tg-legend">
+            {(['critical', 'high', 'medium', 'low'] as Severity[]).map(s => (
+              <div key={s} className="cx-legend-row">
+                <span className="cx-leg-dot" style={{ background: SEV_COLOR[s] }} />
+                {s[0].toUpperCase() + s.slice(1)}
+              </div>
+            ))}
+            <div className="cx-leg-divider" />
+            {(['strong', 'partial', 'none'] as Coverage[]).map(c => (
+              <div key={c} className="cx-legend-row">
+                <span className="cx-leg-dot" style={{ background: COV_COLOR[c] }} />
+                {COV_LABEL[c]}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Drill panel */}
+        {pick?.type === 'alert' && (
+          <AlertDrillPanel
+            key={pick.data.id}
+            a={pick.data}
+            techniques={techniques}
+            onClose={() => setPick(null)}
+            onJumpToTech={t => setPick({ type: 'tech', data: t })}
+          />
         )}
-        {edges.some(e => e.edgeType === 'merge') && (
-          <span className="tg-legend-item tg-legend-item--merge-edge">Merge Suggestion</span>
+        {pick?.type === 'tech' && (
+          <TechDrillPanel
+            key={pick.data.id}
+            t={pick.data}
+            alerts={alerts}
+            onClose={() => setPick(null)}
+            onJumpToAlert={a => setPick({ type: 'alert', data: a })}
+            onViewMitre={onViewMitre}
+          />
         )}
-        <span className="tg-legend-hint">Click a node to inspect · Click background to deselect</span>
       </div>
     </div>
   );

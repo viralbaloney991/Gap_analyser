@@ -197,7 +197,12 @@ function App() {
 
           {view === 'graph' && data && (
             <motion.div key="graph" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <ThreatGraph data={data.alert_insights} clientName={clientName} />
+              <ThreatGraph
+                data={data}
+                clientName={clientName}
+                lookbackDays={lookbackDays}
+                onViewMitre={() => setView('mitre')}
+              />
             </motion.div>
           )}
         </AnimatePresence>
