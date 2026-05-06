@@ -50,7 +50,7 @@ function App() {
     try {
       const noiseAlerts = await fetchNoise(clientName, days);
       setData(prev => prev
-        ? { ...prev, alert_insights: { ...prev.alert_insights!, noise_alerts: noiseAlerts } }
+        ? { ...prev, alert_insights: { ...(prev.alert_insights ?? {}), noise_alerts: noiseAlerts } as SimilarityResult }
         : prev
       );
     } catch (e) {
