@@ -83,6 +83,21 @@ func TestEventCountReqBody_camelCaseFieldNames(t *testing.T) {
 			t.Errorf("request JSON must not contain snake_case key %s\nfull JSON: %s", bad, s)
 		}
 	}
+
+	// page must be omitted when empty (omitempty)
+	if strings.Contains(s, `"page"`) {
+		t.Errorf("page key must be omitted when empty\nfull JSON: %s", s)
+	}
+
+	// page must appear when set
+	body.Pagination.Page = "tok-abc"
+	b2, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal with page: %v", err)
+	}
+	if !strings.Contains(string(b2), `"page":"tok-abc"`) {
+		t.Errorf("page key must appear when non-empty\nfull JSON: %s", string(b2))
+	}
 }
 
 func TestParseAlertEventsResponse_multiPage(t *testing.T) {
