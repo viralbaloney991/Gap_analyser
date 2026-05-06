@@ -181,8 +181,8 @@ func parseAlertEventsResponse(raw []byte, counts map[string]int) (string, error)
 		return "", fmt.Errorf("parse alert events response: %w", err)
 	}
 	for _, ev := range resp.Events {
-		if ev.AlertID != "" {
-			counts[ev.AlertID]++
+		if id := ev.CxEventPayload.AlertID; id != "" {
+			counts[id]++
 		}
 	}
 	return resp.Pagination.NextPage, nil
@@ -301,9 +301,12 @@ type listEventsCountResp struct {
 }
 
 // listAlertEventsResp mirrors the EventsService/ListAlertEvents JSON response.
+// alertId is nested inside cxEventPayload, not at the top level of each event.
 type listAlertEventsResp struct {
 	Events []struct {
-		AlertID string `json:"alertId"`
+		CxEventPayload struct {
+			AlertID string `json:"alertId"`
+		} `json:"cxEventPayload"`
 	} `json:"events"`
 	Pagination struct {
 		NextPage string `json:"nextPage"`

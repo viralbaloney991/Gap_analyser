@@ -101,11 +101,12 @@ func TestEventCountReqBody_camelCaseFieldNames(t *testing.T) {
 }
 
 func TestParseAlertEventsResponse_multiPage(t *testing.T) {
+	// alertId is nested inside cxEventPayload per actual API response shape.
 	raw := []byte(`{
 		"events": [
-			{"alertId": "abc123"},
-			{"alertId": "abc123"},
-			{"alertId": "def456"}
+			{"cxEventPayload": {"alertId": "abc123"}},
+			{"cxEventPayload": {"alertId": "abc123"}},
+			{"cxEventPayload": {"alertId": "def456"}}
 		],
 		"pagination": {"nextPage": "page-token-2"}
 	}`)
@@ -126,7 +127,7 @@ func TestParseAlertEventsResponse_multiPage(t *testing.T) {
 }
 
 func TestParseAlertEventsResponse_lastPage(t *testing.T) {
-	raw := []byte(`{"events": [{"alertId": "abc123"}], "pagination": {}}`)
+	raw := []byte(`{"events": [{"cxEventPayload": {"alertId": "abc123"}}], "pagination": {}}`)
 	counts := make(map[string]int)
 	next, err := parseAlertEventsResponse(raw, counts)
 	if err != nil {
