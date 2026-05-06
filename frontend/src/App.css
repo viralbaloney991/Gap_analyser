@@ -113,7 +113,7 @@ html, body, #root {
   max-width: 320px;
 }
 
-.app-breadcrumb span { color: var(--text-sec); }
+.app-breadcrumb span { color: var(--text-sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-breadcrumb-sep  { color: var(--border-bright); }
 
 .header-status {
@@ -204,11 +204,15 @@ html, body, #root {
 .btn-secondary:focus-visible,
 .btn-small:focus-visible,
 .btn-generate:focus-visible,
-.btn-icon:focus-visible,
+.view-toggle-btn:focus-visible,
+.graph-tab:focus-visible,
 .tab-btn:focus-visible,
 .region-card:focus-visible,
 .export-menu-item:focus-visible,
 .insights-regenerate-btn:focus-visible,
+.noise-pills__pill:focus-visible,
+.noise-filter-pill:focus-visible,
+.mitre-download-btn:focus-visible,
 .cs-cta__btn:focus-visible,
 .corr-suggest-btn:focus-visible,
 .corr-close-btn:focus-visible {

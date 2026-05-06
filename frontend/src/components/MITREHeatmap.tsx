@@ -154,6 +154,18 @@ function techniqueRadialPositions(
 }
 
 // ---------------------------------------------------------------------------
+// Shared tooltip helper
+// ---------------------------------------------------------------------------
+
+function clampTooltip(x: number, y: number, text: string) {
+  return {
+    x: Math.min(x, window.innerWidth  - Math.min(text.length * 7 + 24, 320)),
+    y: Math.min(y, window.innerHeight - 36),
+    text,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Force Graph component
 // ---------------------------------------------------------------------------
 
@@ -171,11 +183,6 @@ function ForceGraph({
   const [expandedTactic, setExpandedTactic] = useState<string | null>(null);
   const [graphView, setGraphView] = useState<'covered' | 'gaps'>('covered');
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
-  const clampTooltip = (x: number, y: number, text: string) => ({
-    x: Math.min(x, window.innerWidth  - Math.min(text.length * 7 + 24, 320)),
-    y: Math.min(y, window.innerHeight - 36),
-    text,
-  });
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -717,11 +724,6 @@ export default function MITREHeatmap({ data, clientName }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('heatmap');
   const [selectedTechnique, setSelectedTechnique] = useState<NavigatorTechnique | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
-  const clampTooltip = (x: number, y: number, text: string) => ({
-    x: Math.min(x, window.innerWidth  - Math.min(text.length * 7 + 24, 320)),
-    y: Math.min(y, window.innerHeight - 36),
-    text,
-  });
 
   const containerRef       = useRef<HTMLDivElement>(null);
   const toolbarRef         = useRef<HTMLDivElement>(null);
