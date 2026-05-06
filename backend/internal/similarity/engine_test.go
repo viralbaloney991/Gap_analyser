@@ -384,12 +384,34 @@ func TestFindNoiseAlerts_buildingBlockExcluded(t *testing.T) {
 	}
 }
 
-func TestFindNoiseAlerts_nonSecurityExcluded(t *testing.T) {
+func TestFindNoiseAlerts_nonSecurityNoCountsNoNoise(t *testing.T) {
+	// Non-security alert with nil eventCounts: behavioral cannot fire (no counts),
+	// structural cannot fire (IsSecurityAlert=false). Result must be empty.
 	v := sparseVector("Ops Alert")
 	alert := makeAlert("ops-1", "logs_threshold", false, false, nil, "", "")
 	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, nil, 0, idfTable{}, 0)
 	if len(noisy) != 0 {
-		t.Errorf("non-security alert should be excluded, got %v", noisy)
+		t.Errorf("non-security alert with no event counts should produce no noise, got %v", noisy)
+	}
+}
+
+func TestFindNoiseAlerts_nonSecurityBehavioralNoise(t *testing.T) {
+	// Regression test: non-security (operational) alerts firing above threshold
+	// must be flagged as behavioral noise. The IsSecurityAlert gate was incorrectly
+	// blocking them before the trigger-count check.
+	v := sparseVector("Amazon EBS - Volume Was Created")
+	// isSecurityAlert=false, scoped (app+subsystem set) so structural won't fire.
+	alert := makeAlert("ebs-1", "logs_threshold", false, false, nil, "aws", "ebs")
+	counts := map[string]int{"ebs-1": 292}
+	noisy := findNoiseAlerts([]featureVector{v}, []*models.AlertDef{alert}, counts, 0, idfTable{}, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("non-security alert with 292 triggers should be behavioral noise, got %d: %v", len(noisy), noisy)
+	}
+	if noisy[0].NoiseType != "behavioral" {
+		t.Errorf("noise_type: want behavioral, got %q", noisy[0].NoiseType)
+	}
+	if noisy[0].TriggerCount != 292 {
+		t.Errorf("trigger_count: want 292, got %d", noisy[0].TriggerCount)
 	}
 }
 

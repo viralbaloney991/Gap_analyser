@@ -1144,11 +1144,10 @@ func findNoiseAlerts(
 
 	// Debug counters — logged at the end to explain zero-noise results.
 	var (
-		skippedVendor    int
-		skippedBB        int
-		skippedNonSec    int
-		skippedNoSignal  int
-		noSignalReasons  = make(map[string]int) // breakdown of why no signal fired
+		skippedVendor   int
+		skippedBB       int
+		skippedNoSignal int
+		noSignalReasons = make(map[string]int) // breakdown of why no signal fired
 	)
 
 	for i, v := range vectors {
@@ -1165,10 +1164,6 @@ func findNoiseAlerts(
 			}
 			if alert.Features.IsBuildingBlock {
 				skippedBB++
-				continue
-			}
-			if !alert.Features.IsSecurityAlert {
-				skippedNonSec++
 				continue
 			}
 		}
@@ -1193,7 +1188,7 @@ func findNoiseAlerts(
 		isStructural := false
 		isUnscoped := false
 		isBroadQuery := false
-		if alert != nil {
+		if alert != nil && alert.Features.IsSecurityAlert {
 			app, sub := coralogix.ExtractAppSubsystem(alert.TypeDef)
 			isUnscoped = app == "" && sub == ""
 			noEntity := len(v.entities) == 0
@@ -1231,8 +1226,8 @@ func findNoiseAlerts(
 	}
 
 	if len(noisy) == 0 && len(vectors) > 0 {
-		log.Printf("DEBUG [noise] 0 noisy alerts from %d vectors: vendor=%d bb=%d non-sec=%d no-signal=%d reasons=%v eventCountsAvailable=%v",
-			len(vectors), skippedVendor, skippedBB, skippedNonSec, skippedNoSignal, noSignalReasons, eventCounts != nil)
+		log.Printf("DEBUG [noise] 0 noisy alerts from %d vectors: vendor=%d bb=%d no-signal=%d reasons=%v eventCountsAvailable=%v",
+			len(vectors), skippedVendor, skippedBB, skippedNoSignal, noSignalReasons, eventCounts != nil)
 	}
 
 	sort.Slice(noisy, func(i, j int) bool {
