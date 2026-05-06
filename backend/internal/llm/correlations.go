@@ -83,6 +83,22 @@ func GenerateCorrelations(ctx context.Context, provider Provider, input Correlat
 		suggestions = suggestions[:MaxCorrelations]
 	}
 
+	const maxCorrelationType = 3
+	const maxAnomalyType = 2
+
+	var corrCount, anomalyCount int
+	capped := suggestions[:0]
+	for _, s := range suggestions {
+		if s.Type == "correlation" && corrCount < maxCorrelationType {
+			capped = append(capped, s)
+			corrCount++
+		} else if s.Type == "anomaly" && anomalyCount < maxAnomalyType {
+			capped = append(capped, s)
+			anomalyCount++
+		}
+	}
+	suggestions = capped
+
 	return suggestions, nil
 }
 
@@ -139,6 +155,16 @@ func parseCorrelations(raw string) ([]models.CorrelationSuggestion, error) {
 	if err := json.Unmarshal([]byte(cleaned), &suggestions); err != nil {
 		return nil, fmt.Errorf("JSON parse error: %w\nRaw response:\n%s", err, raw[:min(len(raw), 500)])
 	}
+
+	valid := suggestions[:0]
+	for _, s := range suggestions {
+		if s.Type != "correlation" && s.Type != "anomaly" {
+			log.Printf("WARN parseCorrelations: discarding suggestion with invalid type %q (title=%q)", s.Type, s.Title)
+			continue
+		}
+		valid = append(valid, s)
+	}
+	suggestions = valid
 
 	return suggestions, nil
 }
