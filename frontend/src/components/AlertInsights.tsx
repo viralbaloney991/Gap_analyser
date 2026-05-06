@@ -51,9 +51,9 @@ const CATEGORY_PRIORITY: Record<string, number> = {
   weak_detection_quality: 3, advanced_use_cases: 2, environment_cleanup: 1,
 };
 
-const severityColors: Record<string, string> = {
-  critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#3b82f6',
-};
+function severityBadgeClass(severity: string): string {
+  return `badge badge--${severity.toLowerCase()}`;
+}
 
 function coveragePctToSeverity(pct: number): SeverityLevel {
   if (pct === 0) return 'critical';
@@ -321,8 +321,8 @@ export default function AlertInsights({ data, report, insightsError = false, cli
               <div key={queryKey} className="insight-card insight-card--coverage" style={{ marginBottom: 8 }}>
                 <div className="insight-card-header" style={{ marginBottom: 4 }}>
                   <span
-                    className="badge"
-                    style={{ backgroundColor: severityColors[item.severity] ?? '#6b7280', color: '#fff', marginRight: 8 }}
+                    className={severityBadgeClass(item.severity)}
+                    style={{ marginRight: 8 }}
                   >
                     {item.severity.toUpperCase()}
                   </span>
@@ -692,8 +692,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                         <div className="top-gaps-body">
                           <div className="top-gaps-meta">
                             <span
-                              className="badge"
-                              style={{ backgroundColor: severityColors[gap.severity] ?? '#6b7280', color: '#fff', fontSize: '0.58rem' }}
+                              className={severityBadgeClass(gap.severity)}
                             >
                               {gap.severity.toUpperCase()}
                             </span>
@@ -906,8 +905,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                             <div key={corrKey} className="corr-card">
                               <div className="corr-card-meta">
                                 <span
-                                  className="badge"
-                                  style={{ backgroundColor: severityColors[sug.priority] ?? '#6b7280', color: sug.priority === 'medium' ? '#000' : '#fff', fontSize: '0.58rem' }}
+                                  className={severityBadgeClass(sug.priority)}
                                 >
                                   {sug.priority.toUpperCase()}
                                 </span>

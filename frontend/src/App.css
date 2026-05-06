@@ -235,6 +235,12 @@ html, body, #root {
 .badge--indigo { background: var(--indigo-dim);              color: var(--indigo); }
 .badge--sky    { background: var(--sky-dim);                 color: var(--sky); }
 
+/* Severity-specific badge variants (gaps, correlations) */
+.badge--critical { background: var(--danger-dim); color: var(--danger); }
+.badge--high     { background: rgba(249,115,22,0.12); color: #f97316; }
+.badge--medium   { background: var(--warn-dim);   color: var(--warn); }
+.badge--low      { background: var(--sky-dim);    color: var(--sky); }
+
 .cache-badge {
   font-family: var(--font-mono);
   font-size: 0.58rem;
