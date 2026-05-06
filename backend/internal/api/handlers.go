@@ -1102,6 +1102,9 @@ func validateLookbackDays(days int) int {
 	case 7, 14, 30, 90:
 		return days
 	default:
+		if days != 0 {
+			log.Printf("WARN [validate] invalid lookback_days=%d, defaulting to 30", days)
+		}
 		return 30
 	}
 }
