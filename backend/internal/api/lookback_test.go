@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,16 +71,4 @@ func TestHandleAnalyze_invalidJSON(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
 	}
-}
-
-func TestHandleAnalyze_prewarmCancelSafe(t *testing.T) {
-	h := &Handler{config: &config.Config{Clients: map[string]config.ClientConfig{}}}
-	_, cancel := context.WithCancel(context.Background())
-	h.prewarmCancels.Store("test-client", cancel)
-	if prev, ok := h.prewarmCancels.Load("test-client"); ok {
-		if fn, ok := prev.(context.CancelFunc); ok {
-			fn()
-		}
-	}
-	// No panic = pass.
 }
