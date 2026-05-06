@@ -273,7 +273,9 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 	// Cancels any in-flight pre-warm for this client first.
 	if h.prewarmWorker != nil && h.alertStore != nil {
 		if prev, ok := h.prewarmCancels.Load(req.Client); ok {
-			prev.(context.CancelFunc)()
+			if cancel, ok := prev.(context.CancelFunc); ok {
+				cancel()
+			}
 		}
 		prewarmCtx, cancel := context.WithCancel(context.Background())
 		h.prewarmCancels.Store(req.Client, cancel)
