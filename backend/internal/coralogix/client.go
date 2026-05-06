@@ -90,26 +90,19 @@ func (c *Client) grpcCall(ctx context.Context, method, body string) ([]byte, err
 	return stdout.Bytes(), nil
 }
 
-// eventsCountReqBody is the request body for EventsService/ListEventsCount.
-// Field names use proto3 camelCase JSON transcoding.
-type eventsCountReqBody struct {
-	AlertIDs       []string                 `json:"alertIds"`
-	TimestampRange eventCountTimestampRange `json:"timestampRange"`
-}
-
 // eventCountTimestampRange is the time window for event count requests.
 type eventCountTimestampRange struct {
 	From string `json:"from"`
 	To   string `json:"to"`
 }
 
-// eventCountReqPagination is kept for ListAlertEvents-based tests.
+// eventCountReqPagination is the pagination block for ListAlertEvents requests.
 type eventCountReqPagination struct {
 	PageSize int    `json:"pageSize"`
 	Page     string `json:"page,omitempty"`
 }
 
-// eventCountReqBody is kept for ListAlertEvents-based tests.
+// eventCountReqBody is the request body for ListAlertEvents.
 // Field names use proto3 camelCase JSON transcoding (alertIds, timestampRange, pageSize).
 type eventCountReqBody struct {
 	AlertIDs       []string                 `json:"alertIds"`
@@ -117,9 +110,21 @@ type eventCountReqBody struct {
 	Pagination     eventCountReqPagination  `json:"pagination"`
 }
 
+// eventsCountFilter is the filter block for ListEventsCount.
+type eventsCountFilter struct {
+	Timestamp eventCountTimestampRange `json:"timestamp"`
+}
+
+// eventsCountReqBody is the request body for EventsService/ListEventsCount.
+// The API does not support filtering by alertIds directly; counts for all alerts
+// are returned and filtered client-side.
+type eventsCountReqBody struct {
+	Filter eventsCountFilter `json:"filter"`
+}
+
 // FetchAlertEventCounts returns the trigger count for each alert ID over the
 // past [days] days. Uses EventsService/ListEventsCount which returns aggregate
-// counts directly — no pagination needed.
+// counts for all alerts in a single call; results are filtered to the requested IDs.
 // Returns a map of alertID → count; IDs not in the response have count 0.
 // If the call fails, returns nil, err — the caller falls back to structural-only.
 func (c *Client) FetchAlertEventCounts(
@@ -138,10 +143,11 @@ func (c *Client) FetchAlertEventCounts(
 	from := now.AddDate(0, 0, -days)
 
 	body := eventsCountReqBody{
-		AlertIDs: alertIDs,
-		TimestampRange: eventCountTimestampRange{
-			From: from.Format(time.RFC3339),
-			To:   now.Format(time.RFC3339),
+		Filter: eventsCountFilter{
+			Timestamp: eventCountTimestampRange{
+				From: from.Format(time.RFC3339),
+				To:   now.Format(time.RFC3339),
+			},
 		},
 	}
 
@@ -155,9 +161,21 @@ func (c *Client) FetchAlertEventCounts(
 		return nil, err
 	}
 
-	counts, err := parseEventCountResponse(raw)
+	allCounts, err := parseEventCountResponse(raw)
 	if err != nil {
 		return nil, err
+	}
+
+	// Filter to only the requested alert IDs.
+	requestedSet := make(map[string]struct{}, len(alertIDs))
+	for _, id := range alertIDs {
+		requestedSet[id] = struct{}{}
+	}
+	counts := make(map[string]int, len(alertIDs))
+	for id, c := range allCounts {
+		if _, ok := requestedSet[id]; ok {
+			counts[id] = c
+		}
 	}
 
 	matched := 0
@@ -166,7 +184,7 @@ func (c *Client) FetchAlertEventCounts(
 			matched++
 		}
 	}
-	log.Printf("INFO [noise] event counts: requested=%d matched=%d", len(alertIDs), matched)
+	log.Printf("INFO [noise] event counts: requested=%d matched=%d total_in_response=%d", len(alertIDs), matched, len(allCounts))
 	return counts, nil
 }
 
