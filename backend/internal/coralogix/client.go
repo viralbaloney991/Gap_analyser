@@ -134,6 +134,7 @@ func (c *Client) FetchAlertEventCounts(
 	const batchSize = 50
 	const pageSize = 1000
 
+	batchErrors := 0
 	for start := 0; start < len(alertIDs); start += batchSize {
 		end := start + batchSize
 		if end > len(alertIDs) {
@@ -162,18 +163,26 @@ func (c *Client) FetchAlertEventCounts(
 
 			raw, err := c.grpcCall(ctx, "com.coralogixapis.events.v3.EventsService/ListAlertEvents", string(bodyJSON))
 			if err != nil {
-				return nil, err
+				log.Printf("WARN [noise] batch %d-%d failed: %v", start, end, err)
+				batchErrors++
+				break
 			}
 
 			next, err := parseAlertEventsResponse(raw, counts)
 			if err != nil {
-				return nil, err
+				log.Printf("WARN [noise] batch %d-%d parse error: %v", start, end, err)
+				batchErrors++
+				break
 			}
 			if next == "" {
 				break
 			}
 			nextPage = next
 		}
+	}
+	// If every batch failed, return nil so callers fall back to structural-only.
+	if batchErrors == (len(alertIDs)+batchSize-1)/batchSize {
+		return nil, fmt.Errorf("all %d batches failed", batchErrors)
 	}
 
 	matched := 0
