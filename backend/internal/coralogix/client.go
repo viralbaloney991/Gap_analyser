@@ -110,21 +110,9 @@ type eventCountReqBody struct {
 	Pagination     eventCountReqPagination  `json:"pagination"`
 }
 
-// eventsCountFilter is the filter block for ListEventsCount.
-type eventsCountFilter struct {
-	Timestamp eventCountTimestampRange `json:"timestamp"`
-}
-
-// eventsCountReqBody is the request body for EventsService/ListEventsCount.
-// The API does not support filtering by alertIds directly; counts for all alerts
-// are returned and filtered client-side.
-type eventsCountReqBody struct {
-	Filter eventsCountFilter `json:"filter"`
-}
-
 // FetchAlertEventCounts returns the trigger count for each alert ID over the
-// past [days] days. Uses EventsService/ListEventsCount which returns aggregate
-// counts for all alerts in a single call; results are filtered to the requested IDs.
+// past [days] days. Uses EventsService/ListAlertEvents in batches of batchSize
+// so that high-frequency alerts in one batch don't crowd out others.
 // Returns a map of alertID → count; IDs not in the response have count 0.
 // If the call fails, returns nil, err — the caller falls back to structural-only.
 func (c *Client) FetchAlertEventCounts(
@@ -141,40 +129,50 @@ func (c *Client) FetchAlertEventCounts(
 
 	now := time.Now().UTC()
 	from := now.AddDate(0, 0, -days)
-
-	body := eventsCountReqBody{
-		Filter: eventsCountFilter{
-			Timestamp: eventCountTimestampRange{
-				From: from.Format(time.RFC3339),
-				To:   now.Format(time.RFC3339),
-			},
-		},
-	}
-
-	bodyJSON, err := json.Marshal(body)
-	if err != nil {
-		return nil, fmt.Errorf("marshal event count request: %w", err)
-	}
-
-	raw, err := c.grpcCall(ctx, "com.coralogixapis.events.v3.EventsService/ListEventsCount", string(bodyJSON))
-	if err != nil {
-		return nil, err
-	}
-
-	allCounts, err := parseEventCountResponse(raw)
-	if err != nil {
-		return nil, err
-	}
-
-	// Filter to only the requested alert IDs.
-	requestedSet := make(map[string]struct{}, len(alertIDs))
-	for _, id := range alertIDs {
-		requestedSet[id] = struct{}{}
-	}
 	counts := make(map[string]int, len(alertIDs))
-	for id, c := range allCounts {
-		if _, ok := requestedSet[id]; ok {
-			counts[id] = c
+
+	const batchSize = 50
+	const pageSize = 1000
+
+	for start := 0; start < len(alertIDs); start += batchSize {
+		end := start + batchSize
+		if end > len(alertIDs) {
+			end = len(alertIDs)
+		}
+		batch := alertIDs[start:end]
+
+		var nextPage string
+		for {
+			body := eventCountReqBody{
+				AlertIDs: batch,
+				TimestampRange: eventCountTimestampRange{
+					From: from.Format(time.RFC3339),
+					To:   now.Format(time.RFC3339),
+				},
+				Pagination: eventCountReqPagination{
+					PageSize: pageSize,
+					Page:     nextPage,
+				},
+			}
+
+			bodyJSON, err := json.Marshal(body)
+			if err != nil {
+				return nil, fmt.Errorf("marshal event count request: %w", err)
+			}
+
+			raw, err := c.grpcCall(ctx, "com.coralogixapis.events.v3.EventsService/ListAlertEvents", string(bodyJSON))
+			if err != nil {
+				return nil, err
+			}
+
+			next, err := parseAlertEventsResponse(raw, counts)
+			if err != nil {
+				return nil, err
+			}
+			if next == "" {
+				break
+			}
+			nextPage = next
 		}
 	}
 
@@ -184,7 +182,7 @@ func (c *Client) FetchAlertEventCounts(
 			matched++
 		}
 	}
-	log.Printf("INFO [noise] event counts: requested=%d matched=%d total_in_response=%d", len(alertIDs), matched, len(allCounts))
+	log.Printf("INFO [noise] event counts: requested=%d matched=%d", len(alertIDs), matched)
 	return counts, nil
 }
 
