@@ -452,35 +452,36 @@ function ForceGraph({
               onClick={(e) => { e.stopPropagation(); onSelectTechnique(null); setTooltip(null); }}
               onKeyDown={(e) => { if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onSelectTechnique(null); setTooltip(null); } }}
               style={{ cursor: 'pointer' }}
-              className="force-node force-node--selected"
               role="button"
               aria-label={`${t.techniqueID} selected — press to deselect`}
             >
-              <circle r={36} fill={t.color} stroke="#fff" strokeWidth={2.5} />
-              <text
-                dy={displayName ? '-5' : '0.35em'}
-                textAnchor="middle"
-                fontSize={11}
-                fill="#fff"
-                fontFamily="'IBM Plex Mono', monospace"
-                fontWeight="700"
-                style={{ pointerEvents: 'none', userSelect: 'none' }}
-              >
-                {t.techniqueID}
-              </text>
-              {displayName && (
+              <g className="force-node force-node--selected">
+                <circle r={36} fill={t.color} stroke="#fff" strokeWidth={2.5} />
                 <text
-                  dy="9"
+                  dy={displayName ? '-5' : '0.35em'}
                   textAnchor="middle"
-                  fontSize={7.5}
-                  fill="rgba(255,255,255,0.8)"
+                  fontSize={11}
+                  fill="#fff"
                   fontFamily="'IBM Plex Mono', monospace"
-                  fontWeight="400"
+                  fontWeight="700"
                   style={{ pointerEvents: 'none', userSelect: 'none' }}
                 >
-                  {displayName}
+                  {t.techniqueID}
                 </text>
-              )}
+                {displayName && (
+                  <text
+                    dy="9"
+                    textAnchor="middle"
+                    fontSize={7.5}
+                    fill="rgba(255,255,255,0.8)"
+                    fontFamily="'IBM Plex Mono', monospace"
+                    fontWeight="400"
+                    style={{ pointerEvents: 'none', userSelect: 'none' }}
+                  >
+                    {displayName}
+                  </text>
+                )}
+              </g>
             </g>
           );
         })()}

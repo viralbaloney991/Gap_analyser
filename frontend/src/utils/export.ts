@@ -141,139 +141,361 @@ export function exportFullReportPDF(
   date: string,
   totalAlerts: number,
 ): void {
-  const doc = new jsPDF();
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
-  const margin = 14;
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 16;
   const contentW = pageW - margin * 2;
 
-  // ── Cover page ──────────────────────────────────────────────────────────
-  doc.setFontSize(28);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Security Alert Analysis', margin, 50);
+  // ── Design tokens ────────────────────────────────────────────────────────
+  type RGB = [number, number, number];
+  const DARK_BG:   RGB = [13, 17, 23];
+  const DARK_NAVY: RGB = [20, 30, 50];
+  const ACCENT:    RGB = [0, 185, 155];
+  const WHITE:     RGB = [255, 255, 255];
+  const TEXT:      RGB = [22, 28, 40];
+  const TEXT_MUT:  RGB = [105, 115, 135];
+  const ROW_ALT:   RGB = [244, 247, 252];
+  const BORDER:    RGB = [218, 224, 234];
+  const GREEN:     RGB = [22, 163, 74];
+  const AMBER:     RGB = [180, 95, 6];
+  const RED:       RGB = [185, 28, 28];
+  const RED_DIM:   RGB = [254, 226, 226];
+  const AMBER_DIM: RGB = [254, 243, 199];
+  const BLUE:      RGB = [37, 99, 235];
 
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'normal');
-  doc.text(client, margin, 65);
+  function fill(c: RGB)  { doc.setFillColor(c[0], c[1], c[2]); }
+  function stroke(c: RGB){ doc.setDrawColor(c[0], c[1], c[2]); }
+  function color(c: RGB) { doc.setTextColor(c[0], c[1], c[2]); }
 
-  doc.setFontSize(11);
-  doc.text(date, margin, 78);
-
-  doc.setFontSize(12);
-  doc.text(`Total Alerts: ${totalAlerts}`, margin, 100);
-  doc.text(`MITRE Coverage: ${mitreCoverage.summary.coverage_percent.toFixed(1)}%`, margin, 112);
-  doc.text(`Detection Families: ${data.families.length}`, margin, 124);
-  doc.text(`Noise Alerts: ${data.noise_alerts?.length ?? 0}`, margin, 136);
-
-  // ── Executive Summary ───────────────────────────────────────────────────
-  doc.addPage();
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Executive Summary', margin, 20);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  const summaryLines = doc.splitTextToSize(narrative.executive_summary, contentW) as string[];
-  doc.text(summaryLines, margin, 32);
-
-  // ── Key Findings ────────────────────────────────────────────────────────
-  const summaryHeight = summaryLines.length * 5;
-  let findingsY = 32 + summaryHeight + 12;
-  if (findingsY > 250) {
-    doc.addPage();
-    findingsY = 20;
+  function sectionTitle(title: string, y: number): number {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    color(DARK_NAVY);
+    doc.text(title.toUpperCase(), margin, y);
+    stroke(ACCENT);
+    doc.setLineWidth(0.6);
+    doc.line(margin, y + 2.8, pageW - margin, y + 2.8);
+    return y + 11;
   }
-  doc.setFontSize(14);
+
+  // ── COVER PAGE ───────────────────────────────────────────────────────────
+  fill(DARK_BG);
+  doc.rect(0, 0, pageW, pageH, 'F');
+
+  // Top accent stripe
+  fill(ACCENT);
+  doc.rect(0, 0, pageW, 2.5, 'F');
+
+  // Decorative step lines (top-right)
+  stroke(ACCENT);
+  doc.setLineWidth(0.35);
+  for (let i = 0; i < 6; i++) {
+    const len = 30 - i * 4;
+    if (len > 0) doc.line(pageW - margin - len, 14 + i * 4.5, pageW - margin, 14 + i * 4.5);
+  }
+
+  // Title
   doc.setFont('helvetica', 'bold');
-  doc.text('Key Findings', margin, findingsY);
+  doc.setFontSize(30);
+  color(WHITE);
+  doc.text('SECURITY ALERT', margin, 64);
+  doc.text('ANALYSIS', margin, 78);
+
+  // Accent underline
+  fill(ACCENT);
+  doc.rect(margin, 83, 56, 1.8, 'F');
+
+  // Client name
+  doc.setFontSize(20);
+  color(ACCENT);
+  doc.text(client, margin, 98);
+
+  // Date + by-line
+  doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  narrative.key_findings.forEach((finding, i) => {
-    doc.text(`• ${finding}`, margin + 2, findingsY + 10 + i * 7);
+  doc.setTextColor(150, 165, 185);
+  doc.text(date, margin, 108);
+  doc.setFontSize(7);
+  doc.setTextColor(62, 78, 100);
+  doc.text('PREPARED BY CORALOGIX ALERT ANALYZER', margin, 117);
+
+  // Stats cards 2 × 2
+  const cardW = (contentW - 6) / 2;
+  const STATS: Array<{ label: string; value: string }> = [
+    { label: 'TOTAL ALERTS',       value: String(totalAlerts) },
+    { label: 'MITRE COVERAGE',     value: `${mitreCoverage.summary.coverage_percent.toFixed(1)}%` },
+    { label: 'DETECTION FAMILIES', value: String(data.families.length) },
+    { label: 'NOISE ALERTS',       value: String(data.noise_alerts?.length ?? 0) },
+  ];
+  STATS.forEach((s, i) => {
+    const cx = margin + (i % 2) * (cardW + 6);
+    const cy = 132 + Math.floor(i / 2) * 34;
+    doc.setFillColor(22, 30, 46);
+    doc.roundedRect(cx, cy, cardW, 28, 2, 2, 'F');
+    fill(ACCENT);
+    doc.rect(cx, cy, 3.5, 28, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(22);
+    color(WHITE);
+    doc.text(s.value, cx + 10, cy + 16);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(108, 128, 158);
+    doc.text(s.label, cx + 10, cy + 23);
   });
 
-  // ── MITRE Coverage ──────────────────────────────────────────────────────
-  doc.addPage();
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('MITRE Coverage', margin, 20);
+  // Confidential footer on cover
   doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(45, 58, 74);
+  const conf = 'CONFIDENTIAL — FOR AUTHORIZED RECIPIENTS ONLY';
+  doc.text(conf, pageW / 2 - doc.getTextWidth(conf) / 2, pageH - 8);
+
+  // ── EXECUTIVE SUMMARY ────────────────────────────────────────────────────
+  doc.addPage();
+  let y = 22;
+  y = sectionTitle('Executive Summary', y);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9.5);
+  color(TEXT);
+  const sumLines = doc.splitTextToSize(narrative.executive_summary, contentW) as string[];
+  doc.text(sumLines, margin, y);
+  y += sumLines.length * 4.8 + 14;
+
+  // ── KEY FINDINGS ─────────────────────────────────────────────────────────
+  if (y > pageH - 65) { doc.addPage(); y = 22; }
+  y = sectionTitle('Key Findings', y);
+
+  narrative.key_findings.forEach((finding, i) => {
+    const fl = doc.splitTextToSize(finding, contentW - 10) as string[];
+    const rowH = fl.length * 4.5 + 3;
+    if (y + rowH > pageH - 18) { doc.addPage(); y = 22; }
+
+    fill(ACCENT);
+    doc.roundedRect(margin, y - 3.5, 5.5, 5.5, 1, 1, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    color(WHITE);
+    doc.text(String(i + 1), margin + 1.5, y + 0.4);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    color(TEXT);
+    doc.text(fl, margin + 8, y);
+    y += rowH;
+  });
+
+  // ── MITRE ATT&CK COVERAGE ─────────────────────────────────────────────────
+  doc.addPage();
+  y = 22;
+  y = sectionTitle('MITRE ATT&CK Coverage', y);
 
   const tc = mitreCoverage.technique_coverage ?? {};
-  const techniqueRows: string[][] = Object.entries(tc)
-    .filter(([, entry]) => entry.alert_count > 0)
+  const tcRows = Object.entries(tc)
+    .filter(([, e]) => e.alert_count > 0)
     .sort((a, b) => a[1].tactic.localeCompare(b[1].tactic) || a[0].localeCompare(b[0]))
-    .map(([tcode, entry]) => [
-      tcode,
-      entry.name,
-      entry.tactic,
-      String(entry.alert_count),
-      entry.weak ? 'Weak' : 'Strong',
-    ]);
+    .map(([code, e]) => [code, e.name, e.tactic, String(e.alert_count), e.weak ? 'Weak' : 'Strong']);
 
   autoTable(doc, {
-    head: [['T-Code', 'Technique Name', 'Tactic', 'Alert Count', 'Quality']],
-    body: techniqueRows,
-    startY: 28,
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [30, 30, 30] as [number, number, number] },
-    columnStyles: { 0: { cellWidth: 22 }, 3: { cellWidth: 24 }, 4: { cellWidth: 22 } },
+    head: [['T-Code', 'Technique Name', 'Tactic', 'Alerts', 'Quality']],
+    body: tcRows,
+    startY: y,
+    margin: { left: margin, right: margin, top: 18, bottom: 16 },
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 },
+      textColor: TEXT as [number, number, number],
+      lineColor: BORDER as [number, number, number],
+      lineWidth: 0.2,
+      overflow: 'linebreak',
+    },
+    headStyles: {
+      fillColor: DARK_NAVY as [number, number, number],
+      textColor: WHITE as [number, number, number],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+    },
+    alternateRowStyles: { fillColor: ROW_ALT as [number, number, number] },
+    columnStyles: {
+      0: { cellWidth: 24 },
+      3: { cellWidth: 18, halign: 'center' },
+      4: { cellWidth: 20, halign: 'center' },
+    },
+    didParseCell(hookData) {
+      if (hookData.column.index === 4 && hookData.section === 'body') {
+        hookData.cell.styles.textColor = (hookData.cell.raw === 'Strong' ? GREEN : AMBER) as [number, number, number];
+        hookData.cell.styles.fontStyle = 'bold';
+      }
+    },
   });
 
-  // ── Noise Alerts ────────────────────────────────────────────────────────
+  // ── NOISE ALERTS ─────────────────────────────────────────────────────────
   doc.addPage();
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Noise Alerts', margin, 20);
-  doc.setFont('helvetica', 'normal');
-  const [noiseHeader, ...noiseBody] = noiseRows(data);
+  y = 22;
+  y = sectionTitle('Noise Alerts', y);
+
+  const [nh, ...nb] = noiseRows(data);
   autoTable(doc, {
-    head: [noiseHeader],
-    body: noiseBody,
-    startY: 28,
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [30, 30, 30] as [number, number, number] },
+    head: [nh],
+    body: nb,
+    startY: y,
+    margin: { left: margin, right: margin, top: 18, bottom: 16 },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: { top: 2, bottom: 2, left: 3, right: 3 },
+      textColor: TEXT as [number, number, number],
+      lineColor: BORDER as [number, number, number],
+      lineWidth: 0.2,
+      overflow: 'linebreak',
+    },
+    headStyles: {
+      fillColor: DARK_NAVY as [number, number, number],
+      textColor: WHITE as [number, number, number],
+      fontStyle: 'bold',
+    },
+    alternateRowStyles: { fillColor: ROW_ALT as [number, number, number] },
+    columnStyles: {
+      1: { cellWidth: 26 },
+      2: { cellWidth: 20, halign: 'center' },
+    },
+    didParseCell(hookData) {
+      if (hookData.column.index === 1 && hookData.section === 'body') {
+        const t = String(hookData.cell.raw).toLowerCase();
+        hookData.cell.styles.textColor = (t.includes('behavioral') ? AMBER : BLUE) as [number, number, number];
+        hookData.cell.styles.fontStyle = 'bold';
+      }
+    },
   });
 
-  // ── Detection Families ──────────────────────────────────────────────────
+  // ── DETECTION FAMILIES ────────────────────────────────────────────────────
   doc.addPage();
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Detection Families', margin, 20);
-  doc.setFont('helvetica', 'normal');
-  const [famHeader, ...famBody] = familiesRows(data);
+  y = 22;
+  y = sectionTitle('Detection Families', y);
+
+  const [fh, ...fb] = familiesRows(data);
   autoTable(doc, {
-    head: [famHeader],
-    body: famBody,
-    startY: 28,
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [30, 30, 30] as [number, number, number] },
+    head: [fh],
+    body: fb,
+    startY: y,
+    margin: { left: margin, right: margin, top: 18, bottom: 16 },
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 },
+      textColor: TEXT as [number, number, number],
+      lineColor: BORDER as [number, number, number],
+      lineWidth: 0.2,
+      overflow: 'linebreak',
+    },
+    headStyles: {
+      fillColor: DARK_NAVY as [number, number, number],
+      textColor: WHITE as [number, number, number],
+      fontStyle: 'bold',
+    },
+    alternateRowStyles: { fillColor: ROW_ALT as [number, number, number] },
+    columnStyles: { 1: { cellWidth: 22, halign: 'center' } },
   });
 
-  // ── Gap Analysis ────────────────────────────────────────────────────────
+  // ── GAP ANALYSIS ──────────────────────────────────────────────────────────
   doc.addPage();
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Gap Analysis', margin, 20);
-  doc.setFont('helvetica', 'normal');
-  const [gapHeader, ...gapBody] = gapsRows(report);
+  y = 22;
+  y = sectionTitle('Gap Analysis', y);
+
+  const [gh, ...gb] = gapsRows(report);
   autoTable(doc, {
-    head: [gapHeader],
-    body: gapBody,
-    startY: 28,
-    styles: { fontSize: 8, cellPadding: 2 },
-    headStyles: { fillColor: [30, 30, 30] as [number, number, number] },
+    head: [gh],
+    body: gb,
+    startY: y,
+    margin: { left: margin, right: margin, top: 18, bottom: 16 },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 },
+      textColor: TEXT as [number, number, number],
+      lineColor: BORDER as [number, number, number],
+      lineWidth: 0.2,
+      overflow: 'linebreak',
+    },
+    headStyles: {
+      fillColor: DARK_NAVY as [number, number, number],
+      textColor: WHITE as [number, number, number],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+    },
+    alternateRowStyles: { fillColor: ROW_ALT as [number, number, number] },
+    columnStyles: {
+      0: { cellWidth: 30 },
+      2: { cellWidth: 18, halign: 'center' },
+      3: { cellWidth: 28 },
+    },
+    didParseCell(hookData) {
+      if (hookData.column.index === 2 && hookData.section === 'body') {
+        const sev = String(hookData.cell.raw).toLowerCase();
+        if (sev === 'high')   { hookData.cell.styles.textColor = RED as [number, number, number];   hookData.cell.styles.fillColor = RED_DIM as [number, number, number];   hookData.cell.styles.fontStyle = 'bold'; }
+        if (sev === 'medium') { hookData.cell.styles.textColor = AMBER as [number, number, number]; hookData.cell.styles.fillColor = AMBER_DIM as [number, number, number]; hookData.cell.styles.fontStyle = 'bold'; }
+        if (sev === 'low')    { hookData.cell.styles.textColor = BLUE as [number, number, number];  hookData.cell.styles.fontStyle = 'bold'; }
+      }
+    },
   });
 
-  // ── Recommended Actions ─────────────────────────────────────────────────
+  // ── RECOMMENDED ACTIONS ───────────────────────────────────────────────────
   doc.addPage();
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Recommended Actions', margin, 20);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
+  y = 22;
+  y = sectionTitle('Recommended Actions', y);
+
   narrative.recommended_actions.forEach((action, i) => {
-    const lines = doc.splitTextToSize(`• ${action}`, contentW - 4) as string[];
-    doc.text(lines, margin + 2, 32 + i * 12);
+    const lines = doc.splitTextToSize(action, contentW - 18) as string[];
+    const cardH = lines.length * 4.5 + 9;
+    if (y + cardH > pageH - 18) { doc.addPage(); y = 22; }
+
+    doc.setFillColor(244, 247, 252);
+    stroke(BORDER);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(margin, y - 3, contentW, cardH, 1.5, 1.5, 'FD');
+    fill(ACCENT);
+    doc.rect(margin, y - 3, 3.5, cardH, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    color(ACCENT);
+    doc.text((i + 1).toString().padStart(2, '0'), margin + 6.5, y + cardH / 2 - 5);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8.5);
+    color(TEXT);
+    doc.text(lines, margin + 17, y);
+    y += cardH + 4;
   });
+
+  // ── HEADERS + FOOTERS (applied post-hoc to all interior pages) ─────────────
+  const totalPgs = doc.getNumberOfPages();
+  for (let pg = 2; pg <= totalPgs; pg++) {
+    doc.setPage(pg);
+
+    // Header bar
+    fill(DARK_NAVY);
+    doc.rect(0, 0, pageW, 12, 'F');
+    fill(ACCENT);
+    doc.rect(0, 0, pageW, 1.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    color(WHITE);
+    doc.text('SECURITY ALERT ANALYSIS', margin, 8);
+    doc.setFont('helvetica', 'normal');
+    const cl = client.toUpperCase();
+    doc.text(cl, pageW - margin - doc.getTextWidth(cl), 8);
+
+    // Footer
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    color(TEXT_MUT);
+    doc.text(`Confidential — ${client}`, margin, pageH - 6);
+    const pgLabel = `${pg - 1} / ${totalPgs - 1}`;
+    doc.text(pgLabel, pageW - margin - doc.getTextWidth(pgLabel), pageH - 6);
+    stroke(BORDER);
+    doc.setLineWidth(0.3);
+    doc.line(margin, pageH - 10.5, pageW - margin, pageH - 10.5);
+  }
 
   doc.save(`${client}-full-report-${date}.pdf`);
 }

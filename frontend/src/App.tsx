@@ -5,13 +5,14 @@ import ClientSelector from './components/ClientSelector';
 import IntegrationSummary from './components/IntegrationSummary';
 import MITREHeatmap from './components/MITREHeatmap';
 import AlertInsights from './components/AlertInsights';
+import ThreatGraph from './components/ThreatGraph';
 import { analyzeClient, fetchInsights, fetchNoise } from './services/api';
-import type { AnalyzeResponse, InsightsReport } from './types';
+import type { AnalyzeResponse, InsightsReport, SimilarityResult } from './types';
 import './App.css';
 
 const VALID_LOOKBACK = [7, 14, 30, 90];
 
-type View = 'form' | 'summary' | 'mitre' | 'insights';
+type View = 'form' | 'summary' | 'mitre' | 'insights' | 'graph';
 
 const FADE_UP_TRANSITION: Transition = { duration: 0.2, ease: 'easeOut' };
 
@@ -82,7 +83,7 @@ function App() {
   };
 
   const goBack = () => {
-    if (view === 'mitre' || view === 'insights') {
+    if (view === 'mitre' || view === 'insights' || view === 'graph') {
       setView('summary');
     } else {
       setView('form');
@@ -107,9 +108,11 @@ function App() {
   const breadcrumb: { label: string }[] = view !== 'form' && clientName
     ? [
         { label: clientName },
-        ...(view === 'summary'  ? [] : [
-            { label: view === 'mitre' ? 'MITRE Coverage' : 'Alert Insights' }
-           ]),
+        ...(view === 'summary' ? [] : [{
+            label: view === 'mitre' ? 'MITRE Coverage'
+                 : view === 'insights' ? 'Alert Insights'
+                 : 'Threat Graph'
+          }]),
       ]
     : [];
 
@@ -164,6 +167,7 @@ function App() {
                 loading={loading}
                 onViewMITRE={() => setView('mitre')}
                 onViewInsights={() => setView('insights')}
+                onViewGraph={() => setView('graph')}
                 onRefresh={() => handleAnalyze(clientName, true)}
               />
             </motion.div>
@@ -188,6 +192,12 @@ function App() {
                 onReanalyze={handleReanalyze}
                 noiseLoading={noiseLoading}
               />
+            </motion.div>
+          )}
+
+          {view === 'graph' && data && (
+            <motion.div key="graph" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <ThreatGraph data={data.alert_insights} clientName={clientName} />
             </motion.div>
           )}
         </AnimatePresence>
