@@ -1,12 +1,15 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"coralogix-alert-analyzer/internal/config"
+	"coralogix-alert-analyzer/internal/store"
 )
 
 func TestHandleCorrelations_rejectsGet(t *testing.T) {
@@ -52,6 +55,28 @@ func TestHandleCorrelations_unknownClient(t *testing.T) {
 	h.HandleCorrelations(w, req)
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestMergeCorrelations_skipsCorruptRow(t *testing.T) {
+	rows := []store.CorrelationRow{
+		{
+			Provider:    "anthropic",
+			Suggestions: json.RawMessage(`[{"type":"correlation","title":"Brute Force","description":"d","involved_techniques":["T1110"],"query_skeleton":"event.action:auth*","priority":"high"}]`),
+			GeneratedAt: time.Now().Add(-2 * time.Minute),
+		},
+		{
+			Provider:    "nvidia",
+			Suggestions: json.RawMessage(`NOT VALID JSON`),
+			GeneratedAt: time.Now().Add(-1 * time.Minute),
+		},
+	}
+	merged, provider := mergeCorrelations(rows)
+	if provider != "anthropic" {
+		t.Errorf("expected provider=anthropic (last good row), got %q", provider)
+	}
+	if len(merged) != 1 {
+		t.Errorf("expected 1 merged suggestion, got %d", len(merged))
 	}
 }
 

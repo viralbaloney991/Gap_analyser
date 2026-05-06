@@ -964,12 +964,12 @@ func mergeCachedSuggestions(rows []store.SuggestionRow) ([]models.AlertSuggestio
 	priorityOrder := map[string]int{"critical": 0, "high": 1, "medium": 2, "low": 3}
 
 	for _, row := range rows {
-		latestProvider = row.Provider
 		var llmSugs []llm.Suggestion
 		if err := json.Unmarshal(row.Suggestions, &llmSugs); err != nil {
 			log.Printf("WARN [suggestions] unmarshal cached suggestions: %v", err)
 			continue
 		}
+		latestProvider = row.Provider
 		for _, s := range llmSugs {
 			key := strings.ToLower(s.AlertName)
 			existing, exists := seen[key]
@@ -1128,12 +1128,12 @@ func mergeCorrelations(rows []store.CorrelationRow) ([]models.CorrelationSuggest
 	var latestProvider string
 
 	for _, row := range rows {
-		latestProvider = row.Provider
 		var sugs []models.CorrelationSuggestion
 		if err := json.Unmarshal(row.Suggestions, &sugs); err != nil {
 			log.Printf("WARN [correlations] unmarshal cached correlations: %v", err)
 			continue
 		}
+		latestProvider = row.Provider
 		for _, s := range sugs {
 			key := strings.ToLower(s.Title)
 			existing, exists := seen[key]
