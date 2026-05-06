@@ -24,11 +24,14 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
   const [selected, setSelected]       = useState('');
   const [fetchError, setFetchError]   = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isLoading, setIsLoading]     = useState(true);
 
   useEffect(() => {
+    setIsLoading(true);
     fetchClients()
       .then(setClients)
-      .catch(() => setFetchError('Failed to load client list'));
+      .catch(() => setFetchError('Failed to load client list'))
+      .finally(() => setIsLoading(false));
   }, []);
 
   // Filter clients by search query (case-insensitive, matches name or region)
@@ -73,7 +76,7 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
           autoComplete="off"
         />
         <span className="cs-search__count">
-          {clients.length === 0 ? 'Loading...' : `${totalVisible} client${totalVisible !== 1 ? 's' : ''}`}
+          {isLoading ? 'Loading...' : `${totalVisible} client${totalVisible !== 1 ? 's' : ''}`}
         </span>
       </div>
 
@@ -83,7 +86,7 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
 
       {/* Region groups */}
       <div className="cs-content">
-        {clients.length === 0 && !fetchError && (
+        {isLoading && !fetchError && (
           <div className="cs-skeletons">
             {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="region-card region-card--skeleton skeleton" aria-hidden="true" />
