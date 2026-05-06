@@ -332,7 +332,7 @@ func (h *Handler) runInsightsBackground(
 	mitreCoverage *models.MITRECoverageResult,
 	eventCounts map[string]int,
 ) {
-	bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	bgCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	go func() {
 		defer cancel()
 
