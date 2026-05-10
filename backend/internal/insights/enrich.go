@@ -38,7 +38,7 @@ Rules:
 - Only reference techniques, tactics, and alert names present in the input — never fabricate names
 - poor_tactic_coverage: flag any tactic with pct < 25
 - weak_detection_quality: only flag techniques where weak=true in the input
-- advanced_use_cases: reason over technique type; only flag when threshold/count alerts exist but no anomaly layer
+- advanced_use_cases: flag up to 3 high-value upgrade opportunities — e.g. techniques covered only by threshold/count alerts where sequence or anomaly detection would improve precision, techniques in no_detection or weak_detection_quality that are high-value (credential access, lateral movement, exfiltration, persistence), or gaps where a multi-stage correlation across two or more covered techniques would catch an attack chain; always include the technique ID and name
 - summary: prose only (no bullet points), 2-4 sentences
 - immediate_noise_candidates: for each entry, assess whether the Lucene query targets a
   high-frequency event (common user actions, broad field matches, platform lifecycle events).

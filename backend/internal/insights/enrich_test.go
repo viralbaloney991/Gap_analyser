@@ -195,3 +195,29 @@ func TestEnrich_invalidJSON_returnsError(t *testing.T) {
 		t.Error("expected error for invalid JSON, got nil")
 	}
 }
+
+func TestParseGapCategoriesResponse_AdvancedUseCases_Populated(t *testing.T) {
+	raw := `{
+		"summary": "Baseline detection is solid.",
+		"environment_cleanup": [],
+		"no_detection": [],
+		"poor_tactic_coverage": [],
+		"weak_detection_quality": [],
+		"advanced_use_cases": [
+			"T1078 (Valid Accounts): only threshold alert exists — add anomaly baseline for off-hours access",
+			"T1021 (Remote Services): single count alert — sequence detection across auth and lateral events would improve precision"
+		],
+		"missing_source_alerts": []
+	}`
+	report := parseGapCategoriesResponse(raw)
+	if report == nil {
+		t.Fatal("expected non-nil report")
+	}
+	if len(report.GapCategories.AdvancedUseCases) != 2 {
+		t.Errorf("advanced_use_cases: want 2 items, got %d: %v",
+			len(report.GapCategories.AdvancedUseCases), report.GapCategories.AdvancedUseCases)
+	}
+	if report.GapCategories.AdvancedUseCases[0] == "" {
+		t.Error("first advanced_use_cases item must not be empty string")
+	}
+}
