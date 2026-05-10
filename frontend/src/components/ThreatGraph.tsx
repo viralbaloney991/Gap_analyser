@@ -881,6 +881,49 @@ function PostureBar({
   );
 }
 
+// ── Tactic jump-list ────────────────────────────────────────────────────
+
+function TacticJumpList({
+  tacticBands, tacticBreakdown, vp, viewH, onJump,
+}: {
+  tacticBands: BipartiteLayout['tacticBands'];
+  tacticBreakdown: Record<string, { percent: number; tactic_name: string }>;
+  vp: Vp;
+  viewH: number;
+  onJump: (bandY: number) => void;
+}) {
+  return (
+    <div className="cx-tactic-jumplist">
+      <div className="cx-tjl-header">Tactics</div>
+      {tacticBands.map(band => {
+        const cov  = tacticBreakdown[band.id];
+        const pct  = cov?.percent ?? null;
+        const bandMid = band.y * vp.k + vp.y;
+        const isActive = bandMid > 0 && bandMid < viewH;
+
+        let pillClass = 'cx-tjl-pill';
+        if (pct !== null && pct >= 60)       pillClass += ' cx-tjl-pill--green';
+        else if (pct !== null && pct >= 20)  pillClass += ' cx-tjl-pill--orange';
+        else                                  pillClass += ' cx-tjl-pill--muted';
+        if (isActive) pillClass += ' cx-tjl-pill--active';
+
+        return (
+          <button
+            key={band.id}
+            type="button"
+            className={pillClass}
+            onClick={() => onJump(band.y)}
+            title={band.name}
+          >
+            <span className="cx-tjl-name">{band.short.toUpperCase()}</span>
+            <span className="cx-tjl-pct">{pct !== null ? `${pct}%` : '—'}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Main component ──────────────────────────────────────────────────────
 
 export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitre }: Props) {
@@ -1019,6 +1062,18 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
               </div>
             ))}
           </div>
+
+          {/* Tactic jump-list */}
+          <TacticJumpList
+            tacticBands={layout.tacticBands}
+            tacticBreakdown={data.mitre_coverage.summary.tactic_breakdown}
+            vp={vp}
+            viewH={size.height}
+            onJump={bandY => setVp(v => ({
+              ...v,
+              y: -(bandY * v.k) + size.height / 2,
+            }))}
+          />
         </div>
 
         {/* Drill panel */}
