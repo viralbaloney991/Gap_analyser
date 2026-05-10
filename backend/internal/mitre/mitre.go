@@ -534,6 +534,7 @@ func AnalyzeCoverage(alerts []*models.AlertDef) *models.MITRECoverageResult {
 			Tactic:     t.Tactic,
 			AlertCount: alertCount,
 			Weak:       alertCount > 0 && !techHasScoped[t.ID],
+			AlertRules: techToAlerts[t.ID],
 		}
 	}
 

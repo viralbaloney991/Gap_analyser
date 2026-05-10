@@ -52,10 +52,11 @@ type AlertFeatures struct {
 // Weak is true when the technique is covered but all covering alerts are unscoped
 // (no DataSources and no Entities), making detection quality poor.
 type TechniqueCoverageEntry struct {
-	Name       string `json:"name"`
-	Tactic     string `json:"tactic"`
-	AlertCount int    `json:"alert_count"`
-	Weak       bool   `json:"weak,omitempty"`
+	Name       string   `json:"name"`
+	Tactic     string   `json:"tactic"`
+	AlertCount int      `json:"alert_count"`
+	Weak       bool     `json:"weak,omitempty"`
+	AlertRules []string `json:"alert_rules,omitempty"`
 }
 
 // GapCategories holds the 6-category LLM gap analysis output.
