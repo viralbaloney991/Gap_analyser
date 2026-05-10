@@ -1846,51 +1846,6 @@ html, body, #root {
 
 .cx-zoom-divider { height: 1px; background: var(--cx-border); margin: 2px 4px; }
 
-/* ---- Lookback control (canvas overlay) ---- */
-.cx-tg-lookback {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  background: var(--cx-bg-1);
-  border: 1px solid var(--cx-border);
-  border-radius: 8px;
-  padding: 6px 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  box-shadow: var(--cx-shadow);
-  font-size: 11px;
-}
-
-.cx-lb-label {
-  color: var(--cx-fg-3);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-size: 10px;
-  font-weight: 600;
-}
-
-.cx-seg {
-  display: inline-flex;
-  background: var(--cx-bg-2);
-  border: 1px solid var(--cx-border);
-  border-radius: 6px;
-  padding: 2px;
-}
-
-.cx-seg button {
-  background: transparent;
-  border: 0;
-  color: var(--cx-fg-2);
-  padding: 3px 8px;
-  font-size: 11px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: var(--cx-sans);
-}
-
-.cx-seg button.active { background: var(--cx-bg-3); color: var(--cx-fg); }
-
 /* ---- Legend (canvas overlay) ---- */
 .cx-tg-legend {
   position: absolute;

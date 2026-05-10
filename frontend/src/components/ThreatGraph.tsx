@@ -969,7 +969,6 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
   const [pick, setPick] = useState<Pick | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set());
-  const [lookback, setLookback] = useState(lookbackDays);
 
   const focusedId = pick?.data.id ?? null;
 
@@ -989,7 +988,7 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
       {/* Posture bar */}
       <PostureBar
         posture={posture}
-        lookback={lookback}
+        lookback={lookbackDays}
         severityFilter={severityFilter}
         toggleSev={toggleSev}
       />
@@ -1034,20 +1033,6 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
             <button type="button" onClick={() => setVp(v => ({ ...v, k: Math.max(0.3, v.k / 1.2) }))}>−</button>
             <div className="cx-zoom-divider" />
             <button type="button" onClick={fit}>⤢</button>
-          </div>
-
-          {/* Lookback control */}
-          <div className="cx-tg-lookback">
-            <span className="cx-lb-label">Lookback</span>
-            <div className="cx-seg">
-              {[7, 14, 30, 90].map(d => (
-                <button key={d} type="button"
-                  className={lookback === d ? 'active' : ''}
-                  onClick={() => setLookback(d)}>
-                  {d}d
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Legend */}
