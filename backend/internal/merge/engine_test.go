@@ -84,3 +84,18 @@ func TestCountAlertsByIntegration_PriorityCounts(t *testing.T) {
 		t.Errorf("expected P2=2, got %d", pc["ALERT_DEF_PRIORITY_P2"])
 	}
 }
+
+func TestCountAlertsByIntegration_EmptyPriorityFallback(t *testing.T) {
+	integrations := []monday.Integration{
+		{Name: "okta", Application: "okta", Subsystem: ""},
+	}
+	alerts := []*models.AlertDef{
+		{Name: "Okta - Unspecified", Priority: "", Features: models.AlertFeatures{DataSources: []string{"okta"}}},
+	}
+
+	result := CountAlertsByIntegration(integrations, alerts)
+	pc := result[0].PriorityCounts
+	if pc["ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED"] != 1 {
+		t.Errorf("expected P5_OR_UNSPECIFIED=1, got %d", pc["ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED"])
+	}
+}
