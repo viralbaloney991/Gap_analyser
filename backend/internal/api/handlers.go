@@ -1282,6 +1282,105 @@ func (h *Handler) HandleCorrelations(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleBuildDetection generates flow alerts for a user-selected MITRE technique chain.
+func (h *Handler) HandleBuildDetection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req models.BuildDetectionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	req.Client = strings.TrimSpace(req.Client)
+	if req.Client == "" {
+		writeError(w, http.StatusBadRequest, "missing required field: client")
+		return
+	}
+	if len(req.Techniques) < 2 {
+		writeError(w, http.StatusBadRequest, "at least 2 techniques required")
+		return
+	}
+	if _, ok := h.config.Clients[req.Client]; !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown client: %s", req.Client))
+		return
+	}
+
+	// Resolve provider — same pattern as HandleCorrelations.
+	nvidiaKey := h.config.LLM.NvidiaAPIKey
+	if h.config.LLM.NvidiaSuggestionAPIKey != "" {
+		nvidiaKey = h.config.LLM.NvidiaSuggestionAPIKey
+	}
+	var provider llm.Provider
+	var err error
+	if req.Provider != "" {
+		provider, err = llm.NewProvider(req.Provider, llm.ProviderConfig{
+			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+			ClaudeModel:     h.config.LLM.ClaudeModel,
+			NvidiaAPIKey:    nvidiaKey,
+			NvidiaModel:     h.config.LLM.NvidiaModel,
+			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
+		})
+	} else {
+		providerName := h.config.LLM.SuggestionProvider
+		if providerName == "" {
+			providerName = h.config.LLM.DefaultProvider
+		}
+		provider, err = llm.NewClassifierProvider(providerName, h.config.LLM.SuggestionModel, llm.ProviderConfig{
+			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+			ClaudeModel:     h.config.LLM.ClaudeModel,
+			NvidiaAPIKey:    nvidiaKey,
+			NvidiaModel:     h.config.LLM.NvidiaModel,
+			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
+		})
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Convert request techniques to llm.BuildTechnique.
+	techs := make([]llm.BuildTechnique, len(req.Techniques))
+	for i, t := range req.Techniques {
+		techs[i] = llm.BuildTechnique{
+			ID:          t.ID,
+			Name:        t.Name,
+			TacticID:    t.TacticID,
+			TacticName:  t.TacticName,
+			TacticOrder: t.TacticOrder,
+			Source:      t.Source,
+		}
+	}
+
+	effectiveProvider := req.Provider
+	if effectiveProvider == "" {
+		effectiveProvider = h.config.LLM.SuggestionProvider
+		if effectiveProvider == "" {
+			effectiveProvider = h.config.LLM.DefaultProvider
+		}
+	}
+
+	ctx := r.Context()
+	result, err := llm.GenerateDetection(ctx, provider, techs)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("generation failed: %v", err))
+		return
+	}
+
+	log.Printf("INFO HandleBuildDetection client=%s provider=%s techniques=%d alerts=%d",
+		req.Client, effectiveProvider, len(req.Techniques), len(result.Alerts))
+
+	result.Provider = effectiveProvider
+	writeJSON(w, http.StatusOK, result)
+}
+
 // writeJSON writes a JSON response with the given status code.
 func writeJSON(w http.ResponseWriter, status int, data any) {
 	w.Header().Set("Content-Type", "application/json")
