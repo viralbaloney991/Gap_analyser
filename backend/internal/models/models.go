@@ -282,3 +282,57 @@ type CorrelationsResponse struct {
 	Provider    string                  `json:"provider"`
 	Cached      bool                    `json:"cached"`
 }
+
+// ── Detection Builder ──────────────────────────────────────────────
+
+// BuildDetectionTechnique is a single technique in a detection chain request.
+// The frontend sends full objects (not just IDs) so the backend can build the
+// LLM prompt without needing its own copy of the MITRE catalog.
+type BuildDetectionTechnique struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	TacticID    string `json:"tactic_id"`
+	TacticName  string `json:"tactic_name"`
+	TacticOrder int    `json:"tactic_order"`
+	Source      string `json:"source"`
+}
+
+type BuildDetectionRequest struct {
+	Client     string                    `json:"client"`
+	Techniques []BuildDetectionTechnique `json:"techniques"`
+	Provider   string                    `json:"provider"`
+	Force      bool                      `json:"force"`
+}
+
+type BuildDetectionFinding struct {
+	Level   string `json:"level"`   // "info" | "warn" | "error"
+	Message string `json:"message"`
+}
+
+type BuildDetectionAlert struct {
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	TechniqueID  string `json:"techniqueId"`
+	Logic        string `json:"logic"`
+	Window       string `json:"window"`
+	WindowReason string `json:"windowReason"`
+	Source       string `json:"source"`
+	Severity     string `json:"severity"`
+}
+
+type BuildDetectionCorrelation struct {
+	Name     string `json:"name"`
+	Logic    string `json:"logic"`
+	Window   string `json:"window"`
+	Severity string `json:"severity"`
+}
+
+type BuildDetectionResponse struct {
+	Validation struct {
+		Verdict  string                  `json:"verdict"`
+		Findings []BuildDetectionFinding `json:"findings"`
+	} `json:"validation"`
+	Alerts      []BuildDetectionAlert     `json:"alerts"`
+	Correlation BuildDetectionCorrelation `json:"correlation"`
+	Provider    string                    `json:"provider"`
+}
