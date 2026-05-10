@@ -17,6 +17,34 @@ function cls(...xs: (string | false | undefined | null)[]) {
   return xs.filter(Boolean).join(' ');
 }
 
+// ── Tactic visual metadata (ported from design handoff builder-base.jsx) ─────
+
+const TACTIC_COLOR: Record<string, string> = {
+  TA0043: '#06b6d4', TA0001: '#f97316', TA0002: '#eab308', TA0003: '#f59e0b',
+  TA0004: '#fb923c', TA0005: '#a855f7', TA0006: '#ec4899', TA0007: '#3b82f6',
+  TA0008: '#6366f1', TA0009: '#14b8a6', TA0011: '#ef4444', TA0010: '#dc2626',
+  TA0040: '#b91c1c', TA0042: '#10b981',
+};
+
+const TACTIC_GLYPH: Record<string, string> = {
+  TA0043: '⌖', TA0001: '⇲', TA0002: '▶', TA0003: '⚓',
+  TA0004: '↑',  TA0005: '◈', TA0006: '⚷', TA0007: '?',
+  TA0008: '⇄',  TA0009: '◐', TA0011: '⚡', TA0010: '↗',
+  TA0040: '✸',  TA0042: '⊕',
+};
+
+// ── SVG layout constants (match handoff pixel-for-pixel) ─────────────────────
+
+const NODE_W        = 208;
+const NODE_H        = 52;
+const NODE_GAP      = 10;
+const BAND_PAD_X    = 28;
+const BAND_W        = NODE_W + BAND_PAD_X * 2; // 264
+const HEAD_H        = 60;
+const TRIGGER_W     = 132;
+const TRIGGER_X     = 16;
+const BANDS_START_X = TRIGGER_X + TRIGGER_W + 40; // 188
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -179,50 +207,179 @@ interface SourceMatrixProps {
 }
 
 function SourceMatrix({ selectedIds, onAdd, query, tactics, techniques }: SourceMatrixProps) {
-  const grouped = tactics.map(tac => ({
-    ...tac,
-    techs: techniques.filter(t =>
-      t.tactic === tac.id &&
-      (!query ||
-        t.id.toLowerCase().includes(query.toLowerCase()) ||
-        t.name.toLowerCase().includes(query.toLowerCase()))
-    ),
-  })).filter(tac => tac.techs.length > 0);
+  // Fast id→technique lookup
+  const techMap = useMemo(() => new Map(techniques.map(t => [t.id, t])), [techniques]);
 
-  const handleDragStart = (e: React.DragEvent, tech: CatalogTechnique) => {
+  // Filter + group by tactic
+  const grouped = useMemo(() =>
+    tactics
+      .map(tac => ({
+        ...tac,
+        techs: techniques.filter(t =>
+          t.tactic === tac.id &&
+          (!query ||
+            t.id.toLowerCase().includes(query.toLowerCase()) ||
+            t.name.toLowerCase().includes(query.toLowerCase()))
+        ),
+      }))
+      .filter(tac => tac.techs.length > 0),
+    [tactics, techniques, query],
+  );
+
+  // Compute SVG canvas dimensions and node positions
+  const { positions, bands, totalW, totalH } = useMemo(() => {
+    const tallest = grouped.reduce((m, g) => Math.max(m, g.techs.length), 0);
+    const h = HEAD_H + tallest * (NODE_H + NODE_GAP) + 40;
+    const w = BANDS_START_X + grouped.length * BAND_W + 40;
+
+    const pos: Record<string, { x: number; y: number }> = {};
+    const bds: Array<typeof grouped[0] & { x: number; w: number }> = [];
+
+    grouped.forEach((g, i) => {
+      const x = BANDS_START_X + i * BAND_W;
+      bds.push({ ...g, x, w: BAND_W });
+      g.techs.forEach((t, j) => {
+        pos[t.id] = { x: x + BAND_PAD_X, y: HEAD_H + j * (NODE_H + NODE_GAP) };
+      });
+    });
+
+    return { positions: pos, bands: bds, totalW: w, totalH: h };
+  }, [grouped]);
+
+  // Selected nodes sorted by kill-chain stage
+  const selOrdered = useMemo(() =>
+    techniques
+      .filter(t => selectedIds.has(t.id))
+      .sort((a, b) => a.tacticOrder - b.tacticOrder),
+    [techniques, selectedIds],
+  );
+
+  // Step-curve path between two points (orthogonal with rounded corners)
+  const stepPath = useCallback((ax: number, ay: number, bx: number, by: number): string => {
+    const mid = ax + Math.max(40, (bx - ax) / 2);
+    const r = 12;
+    if (Math.abs(by - ay) < 2) return `M${ax} ${ay}L${bx} ${by}`;
+    const dir: 1 | -1 = by > ay ? 1 : -1;
+    return `M${ax} ${ay}H${mid - r}Q${mid} ${ay} ${mid} ${ay + r * dir}V${by - r * dir}Q${mid} ${by} ${mid + r} ${by}H${bx}`;
+  }, []);
+
+  // Connection edges between selected nodes
+  const edges = useMemo(() => {
+    const result: Array<{ d: string; color: string; tacticId: string }> = [];
+    const trigY = HEAD_H + 12 + NODE_H / 2;
+
+    if (selOrdered.length > 0) {
+      const first = positions[selOrdered[0].id];
+      if (first) {
+        const c = TACTIC_COLOR[selOrdered[0].tactic] ?? '#6366f1';
+        result.push({ d: stepPath(TRIGGER_X + TRIGGER_W, trigY, first.x, first.y + NODE_H / 2), color: c, tacticId: selOrdered[0].tactic });
+      }
+    }
+    for (let i = 0; i < selOrdered.length - 1; i++) {
+      const a = positions[selOrdered[i].id];
+      const b = positions[selOrdered[i + 1].id];
+      if (!a || !b) continue;
+      const c = TACTIC_COLOR[selOrdered[i + 1].tactic] ?? '#6366f1';
+      result.push({ d: stepPath(a.x + NODE_W, a.y + NODE_H / 2, b.x, b.y + NODE_H / 2), color: c, tacticId: selOrdered[i + 1].tactic });
+    }
+    return result;
+  }, [selOrdered, positions, stepPath]);
+
+  const handleDragStart = useCallback((e: React.DragEvent, tech: CatalogTechnique) => {
     e.dataTransfer.setData('text/plain', tech.id);
     e.dataTransfer.effectAllowed = 'copy';
-  };
+  }, []);
 
   return (
-    <div className="src-matrix">
-      {grouped.map(tac => (
-        <div key={tac.id} className="src-col">
-          <div className="src-col-head">
-            <span className="src-col-name">{tac.short}</span>
-            <span className={cls('src-col-count', 'mono')}>{tac.techs.length}</span>
+    <div className="src-graph">
+      <div className="src-graph-grid" />
+      <svg
+        className="src-graph-svg"
+        width={totalW}
+        height={Math.max(totalH, 400)}
+      >
+        <defs>
+          {tactics.map(tac => {
+            const c = TACTIC_COLOR[tac.id] ?? '#6366f1';
+            return (
+              <marker key={tac.id} id={`arrow-${tac.id}`}
+                      viewBox="0 0 10 10" refX="8" refY="5"
+                      markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" fill={c} />
+              </marker>
+            );
+          })}
+        </defs>
+
+        {/* Tactic column bands */}
+        {bands.map(b => {
+          const c = TACTIC_COLOR[b.id] ?? '#6366f1';
+          return (
+            <g key={b.id}>
+              <rect x={b.x + 8} y={HEAD_H - 12} width={b.w - 16} height={totalH - HEAD_H - 8}
+                    fill="rgba(255,255,255,0.012)" stroke={c} strokeOpacity={0.18}
+                    strokeDasharray="3 5" rx={8} />
+              <circle cx={b.x + b.w / 2 - 38} cy={28} r={4} fill={c} />
+              <text x={b.x + b.w / 2 - 28} y={32} fill="#a3acc0" fontSize={11}
+                    fontFamily="var(--cx-sans,'Inter',sans-serif)"
+                    fontWeight="700" letterSpacing="1">
+                {b.short.toUpperCase()}
+              </text>
+              <text x={b.x + b.w / 2 + 52} y={32} fill="#6b7388" fontSize={10}
+                    fontFamily="var(--font-mono,'IBM Plex Mono',monospace)">
+                {b.techs.length}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Trigger anchor on far left */}
+        <foreignObject x={TRIGGER_X} y={HEAD_H + 12} width={TRIGGER_W} height={NODE_H}>
+          <div className="sg-trigger">
+            <div className="sg-trigger-icon">▶</div>
+            <div className="sg-trigger-body">
+              <div className="sg-trigger-eyebrow">TRIGGER</div>
+              <div className="sg-trigger-title">Telemetry stream</div>
+            </div>
           </div>
-          <div className="src-col-body">
-            {tac.techs.map(t => {
-              const used = selectedIds.has(t.id);
-              return (
-                <div
-                  key={t.id}
-                  className={cls('tech-card', used && 'used')}
-                  draggable={!used}
-                  onDragStart={e => handleDragStart(e, t)}
-                  onDoubleClick={() => !used && onAdd(t)}
-                >
-                  <div className="tc-id mono">{t.id}</div>
-                  <div className="tc-name">{t.name}</div>
-                  <div className="tc-source">{t.source}</div>
-                  {used && <div className="tc-check">✓</div>}
+        </foreignObject>
+
+        {/* Kill-chain connection lines */}
+        <g>
+          {edges.map((edge, i) => (
+            <path key={i} d={edge.d} fill="none"
+                  stroke={edge.color} strokeWidth={2} opacity={0.7}
+                  markerEnd={`url(#arrow-${edge.tacticId})`} />
+          ))}
+        </g>
+
+        {/* Technique node cards */}
+        {Object.entries(positions).map(([id, p]) => {
+          const t = techMap.get(id);
+          if (!t) return null;
+          const used  = selectedIds.has(id);
+          const c     = TACTIC_COLOR[t.tactic] ?? '#6366f1';
+          const glyph = TACTIC_GLYPH[t.tactic]  ?? '◆';
+          return (
+            <foreignObject key={id} x={p.x} y={p.y} width={NODE_W} height={NODE_H}>
+              <div
+                className={cls('sg-node', used && 'used')}
+                draggable={!used}
+                onDragStart={e => handleDragStart(e, t)}
+                onDoubleClick={() => !used && onAdd(t)}
+                style={{ '--node-c': c } as React.CSSProperties}
+              >
+                <div className="sg-node-icon" style={{ background: c }}>{glyph}</div>
+                <div className="sg-node-body">
+                  <div className="sg-node-id mono">{t.id}</div>
+                  <div className="sg-node-name">{t.name}</div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+                {used && <div className="sg-node-check">✓</div>}
+              </div>
+            </foreignObject>
+          );
+        })}
+      </svg>
     </div>
   );
 }
