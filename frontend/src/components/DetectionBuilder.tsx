@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback, Fragment, useRef } from 'react';
 import { MITRE_TACTICS, MITRE_TECHNIQUES, mockGenerate } from '../data/mitre-catalog';
 import type { MITRETechnique } from '../data/mitre-catalog';
-import { buildDetection } from '../services/api';
-import type { GenerationResult, FlowAlert } from '../types';
+import { buildDetection, fetchMitreCatalog } from '../services/api';
+import type { GenerationResult, FlowAlert, MitreCatalog } from '../types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -30,6 +30,11 @@ export default function DetectionBuilder({ clientName }: Props) {
   const [query, setQuery]             = useState('');
   const [generating, setGenerating]   = useState(false);
   const [result, setResult]           = useState<GenerationResult | null>(null);
+  const [catalog, setCatalog]         = useState<MitreCatalog | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+
+  const tactics    = catalog?.tactics    ?? MITRE_TACTICS.map(t => ({ id: t.id, name: t.name, short: t.short, order: t.order }));
+  const techniques = catalog?.techniques ?? MITRE_TECHNIQUES.map(t => ({ id: t.id, name: t.name, tactic: t.tactic, tacticName: t.tacticName, tacticOrder: t.tacticOrder, source: t.source }));
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -37,12 +42,20 @@ export default function DetectionBuilder({ clientName }: Props) {
     return () => { mountedRef.current = false; };
   }, []);
 
+  // Fetch full MITRE ATT&CK catalog; fall back to static on error.
+  useEffect(() => {
+    setCatalogLoading(true);
+    fetchMitreCatalog()
+      .then(data => { if (mountedRef.current) { setCatalog(data); setCatalogLoading(false); } })
+      .catch(() => { if (mountedRef.current) setCatalogLoading(false); });
+  }, []);
+
   const selected = useMemo(
-    () => MITRE_TECHNIQUES.filter(t => selectedIds.has(t.id)),
-    [selectedIds],
+    () => techniques.filter(t => selectedIds.has(t.id)),
+    [selectedIds, techniques],
   );
 
-  const addTech = useCallback((t: MITRETechnique) => {
+  const addTech = useCallback((t: { id: string; name: string; tactic: string; tacticName: string; tacticOrder: number; source: string }) => {
     setSelectedIds(s => { const n = new Set(s); n.add(t.id); return n; });
   }, []);
 
@@ -59,12 +72,12 @@ export default function DetectionBuilder({ clientName }: Props) {
   useEffect(() => {
     const onDrop = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
-      const t = MITRE_TECHNIQUES.find(x => x.id === id);
+      const t = techniques.find(x => x.id === id);
       if (t) addTech(t);
     };
     window.addEventListener('basket-drop', onDrop);
     return () => window.removeEventListener('basket-drop', onDrop);
-  }, [addTech]);
+  }, [addTech, techniques]);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -115,24 +128,31 @@ export default function DetectionBuilder({ clientName }: Props) {
       </div>
 
       <div className="builder-body">
-        {/* Left: source matrix */}
+        {/* Left: source matrix + basket (below, matching handoff layout) */}
         <div className="builder-source">
           <div className="bs-head">
             <span className="bs-title">MITRE ATT&amp;CK Techniques</span>
-            <span className="bs-hint">Drag to chain · double-click to add</span>
+            <span className="bs-hint">
+              {catalogLoading
+                ? <span className="catalog-loading">⟳ Loading full catalog…</span>
+                : catalog
+                  ? <span className="catalog-badge">{techniques.length} techniques · Full ATT&amp;CK</span>
+                  : 'Drag to chain · double-click to add'}
+            </span>
           </div>
-          <SourceMatrix selectedIds={selectedIds} onAdd={addTech} query={query} />
-        </div>
-
-        {/* Right: basket + generated panel */}
-        <div className="builder-right">
+          <SourceMatrix selectedIds={selectedIds} onAdd={addTech} query={query} tactics={tactics} techniques={techniques} />
           <Basket
             selected={selected}
+            tactics={tactics}
             onRemove={removeTech}
             onClear={clearAll}
             onGenerate={handleGenerate}
             generating={generating}
           />
+        </div>
+
+        {/* Right: generated panel only */}
+        <div className="builder-right">
           <GeneratedPanel
             result={result}
             generating={generating}
@@ -147,16 +167,21 @@ export default function DetectionBuilder({ clientName }: Props) {
 
 // ── SourceMatrix ─────────────────────────────────────────────────────────────
 
+type CatalogTechnique = { id: string; name: string; tactic: string; tacticName: string; tacticOrder: number; source: string };
+type CatalogTactic    = { id: string; name: string; short: string; order: number };
+
 interface SourceMatrixProps {
   selectedIds: Set<string>;
-  onAdd: (t: MITRETechnique) => void;
+  onAdd: (t: CatalogTechnique) => void;
   query: string;
+  tactics: CatalogTactic[];
+  techniques: CatalogTechnique[];
 }
 
-function SourceMatrix({ selectedIds, onAdd, query }: SourceMatrixProps) {
-  const grouped = MITRE_TACTICS.map(tac => ({
+function SourceMatrix({ selectedIds, onAdd, query, tactics, techniques }: SourceMatrixProps) {
+  const grouped = tactics.map(tac => ({
     ...tac,
-    techs: MITRE_TECHNIQUES.filter(t =>
+    techs: techniques.filter(t =>
       t.tactic === tac.id &&
       (!query ||
         t.id.toLowerCase().includes(query.toLowerCase()) ||
@@ -164,7 +189,7 @@ function SourceMatrix({ selectedIds, onAdd, query }: SourceMatrixProps) {
     ),
   })).filter(tac => tac.techs.length > 0);
 
-  const handleDragStart = (e: React.DragEvent, tech: MITRETechnique) => {
+  const handleDragStart = (e: React.DragEvent, tech: CatalogTechnique) => {
     e.dataTransfer.setData('text/plain', tech.id);
     e.dataTransfer.effectAllowed = 'copy';
   };
@@ -206,23 +231,24 @@ function SourceMatrix({ selectedIds, onAdd, query }: SourceMatrixProps) {
 
 interface BasketProps {
   selected: MITRETechnique[];
+  tactics: CatalogTactic[];
   onRemove: (id: string) => void;
   onClear: () => void;
   onGenerate: () => void;
   generating: boolean;
 }
 
-function Basket({ selected, onRemove, onClear, onGenerate, generating }: BasketProps) {
+function Basket({ selected, tactics, onRemove, onClear, onGenerate, generating }: BasketProps) {
   const [dragOver, setDragOver] = useState(false);
 
   const ordered = [...selected].sort((a, b) => a.tacticOrder - b.tacticOrder);
 
   // Group by tactic.
-  const tacticGroups: Array<{ tactic: typeof MITRE_TACTICS[0]; techs: MITRETechnique[] }> = [];
+  const tacticGroups: Array<{ tactic: CatalogTactic; techs: MITRETechnique[] }> = [];
   const seen = new Map<string, number>();
   for (const t of ordered) {
     if (!seen.has(t.tactic)) {
-      const tac = MITRE_TACTICS.find(x => x.id === t.tactic)!;
+      const tac = tactics.find(x => x.id === t.tactic) ?? { id: t.tactic, name: t.tactic, short: t.tactic, order: t.tacticOrder };
       seen.set(t.tactic, tacticGroups.length);
       tacticGroups.push({ tactic: tac, techs: [] });
     }
