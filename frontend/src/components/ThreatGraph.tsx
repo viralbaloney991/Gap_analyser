@@ -26,7 +26,6 @@ interface AlertRule {
   tids: string[];
   count: number;
   noisePct: number;
-  fpRate: number;
   lastSeenHrs: number;
   trend: number;
   owner: string;
@@ -54,7 +53,6 @@ interface Posture {
   critical: number; high: number; medium: number; low: number;
   techniquesCovered: number; techniquesTotal: number;
   strong: number; partial: number; gaps: number;
-  avgFpRate: number;
 }
 
 interface BipartiteLayout {
@@ -167,7 +165,6 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
         tids: [...(prefixToTids.get(int.name.toLowerCase()) ?? [])],
         count: int.alert_count,
         noisePct,
-        fpRate: Math.min(95, noisePct + deterministicN(int.name, 10, 0, 15)),
         lastSeenHrs: deterministicN(int.name, 1, 0, 72),
         trend: (deterministicN(int.name, 2, 0, 200) - 100) / 100,
         owner: ['SOC Tier 1', 'SOC Tier 2', 'IR Team', 'Cloud Sec'][deterministicN(int.name, 3, 0, 3)],
@@ -233,10 +230,6 @@ function buildPosture(data: AnalyzeResponse, alerts: AlertRule[]): Posture {
   const covered = s.covered_techniques;
   const total   = Math.max(s.total_techniques, covered);
 
-  const avgFpRate = alerts.length
-    ? Math.round(alerts.reduce((s, a) => s + a.fpRate, 0) / alerts.length)
-    : 0;
-
   return {
     totalAlerts: stats.total_alerts,
     critical, high, medium, low,
@@ -244,7 +237,6 @@ function buildPosture(data: AnalyzeResponse, alerts: AlertRule[]): Posture {
     techniquesTotal: total,
     strong, partial,
     gaps: Math.max(0, total - covered),
-    avgFpRate,
   };
 }
 
@@ -509,7 +501,6 @@ function AlertDrillPanel({
         { label: 'Volume (30d)', value: fmtNum(a.count), sub: trendStr,
           accent: trendUp ? 'crit' : trendDown ? 'ok' : undefined },
         { label: 'Assets',        value: String(a.assets),      sub: 'affected' },
-        { label: 'False positive', value: `${a.fpRate}%`,        accent: a.fpRate > 50 ? 'warn' : undefined },
         { label: 'Noise share',   value: `${a.noisePct}%` },
         { label: 'MTTD',          value: `${a.mttd}m`,          sub: 'detect' },
         { label: 'MTTR',          value: `${a.mttr}m`,          sub: 'respond' },
@@ -861,9 +852,6 @@ function PostureBar({
         </span>
         <span className="cx-pb-stat cx-pb-stat-warn">
           <span className="cx-mono">{posture.gaps}</span> gaps
-        </span>
-        <span className="cx-pb-stat">
-          <span className="cx-mono">{posture.avgFpRate}%</span> avg FP
         </span>
       </div>
 
