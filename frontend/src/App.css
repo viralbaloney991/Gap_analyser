@@ -2164,7 +2164,7 @@ html, body, #root {
 .cx-tactic-jumplist {
   position: absolute;
   top: 16px;
-  left: 208px;
+  left: calc(16px + 180px + 12px); /* legend inset + legend max-width + gap */
   width: 96px;
   max-height: calc(100% - 32px);
   overflow-y: auto;
@@ -2228,4 +2228,4 @@ html, body, #root {
 
 .cx-tjl-pill--muted  { opacity: .65; }
 
-.cx-tjl-pill--active { outline: 1px solid currentColor; outline-offset: 1px; }
+.cx-tjl-pill--active { box-shadow: 0 0 0 1px var(--cx-fg-2); }

@@ -2,7 +2,7 @@ import {
   useState, useEffect, useRef, useMemo,
   useLayoutEffect, useCallback, type RefObject,
 } from 'react';
-import type { AnalyzeResponse } from '../types';
+import type { AnalyzeResponse, TacticCoverage } from '../types';
 
 // ── Prop types ──────────────────────────────────────────────────────────
 
@@ -887,7 +887,7 @@ function TacticJumpList({
   tacticBands, tacticBreakdown, vp, viewH, onJump,
 }: {
   tacticBands: BipartiteLayout['tacticBands'];
-  tacticBreakdown: Record<string, { percent: number; tactic_name: string }>;
+  tacticBreakdown: Record<string, TacticCoverage>;
   vp: Vp;
   viewH: number;
   onJump: (bandY: number) => void;
