@@ -33,6 +33,7 @@ interface AlertRule {
   mttd: number;
   mttr: number;
   assets: number;
+  priorityCounts: Record<string, number>;
 }
 
 interface TechNode {
@@ -115,10 +116,10 @@ function deterministicN(seed: string, offset: number, min: number, max: number):
   return min + (Math.abs(h) % (max - min + 1));
 }
 
-function countToSev(count: number): Severity {
-  if (count > 200) return 'critical';
-  if (count > 50)  return 'high';
-  if (count > 10)  return 'medium';
+function dominantSeverity(pc: Record<string, number>): Severity {
+  if ((pc['ALERT_DEF_PRIORITY_P1'] ?? 0) > 0) return 'critical';
+  if ((pc['ALERT_DEF_PRIORITY_P2'] ?? 0) > 0) return 'high';
+  if ((pc['ALERT_DEF_PRIORITY_P3'] ?? 0) > 0) return 'medium';
   return 'low';
 }
 
@@ -162,7 +163,7 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
         id: `int-${i}`,
         name: int.name,
         source: deriveSource(int.application, int.subsystem),
-        severity: countToSev(int.alert_count),
+        severity: dominantSeverity(int.priority_counts ?? {}),
         tids: [...(prefixToTids.get(int.name.toLowerCase()) ?? [])],
         count: int.alert_count,
         noisePct,
@@ -173,6 +174,7 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
         mttd: deterministicN(int.name, 4, 2, 30),
         mttr: deterministicN(int.name, 5, 15, 240),
         assets: deterministicN(int.name, 6, 1, 18),
+        priorityCounts: int.priority_counts ?? {},
       };
     });
 }
@@ -218,10 +220,11 @@ function buildPosture(data: AnalyzeResponse, alerts: AlertRule[]): Posture {
 
   let critical = 0, high = 0, medium = 0, low = 0;
   alerts.forEach(a => {
-    if (a.severity === 'critical') critical += a.count;
-    else if (a.severity === 'high') high += a.count;
-    else if (a.severity === 'medium') medium += a.count;
-    else low += a.count;
+    const pc = a.priorityCounts;
+    critical += pc['ALERT_DEF_PRIORITY_P1'] ?? 0;
+    high     += pc['ALERT_DEF_PRIORITY_P2'] ?? 0;
+    medium   += pc['ALERT_DEF_PRIORITY_P3'] ?? 0;
+    low      += (pc['ALERT_DEF_PRIORITY_P4'] ?? 0) + (pc['ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED'] ?? 0);
   });
 
   const navTechs = mitre_coverage.navigator_layer.techniques;

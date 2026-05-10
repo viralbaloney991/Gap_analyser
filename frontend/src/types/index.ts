@@ -8,6 +8,7 @@ export interface IntegrationInfo {
   application: string;
   subsystem: string;
   alert_count: number;
+  priority_counts?: Record<string, number>;
 }
 
 export interface AnalysisStats {
