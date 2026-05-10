@@ -56,3 +56,31 @@ func TestCountAlertsByIntegration_noAlerts(t *testing.T) {
 		t.Errorf("want VendorCoveredCount=0, got %d", result[0].VendorCoveredCount)
 	}
 }
+
+func TestCountAlertsByIntegration_PriorityCounts(t *testing.T) {
+	integrations := []monday.Integration{
+		{Name: "okta", Application: "okta", Subsystem: ""},
+	}
+	alerts := []*models.AlertDef{
+		{Name: "Okta - P1 Alert", Priority: "ALERT_DEF_PRIORITY_P1", Features: models.AlertFeatures{DataSources: []string{"okta"}}},
+		{Name: "Okta - P2 Alert", Priority: "ALERT_DEF_PRIORITY_P2", Features: models.AlertFeatures{DataSources: []string{"okta"}}},
+		{Name: "Okta - P2 Alert 2", Priority: "ALERT_DEF_PRIORITY_P2", Features: models.AlertFeatures{DataSources: []string{"okta"}}},
+		{Name: "Unrelated Alert", Priority: "ALERT_DEF_PRIORITY_P1", Features: models.AlertFeatures{DataSources: []string{"aws"}}},
+	}
+
+	result := CountAlertsByIntegration(integrations, alerts)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 integration, got %d", len(result))
+	}
+	pc := result[0].PriorityCounts
+	if pc == nil {
+		t.Fatal("PriorityCounts is nil")
+	}
+	if pc["ALERT_DEF_PRIORITY_P1"] != 1 {
+		t.Errorf("expected P1=1, got %d", pc["ALERT_DEF_PRIORITY_P1"])
+	}
+	if pc["ALERT_DEF_PRIORITY_P2"] != 2 {
+		t.Errorf("expected P2=2, got %d", pc["ALERT_DEF_PRIORITY_P2"])
+	}
+}

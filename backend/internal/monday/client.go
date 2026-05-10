@@ -20,12 +20,13 @@ type Client struct {
 
 // Integration represents a single onboarded log source from Monday.
 type Integration struct {
-	Name               string `json:"name"`
-	Application        string `json:"application"`
-	Subsystem          string `json:"subsystem"`
-	Status             string `json:"status"`
-	AlertCount         int    `json:"alert_count"`
-	VendorCoveredCount int    `json:"vendor_covered_count,omitempty"`
+	Name               string         `json:"name"`
+	Application        string         `json:"application"`
+	Subsystem          string         `json:"subsystem"`
+	Status             string         `json:"status"`
+	AlertCount         int            `json:"alert_count"`
+	VendorCoveredCount int            `json:"vendor_covered_count,omitempty"`
+	PriorityCounts     map[string]int `json:"priority_counts,omitempty"`
 }
 
 // Group represents a Monday.com board group.

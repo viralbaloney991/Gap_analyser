@@ -228,6 +228,7 @@ func (h *Handler) HandleAnalyze(w http.ResponseWriter, r *http.Request) {
 			Subsystem:          m.Subsystem,
 			AlertCount:         m.AlertCount,
 			VendorCoveredCount: m.VendorCoveredCount,
+			PriorityCounts:     m.PriorityCounts,
 		}
 		if m.AlertCount > 0 {
 			withAlerts++

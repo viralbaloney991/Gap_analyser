@@ -20,16 +20,23 @@ func CountAlertsByIntegration(integrations []monday.Integration, alerts []*model
 
 		count := 0
 		vendorCount := 0
+		priorityCounts := make(map[string]int)
 		for _, alert := range alerts {
 			if alertMatchesIntegration(alert, apps, subs, integName) {
 				count++
 				if alert.Features.VendorCovered {
 					vendorCount++
 				}
+				key := alert.Priority
+				if key == "" {
+					key = "ALERT_DEF_PRIORITY_P5_OR_UNSPECIFIED"
+				}
+				priorityCounts[key]++
 			}
 		}
 		result[i].AlertCount = count
 		result[i].VendorCoveredCount = vendorCount
+		result[i].PriorityCounts = priorityCounts
 	}
 
 	return result
