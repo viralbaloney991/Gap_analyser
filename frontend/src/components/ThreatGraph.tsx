@@ -138,12 +138,16 @@ function deriveSource(app: string, sub: string): string {
 function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
   const techCov = data.mitre_coverage.technique_coverage ?? {};
 
-  // Invert technique_coverage: alertName → Set<techniqueID>
-  const alertToTids = new Map<string, Set<string>>();
+  // Invert technique_coverage: integration prefix → Set<techniqueID>
+  // Alert rule names follow "Vendor Name - Description" convention, so we extract
+  // the prefix before the first " - " to match against integration names.
+  const prefixToTids = new Map<string, Set<string>>();
   for (const [tid, entry] of Object.entries(techCov)) {
     for (const name of entry.alert_rules ?? []) {
-      if (!alertToTids.has(name)) alertToTids.set(name, new Set());
-      alertToTids.get(name)!.add(tid);
+      const dashIdx = name.indexOf(' - ');
+      const prefix = (dashIdx !== -1 ? name.slice(0, dashIdx) : name).toLowerCase();
+      if (!prefixToTids.has(prefix)) prefixToTids.set(prefix, new Set());
+      prefixToTids.get(prefix)!.add(tid);
     }
   }
 
@@ -159,7 +163,7 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
         name: int.name,
         source: deriveSource(int.application, int.subsystem),
         severity: countToSev(int.alert_count),
-        tids: [...(alertToTids.get(int.name) ?? [])],
+        tids: [...(prefixToTids.get(int.name.toLowerCase()) ?? [])],
         count: int.alert_count,
         noisePct,
         fpRate: Math.min(95, noisePct + deterministicN(int.name, 10, 0, 15)),
