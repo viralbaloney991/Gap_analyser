@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useMemo, useCallback, Fragment, useRef } from 'react';
 import { MITRE_TACTICS, MITRE_TECHNIQUES, mockGenerate } from '../data/mitre-catalog';
 import type { MITRETechnique } from '../data/mitre-catalog';
 import { buildDetection } from '../services/api';
@@ -30,6 +30,12 @@ export default function DetectionBuilder({ clientName }: Props) {
   const [query, setQuery]             = useState('');
   const [generating, setGenerating]   = useState(false);
   const [result, setResult]           = useState<GenerationResult | null>(null);
+
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const selected = useMemo(
     () => MITRE_TECHNIQUES.filter(t => selectedIds.has(t.id)),
@@ -79,13 +85,15 @@ export default function DetectionBuilder({ clientName }: Props) {
 
     // Ensure loading state is perceptible (≥600ms) matching handoff spec.
     setTimeout(() => {
-      setResult(out);
-      setGenerating(false);
+      if (mountedRef.current) {
+        setResult(out);
+        setGenerating(false);
+      }
     }, 600);
   };
 
   return (
-    <div className="cx-app">
+    <div className="db-root">
       {/* Page intro */}
       <div className="page-intro">
         <div>
@@ -226,7 +234,11 @@ function Basket({ selected, onRemove, onClear, onGenerate, generating }: BasketP
     e.dataTransfer.dropEffect = 'copy';
     setDragOver(true);
   };
-  const handleDragLeave = () => setDragOver(false);
+  const handleDragLeave = (e: React.DragEvent) => {
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setDragOver(false);
+    }
+  };
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
@@ -405,17 +417,17 @@ function GeneratedPanel({ result, generating, onClose, onRegenerate }: Generated
 
           {/* Correlation rule */}
           <div className="gen-section-title">Correlation rule</div>
-          <div className="corr-card">
-            <div className="corr-head">
-              <div className="corr-name">{result.correlation.name}</div>
+          <div className="db-corr-card">
+            <div className="db-corr-head">
+              <div className="db-corr-name">{result.correlation.name}</div>
               <div className={`ac-sev ac-sev-${result.correlation.severity}`}>
                 {result.correlation.severity}
               </div>
             </div>
-            <div className="corr-logic mono">{result.correlation.logic}</div>
-            <div className="corr-window">
-              <span className="cw-label">Global window</span>
-              <span className="cw-val mono">{result.correlation.window}</span>
+            <div className="db-corr-logic mono">{result.correlation.logic}</div>
+            <div className="db-corr-window">
+              <span className="db-cw-label">Global window</span>
+              <span className="db-cw-val mono">{result.correlation.window}</span>
             </div>
           </div>
 

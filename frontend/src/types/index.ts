@@ -232,4 +232,5 @@ export interface GenerationResult {
   };
   alerts: FlowAlert[];
   correlation: CorrelationRule;
+  provider?: string;
 }

@@ -1304,6 +1304,10 @@ func (h *Handler) HandleBuildDetection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "at least 2 techniques required")
 		return
 	}
+	if len(req.Techniques) > 20 {
+		writeError(w, http.StatusBadRequest, "at most 20 techniques allowed per chain")
+		return
+	}
 	if _, ok := h.config.Clients[req.Client]; !ok {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown client: %s", req.Client))
 		return

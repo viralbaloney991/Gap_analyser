@@ -2197,6 +2197,12 @@ html, body, #root {
   --db-accent-2: #818cf8;
 }
 
+/* Builder root — ensures flex layout participates in App.tsx flex chain */
+.db-root { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+
+/* Monospace utility for IDs, step numbers, window values */
+.mono { font-family: var(--font-mono, 'IBM Plex Mono', 'JetBrains Mono', monospace); }
+
 /* Page intro */
 .page-intro {
   background: var(--cx-bg-1, #10141d);
@@ -2324,22 +2330,22 @@ html, body, #root {
 .basket-count   { color: var(--db-accent-2); font-weight: 600; }
 .basket-actions { display: flex; gap: 6px; }
 
-/* Buttons */
-.btn {
+/* Buttons — scoped to builder root to avoid cascade conflict with global .btn */
+.db-root .btn {
   background: var(--cx-bg-2, #161b27); border: 1px solid var(--cx-border, #232a3c);
   padding: 7px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
   font-family: inherit; display: inline-flex; align-items: center; gap: 6px;
   transition: all 100ms; color: var(--cx-fg, #e8ebf3);
 }
-.btn:hover:not(:disabled) { background: var(--cx-bg-3, #1d2333); border-color: var(--cx-border-strong, #2c3447); }
-.btn:disabled             { opacity: 0.4; cursor: not-allowed; }
-.btn-primary              { background: var(--db-accent); border-color: var(--db-accent); color: white; }
-.btn-primary:hover:not(:disabled) { background: var(--db-accent-2); border-color: var(--db-accent-2); }
-.btn-ghost                { background: transparent; border-color: transparent; color: var(--cx-fg-3, #6b7388); }
-.btn-ghost:hover:not(:disabled)  { background: var(--cx-bg-2, #161b27); color: var(--cx-fg, #e8ebf3); border-color: var(--cx-border, #232a3c); }
-.btn-sm    { padding: 5px 10px; font-size: 11px; }
-.btn .arrow { transition: transform 150ms; }
-.btn:hover .arrow { transform: translateX(2px); }
+.db-root .btn:hover:not(:disabled) { background: var(--cx-bg-3, #1d2333); border-color: var(--cx-border-strong, #2c3447); }
+.db-root .btn:disabled             { opacity: 0.4; cursor: not-allowed; }
+.db-root .btn-primary              { background: var(--db-accent); border-color: var(--db-accent); color: white; }
+.db-root .btn-primary:hover:not(:disabled) { background: var(--db-accent-2); border-color: var(--db-accent-2); }
+.db-root .btn-ghost                { background: transparent; border-color: transparent; color: var(--cx-fg-3, #6b7388); }
+.db-root .btn-ghost:hover:not(:disabled)  { background: var(--cx-bg-2, #161b27); color: var(--cx-fg, #e8ebf3); border-color: var(--cx-border, #232a3c); }
+.db-root .btn-sm    { padding: 5px 10px; font-size: 11px; }
+.db-root .btn .arrow { transition: transform 150ms; }
+.db-root .btn:hover .arrow { transform: translateX(2px); }
 
 /* Spinner */
 .spin {
@@ -2494,24 +2500,24 @@ html, body, #root {
 .awr-label        { color: var(--cx-fg-2, #a3acc0); font-weight: 600; }
 
 /* Correlation card */
-.corr-card {
+.db-corr-card {
   background: linear-gradient(180deg, rgba(99,102,241,0.06), rgba(99,102,241,0.02));
   border: 1px solid rgba(99,102,241,0.3); border-radius: 8px;
   padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
 }
-.corr-head   { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-.corr-name   { font-size: 13px; font-weight: 500; line-height: 1.3; }
-.corr-logic  {
+.db-corr-head   { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.db-corr-name   { font-size: 13px; font-weight: 500; line-height: 1.3; }
+.db-corr-logic  {
   font-size: 11px; color: var(--cx-fg-2, #a3acc0); line-height: 1.5;
   background: var(--cx-bg-1, #10141d); border: 1px solid var(--cx-border, #232a3c);
   padding: 7px 10px; border-radius: 5px; word-break: break-word;
 }
-.corr-window { display: flex; align-items: center; gap: 10px; }
-.cw-label {
+.db-corr-window { display: flex; align-items: center; gap: 10px; }
+.db-cw-label {
   font-size: 10px; color: var(--cx-fg-3, #6b7388);
   text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
 }
-.cw-val {
+.db-cw-val {
   font-size: 12px; color: var(--db-accent-2); font-weight: 600;
   background: rgba(99,102,241,0.14); padding: 2px 9px; border-radius: 3px;
 }
