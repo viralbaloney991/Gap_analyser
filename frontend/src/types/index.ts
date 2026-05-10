@@ -33,6 +33,7 @@ export interface TechniqueCoverageEntry {
   tactic: string;
   alert_count: number;
   weak?: boolean;
+  alert_rules?: string[];
 }
 
 export interface MITRECoverageSummary {
