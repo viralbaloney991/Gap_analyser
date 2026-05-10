@@ -619,7 +619,7 @@ function TechDrillPanel({
 
 function GraphCanvas({
   alerts, techniques, layout, vp, focusedId, hoveredId, setHovered,
-  onPickAlert, onPickTech, severityFilter,
+  onPickAlert, onPickTech, severityFilter, covMap,
 }: {
   alerts: AlertRule[];
   techniques: TechNode[];
@@ -631,6 +631,7 @@ function GraphCanvas({
   onPickAlert: (a: AlertRule) => void;
   onPickTech: (t: TechNode) => void;
   severityFilter: Set<Severity>;
+  covMap: Record<string, Coverage>;
 }) {
   const { alertPos, techPos, tacticBands, rightX } = layout;
 
@@ -693,16 +694,35 @@ function GraphCanvas({
         MITRE techniques · {techniques.length}
       </text>
 
+      {/* Gradient defs — one per edge */}
+      <defs>
+        {edges.map((e, i) => {
+          const isFocus  = focusEdges.has(i);
+          const dim      = !!(focusTarget && !isFocus);
+          const visible  = !severityFilter.size || severityFilter.has(
+            alerts.find(x => x.id === e.aid)!.severity
+          );
+          const aStop = !visible ? 0.04 : isFocus ? 1.0 : dim ? 0.05 : 0.5;
+          const tStop = !visible ? 0.04 : isFocus ? 0.85 : dim ? 0.05 : 0.12;
+          return (
+            <linearGradient
+              key={`grad-${e.aid}-${e.tid}`}
+              id={`edge-${e.aid}-${e.tid}`}
+              x1="0%" y1="0%" x2="100%" y2="0%"
+            >
+              <stop offset="0%"   stopColor={SEV_COLOR[e.sev]}                stopOpacity={aStop} />
+              <stop offset="100%" stopColor={COV_COLOR[covMap[e.tid] ?? 'none']} stopOpacity={tStop} />
+            </linearGradient>
+          );
+        })}
+      </defs>
+
       {/* Edges */}
       {edges.map((e, i) => {
         const aPos = alertPos[e.aid];
         const tPos = techPos[e.tid];
         if (!aPos || !tPos) return null;
-        const visible = aVisible(alerts.find(x => x.id === e.aid)!);
         const isFocus = focusEdges.has(i);
-        const dim = focusTarget && !isFocus;
-        const opacity = !visible ? 0.04 : isFocus ? 0.85 : dim ? 0.06 : 0.18;
-        const stroke  = isFocus ? SEV_COLOR[e.sev] : 'var(--cx-edge)';
         const width   = isFocus ? 1.6 : 0.8;
         const ax = aPos.x + 90;
         const tx = tPos.x - 4;
@@ -711,7 +731,9 @@ function GraphCanvas({
         return (
           <path key={i}
             d={`M${ax} ${aPos.y}C${cx1} ${aPos.y} ${cx2} ${tPos.y} ${tx} ${tPos.y}`}
-            fill="none" stroke={stroke} strokeWidth={width} opacity={opacity}
+            fill="none"
+            stroke={`url(#edge-${e.aid}-${e.tid})`}
+            strokeWidth={width}
           />
         );
       })}
@@ -882,6 +904,12 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
   const techniques = useMemo(() => buildTechNodes(data, alerts), [data, alerts]);
   const posture    = useMemo(() => buildPosture(data, alerts), [data, alerts]);
 
+  const covMap = useMemo((): Record<string, Coverage> => {
+    const m: Record<string, Coverage> = {};
+    techniques.forEach(t => { m[t.id] = t.coverage; });
+    return m;
+  }, [techniques]);
+
   const layout = useMemo(() => {
     // 2-column technique layout: ceil(n/2) rows × 28px each. Cap at 3000px.
     const h = Math.min(Math.max(700, Math.ceil(techniques.length / 2) * 28 + 160, alerts.length * 36), 3000);
@@ -948,6 +976,7 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
               onPickAlert={a => setPick({ type: 'alert', data: a })}
               onPickTech={t => setPick({ type: 'tech', data: t })}
               severityFilter={severityFilter}
+              covMap={covMap}
             />
           </svg>
 
