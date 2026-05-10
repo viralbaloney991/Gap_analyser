@@ -233,7 +233,6 @@ function buildPosture(data: AnalyzeResponse, alerts: AlertRule[]): Posture {
   const covered = s.covered_techniques;
   const total   = Math.max(s.total_techniques, covered);
 
-  const noiseAlerts = data.alert_insights.noise_alerts ?? [];
   const avgFpRate = alerts.length
     ? Math.round(alerts.reduce((s, a) => s + a.fpRate, 0) / alerts.length)
     : 0;
