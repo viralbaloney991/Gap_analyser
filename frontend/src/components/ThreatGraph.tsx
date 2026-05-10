@@ -102,30 +102,6 @@ const TACTIC_MAP: Record<string, TacticInfo> = Object.fromEntries(
   TACTICS_ORDER.map(t => [t.id, t])
 );
 
-// Keyword → technique IDs heuristic (fills in edges from integration names)
-const KW_TIDS: [RegExp, string[]][] = [
-  [/powershell|script|encoded.cmd/i, ['T1059']],
-  [/brute.forc|failed.log|multiple.*login|mfa/i, ['T1110']],
-  [/phish|email.*threat|suspicious.*mail/i, ['T1566', 'T1204']],
-  [/new.*admin|admin.*creat|local.admin/i, ['T1136', 'T1078']],
-  [/ransomware|encrypt.*file|mass.*encrypt/i, ['T1486', 'T1490']],
-  [/lsass|cred.*dump/i, ['T1003']],
-  [/credential|password.store/i, ['T1555']],
-  [/dns.*beacon|anomal.*dns/i, ['T1071', 'T1573']],
-  [/outbound.*traffic|unusual.*traffic/i, ['T1071', 'T1041']],
-  [/lateral|smb|remote.service/i, ['T1021', 'T1570']],
-  [/recon|external.*scan|active.*scan/i, ['T1595']],
-  [/scheduled.task|task.creat/i, ['T1053']],
-  [/defender.tamper|antivir|security.disab/i, ['T1562', 'T1070']],
-  [/public.*web|exploit.*attempt|waf/i, ['T1190']],
-  [/iam|privilege.*change|cloud.*priv/i, ['T1548']],
-  [/data.*stag|exfil|cloud.*storage/i, ['T1560', 'T1567']],
-  [/account.*discov|enum/i, ['T1087', 'T1018']],
-  [/registry|run.key/i, ['T1547']],
-  [/remote.*download|tool.*transfer/i, ['T1105']],
-  [/login.*new.*country|cloud.*login|geoloc/i, ['T1078']],
-  [/obfuscat/i, ['T1027']],
-];
 
 // ── Helper utilities ────────────────────────────────────────────────────
 
@@ -156,17 +132,21 @@ function deriveSource(app: string, sub: string): string {
   return 'EDR';
 }
 
-function deriveTids(name: string): string[] {
-  const tids = new Set<string>();
-  for (const [rx, ids] of KW_TIDS) {
-    if (rx.test(name)) ids.forEach(id => tids.add(id));
-  }
-  return [...tids];
-}
 
 // ── Data builders ───────────────────────────────────────────────────────
 
 function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
+  const techCov = data.mitre_coverage.technique_coverage ?? {};
+
+  // Invert technique_coverage: alertName → Set<techniqueID>
+  const alertToTids = new Map<string, Set<string>>();
+  for (const [tid, entry] of Object.entries(techCov)) {
+    for (const name of entry.alert_rules ?? []) {
+      if (!alertToTids.has(name)) alertToTids.set(name, new Set());
+      alertToTids.get(name)!.add(tid);
+    }
+  }
+
   const noiseNames = new Set((data.alert_insights.noise_alerts ?? []).map(n => n.name));
   return data.integrations
     .filter(int => int.alert_count > 0)
@@ -179,7 +159,7 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
         name: int.name,
         source: deriveSource(int.application, int.subsystem),
         severity: countToSev(int.alert_count),
-        tids: deriveTids(int.name),
+        tids: [...(alertToTids.get(int.name) ?? [])],
         count: int.alert_count,
         noisePct,
         fpRate: Math.min(95, noisePct + deterministicN(int.name, 10, 0, 15)),
@@ -194,7 +174,17 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
 }
 
 function buildTechNodes(data: AnalyzeResponse, alerts: AlertRule[]): TechNode[] {
-  const navTechs = data.mitre_coverage.navigator_layer.techniques;
+  // Keep only base techniques (no sub-techniques like T1059.001).
+  // Deduplicate: the same techniqueID can appear under multiple tactics in the
+  // navigator layer. Keep the entry with the highest score so coverage is accurate.
+  const seen = new Map<string, typeof data.mitre_coverage.navigator_layer.techniques[0]>();
+  data.mitre_coverage.navigator_layer.techniques
+    .filter(nt => !nt.techniqueID.includes('.'))
+    .forEach(nt => {
+      const existing = seen.get(nt.techniqueID);
+      if (!existing || nt.score > existing.score) seen.set(nt.techniqueID, nt);
+    });
+  const navTechs = [...seen.values()];
   const techCov  = data.mitre_coverage.technique_coverage ?? {};
 
   return navTechs.map(nt => {
@@ -278,7 +268,11 @@ function buildBipartite(
     techByTactic.get(t.tactic)!.push(t);
   });
 
-  const totalTech = techniques.length;
+  // Use rows (2 techniques per row) to halve canvas height.
+  const totalRows = TACTICS_ORDER.reduce((sum, tac) => {
+    const list = techByTactic.get(tac.id) ?? [];
+    return sum + Math.ceil(list.length / 2);
+  }, 0);
   const techPos: Record<string, { x: number; y: number }> = {};
   const tacticBands: BipartiteLayout['tacticBands'] = [];
   let cursorY = topY;
@@ -286,12 +280,14 @@ function buildBipartite(
   TACTICS_ORDER.forEach(tac => {
     const list = techByTactic.get(tac.id) ?? [];
     if (!list.length) return;
-    const bandH = (botY - topY) * (list.length / Math.max(totalTech, 1));
-    const innerSpacing = Math.max(34, bandH / Math.max(1, list.length));
+    const numRows = Math.ceil(list.length / 2);
+    const bandH = (botY - topY) * (numRows / Math.max(totalRows, 1));
+    const rowSpacing = Math.max(28, bandH / Math.max(1, numRows));
     tacticBands.push({ id: tac.id, name: tac.name, short: tac.short, y: cursorY, h: bandH });
     list.forEach((t, i) => {
-      const xOff = (i % 2) * 110;
-      techPos[t.id] = { x: rightX + xOff, y: cursorY + (i + 0.5) * innerSpacing };
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      techPos[t.id] = { x: rightX + col * 120, y: cursorY + (row + 0.5) * rowSpacing };
     });
     cursorY += bandH;
   });
@@ -301,13 +297,28 @@ function buildBipartite(
 
 // ── Viewport hook ───────────────────────────────────────────────────────
 
+// Clamp translation so at least `margin` px of graph content stays on-screen.
+// Without this, zooming into empty space between columns pushes both columns off-screen.
+function clampTranslate(
+  x: number, y: number, k: number,
+  layout: BipartiteLayout,
+  viewW: number, viewH: number,
+  margin = 120,
+): { x: number; y: number } {
+  return {
+    x: Math.max(margin - layout.W * k, Math.min(viewW - margin, x)),
+    y: Math.max(margin - layout.H * k, Math.min(viewH - margin, y)),
+  };
+}
+
 function useViewport(svgRef: RefObject<SVGSVGElement | null>, layout: BipartiteLayout | null) {
   const [vp, setVp] = useState<Vp>({ x: 0, y: 0, k: 1 });
-  // Ref keeps latest vp so onMouseDown never has a stale closure
-  const vpRef = useRef<Vp>({ x: 0, y: 0, k: 1 });
-  const drag  = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
+  const vpRef      = useRef<Vp>({ x: 0, y: 0, k: 1 });
+  const layoutRef  = useRef<BipartiteLayout | null>(null);
+  const drag       = useRef<{ sx: number; sy: number; ox: number; oy: number } | null>(null);
 
-  useEffect(() => { vpRef.current = vp; }, [vp]);
+  useEffect(() => { vpRef.current = vp; },       [vp]);
+  useEffect(() => { layoutRef.current = layout; }, [layout]);
 
   const fit = useCallback(() => {
     if (!svgRef.current || !layout) return;
@@ -325,9 +336,8 @@ function useViewport(svgRef: RefObject<SVGSVGElement | null>, layout: BipartiteL
 
   useEffect(() => { fit(); }, [fit]);
 
-  // Attach wheel listener directly so we can pass passive:false.
-  // React's synthetic onWheel is passive in React 17+ and e.preventDefault() is ignored,
-  // which causes the page to scroll and corrupts the cursor-anchor calculation.
+  // Non-passive wheel: prevents page scroll and applies cursor-anchored zoom
+  // with bounds clamping so content can't be pushed fully off-screen.
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
@@ -339,23 +349,32 @@ function useViewport(svgRef: RefObject<SVGSVGElement | null>, layout: BipartiteL
       setVp(v => {
         const factor = Math.exp(-e.deltaY * 0.0015);
         const k = Math.max(0.3, Math.min(2.4, v.k * factor));
-        return { k, x: mx - ((mx - v.x) * k) / v.k, y: my - ((my - v.y) * k) / v.k };
+        const rawX = mx - ((mx - v.x) * k) / v.k;
+        const rawY = my - ((my - v.y) * k) / v.k;
+        const L = layoutRef.current;
+        if (!L) return { k, x: rawX, y: rawY };
+        const { x, y } = clampTranslate(rawX, rawY, k, L, rect.width, rect.height);
+        return { k, x, y };
       });
     };
     el.addEventListener('wheel', handler, { passive: false });
     return () => el.removeEventListener('wheel', handler);
   }, [svgRef]);
 
-  // Track mousemove / mouseup on the document so fast drags that leave
-  // the SVG boundary don't silently drop the pan.
+  // Document-level drag so fast mouse movements outside the SVG don't drop the pan.
   useEffect(() => {
+    const el = svgRef.current;
     const onMove = (e: MouseEvent) => {
-      if (!drag.current) return;
-      setVp(v => ({
-        ...v,
-        x: drag.current!.ox + (e.clientX - drag.current!.sx),
-        y: drag.current!.oy + (e.clientY - drag.current!.sy),
-      }));
+      if (!drag.current || !el) return;
+      const rect = el.getBoundingClientRect();
+      const rawX = drag.current.ox + (e.clientX - drag.current.sx);
+      const rawY = drag.current.oy + (e.clientY - drag.current.sy);
+      setVp(v => {
+        const L = layoutRef.current;
+        if (!L) return { ...v, x: rawX, y: rawY };
+        const { x, y } = clampTranslate(rawX, rawY, v.k, L, rect.width, rect.height);
+        return { ...v, x, y };
+      });
     };
     const onUp = () => { drag.current = null; };
     document.addEventListener('mousemove', onMove);
@@ -364,11 +383,10 @@ function useViewport(svgRef: RefObject<SVGSVGElement | null>, layout: BipartiteL
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup',  onUp);
     };
-  }, []);
+  }, [svgRef]);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
-    // Read from ref so this callback never needs to be recreated as vp changes
     drag.current = { sx: e.clientX, sy: e.clientY, ox: vpRef.current.x, oy: vpRef.current.y };
   }, []);
 
@@ -865,7 +883,8 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
   const posture    = useMemo(() => buildPosture(data, alerts), [data, alerts]);
 
   const layout = useMemo(() => {
-    const h = Math.max(700, techniques.length * 34 + 160, alerts.length * 36);
+    // 2-column technique layout: ceil(n/2) rows × 28px each. Cap at 3000px.
+    const h = Math.min(Math.max(700, Math.ceil(techniques.length / 2) * 28 + 160, alerts.length * 36), 3000);
     const w = Math.max(1100, size.width * 1.15);
     return buildBipartite(alerts, techniques, w, h);
   }, [alerts, techniques, size]);
