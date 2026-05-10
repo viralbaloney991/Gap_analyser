@@ -794,35 +794,10 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WARN [suggestions] monday fetch client=%s: %v", req.Client, mondayErr)
 	}
 
-	// Extract features to get data sources (no LLM mapping needed for suggestions endpoint)
+	// Extract features to populate VendorCovered on each alert.
 	coralogix.ExtractFeatures(alerts, nil)
 
-	// Collect available log sources: Monday integrations first (primary),
-	// then unique alert data sources. Cap at 30 to keep LLM prompt lean.
-	logSourceSet := make(map[string]bool)
-	var logSources []string
-
-	// Monday integrations are the primary source of truth for onboarded log sources
-	for _, integ := range integrations {
-		if integ.Name != "" && !logSourceSet[integ.Name] {
-			logSourceSet[integ.Name] = true
-			logSources = append(logSources, integ.Name)
-		}
-	}
-	// Supplement with alert data sources (may add sources Monday doesn't track)
-	for _, alert := range alerts {
-		for _, ds := range alert.Features.DataSources {
-			if !logSourceSet[ds] {
-				logSourceSet[ds] = true
-				logSources = append(logSources, ds)
-			}
-		}
-	}
-	// Cap to keep prompt small for LLM
-	const maxLogSources = 30
-	if len(logSources) > maxLogSources {
-		logSources = logSources[:maxLogSources]
-	}
+	logSources := buildSuggestionLogSources(integrations, alerts)
 
 	// Resolve technique name from master list
 	techniqueName := mitre.GetTechniqueName(req.TechniqueID)
@@ -1319,4 +1294,40 @@ func writeJSON(w http.ResponseWriter, status int, data any) {
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, models.ErrorResponse{Error: message})
+}
+
+// buildSuggestionLogSources returns non-vendor-managed log source names for a client,
+// capped at 30 to keep LLM prompts lean. Fully vendor-managed integrations
+// (VendorCoveredCount == AlertCount > 0) and vendor-covered alert data sources are excluded.
+func buildSuggestionLogSources(integrations []monday.Integration, alerts []*models.AlertDef) []string {
+	enriched := merge.CountAlertsByIntegration(integrations, alerts)
+
+	logSourceSet := make(map[string]bool)
+	var logSources []string
+
+	for _, integ := range enriched {
+		isVendorManaged := integ.AlertCount > 0 && integ.VendorCoveredCount == integ.AlertCount
+		if integ.Name != "" && !isVendorManaged && !logSourceSet[integ.Name] {
+			logSourceSet[integ.Name] = true
+			logSources = append(logSources, integ.Name)
+		}
+	}
+
+	for _, alert := range alerts {
+		if alert.Features.VendorCovered {
+			continue
+		}
+		for _, ds := range alert.Features.DataSources {
+			if !logSourceSet[ds] {
+				logSourceSet[ds] = true
+				logSources = append(logSources, ds)
+			}
+		}
+	}
+
+	const maxLogSources = 30
+	if len(logSources) > maxLogSources {
+		logSources = logSources[:maxLogSources]
+	}
+	return logSources
 }
