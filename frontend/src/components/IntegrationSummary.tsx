@@ -7,10 +7,11 @@ interface Props {
   onViewMITRE: () => void;
   onViewInsights: () => void;
   onViewGraph: () => void;
+  onViewBuilder: () => void;
   onRefresh: () => void;
 }
 
-export default function IntegrationSummary({ data, clientName, loading, onViewMITRE, onViewInsights, onViewGraph, onRefresh }: Props) {
+export default function IntegrationSummary({ data, clientName, loading, onViewMITRE, onViewInsights, onViewGraph, onViewBuilder, onRefresh }: Props) {
   const { integrations, stats } = data;
   const sorted     = [...integrations].sort((a, b) => b.alert_count - a.alert_count);
   const blindSpots = integrations.filter((i) => i.alert_count === 0);
@@ -80,6 +81,13 @@ export default function IntegrationSummary({ data, clientName, loading, onViewMI
             <div>
               <span className="action-title">Threat Graph</span>
               <span className="action-desc">Alert correlation network</span>
+            </div>
+          </button>
+          <button className="btn-action" onClick={onViewBuilder}>
+            <div className="action-icon">⚡</div>
+            <div>
+              <span className="action-title">Build detections</span>
+              <span className="action-desc">Compose multi-stage flow alerts</span>
             </div>
           </button>
           <button className="btn-action" onClick={onRefresh} disabled={loading}>

@@ -6,13 +6,14 @@ import IntegrationSummary from './components/IntegrationSummary';
 import MITREHeatmap from './components/MITREHeatmap';
 import AlertInsights from './components/AlertInsights';
 import ThreatGraph from './components/ThreatGraph';
+import DetectionBuilder from './components/DetectionBuilder';
 import { analyzeClient, fetchInsights, fetchNoise } from './services/api';
 import type { AnalyzeResponse, InsightsReport, SimilarityResult } from './types';
 import './App.css';
 
 const VALID_LOOKBACK = [7, 14, 30, 90];
 
-type View = 'form' | 'summary' | 'mitre' | 'insights' | 'graph';
+type View = 'form' | 'summary' | 'mitre' | 'insights' | 'graph' | 'builder';
 
 const FADE_UP_TRANSITION: Transition = { duration: 0.2, ease: 'easeOut' };
 
@@ -83,7 +84,7 @@ function App() {
   };
 
   const goBack = () => {
-    if (view === 'mitre' || view === 'insights' || view === 'graph') {
+    if (view === 'mitre' || view === 'insights' || view === 'graph' || view === 'builder') {
       setView('summary');
     } else {
       setView('form');
@@ -111,7 +112,8 @@ function App() {
         ...(view === 'summary' ? [] : [{
             label: view === 'mitre' ? 'MITRE Coverage'
                  : view === 'insights' ? 'Alert Insights'
-                 : 'Threat Graph'
+                 : view === 'graph' ? 'Threat Graph'
+                 : 'Build detections'
           }]),
       ]
     : [];
@@ -168,6 +170,7 @@ function App() {
                 onViewMITRE={() => setView('mitre')}
                 onViewInsights={() => setView('insights')}
                 onViewGraph={() => setView('graph')}
+                onViewBuilder={() => setView('builder')}
                 onRefresh={() => handleAnalyze(clientName, true)}
               />
             </motion.div>
@@ -203,6 +206,12 @@ function App() {
                 lookbackDays={lookbackDays}
                 onViewMitre={() => setView('mitre')}
               />
+            </motion.div>
+          )}
+
+          {view === 'builder' && data && (
+            <motion.div key="builder" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <DetectionBuilder clientName={clientName} />
             </motion.div>
           )}
         </AnimatePresence>
