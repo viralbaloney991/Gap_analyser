@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, ClientInfo, CorrelationsResponse, ExportNarrativeReport, InsightsReport, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
+import type { AnalyzeResponse, ClientInfo, CorrelationsResponse, ExportNarrativeReport, GenerationResult, InsightsReport, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -113,6 +113,28 @@ export async function fetchCorrelations(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Correlations failed' }));
     throw new Error(err.error || 'Failed to generate correlation suggestions');
+  }
+  return res.json();
+}
+
+export async function buildDetection(
+  client: string,
+  techniques: Array<{
+    id: string; name: string;
+    tactic_id: string; tactic_name: string;
+    tactic_order: number; source: string;
+  }>,
+  provider = '',
+  force = false,
+): Promise<GenerationResult> {
+  const res = await fetch(`${API_BASE}/api/build-detection`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client, techniques, provider, force }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Build detection failed' }));
+    throw new Error(err.error || 'Failed to generate detection');
   }
   return res.json();
 }

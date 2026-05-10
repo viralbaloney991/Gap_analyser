@@ -199,3 +199,37 @@ export interface CorrelationsResponse {
   provider: string;
   cached: boolean;
 }
+
+// ── Detection Builder ──────────────────────────────────────
+
+export interface ValidationFinding {
+  level: 'info' | 'warn' | 'error';
+  message: string;
+}
+
+export interface FlowAlert {
+  name: string;
+  description: string;
+  techniqueId: string;
+  logic: string;
+  window: string;
+  windowReason: string;
+  source: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+}
+
+export interface CorrelationRule {
+  name: string;
+  logic: string;
+  window: string;
+  severity: 'critical' | 'high';
+}
+
+export interface GenerationResult {
+  validation: {
+    verdict: 'ok' | 'warnings' | 'invalid';
+    findings: ValidationFinding[];
+  };
+  alerts: FlowAlert[];
+  correlation: CorrelationRule;
+}
