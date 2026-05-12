@@ -357,18 +357,32 @@ function useViewport(svgRef: RefObject<SVGSVGElement | null>, layout: BipartiteL
     const handler = (e: WheelEvent) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      setVp(v => {
-        const factor = Math.exp(-e.deltaY * 0.0015);
-        const k = Math.max(0.3, Math.min(2.4, v.k * factor));
-        const rawX = mx - ((mx - v.x) * k) / v.k;
-        const rawY = my - ((my - v.y) * k) / v.k;
-        const L = layoutRef.current;
-        if (!L) return { k, x: rawX, y: rawY };
-        const { x, y } = clampTranslate(rawX, rawY, k, L, rect.width, rect.height);
-        return { k, x, y };
-      });
+
+      if (e.ctrlKey) {
+        // Pinch-to-zoom: ctrlKey is set by the OS for pinch gestures and Ctrl+scroll
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        setVp(v => {
+          const factor = Math.exp(-e.deltaY * 0.0015);
+          const k = Math.max(0.3, Math.min(2.4, v.k * factor));
+          const rawX = mx - ((mx - v.x) * k) / v.k;
+          const rawY = my - ((my - v.y) * k) / v.k;
+          const L = layoutRef.current;
+          if (!L) return { k, x: rawX, y: rawY };
+          const { x, y } = clampTranslate(rawX, rawY, k, L, rect.width, rect.height);
+          return { k, x, y };
+        });
+      } else {
+        // Two-finger scroll → pan
+        setVp(v => {
+          const rawX = v.x - e.deltaX;
+          const rawY = v.y - e.deltaY;
+          const L = layoutRef.current;
+          if (!L) return { ...v, x: rawX, y: rawY };
+          const { x, y } = clampTranslate(rawX, rawY, v.k, L, rect.width, rect.height);
+          return { ...v, x, y };
+        });
+      }
     };
     el.addEventListener('wheel', handler, { passive: false });
     return () => el.removeEventListener('wheel', handler);
