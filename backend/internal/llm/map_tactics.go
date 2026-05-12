@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"coralogix-alert-analyzer/internal/mitre"
 )
 
 const mapTacticsSystemPrompt = `You are a MITRE ATT&CK expert. Given a security detection gap, identify the most relevant MITRE ATT&CK tactics and techniques.
@@ -24,15 +26,15 @@ type MapTacticsInput struct {
 	LogSource string
 }
 
-// mapTacticsResult holds the raw parsed LLM output.
-type mapTacticsResult struct {
+// MapTacticsResult holds the parsed LLM output for tactic/technique mapping.
+type MapTacticsResult struct {
 	TacticIDs    []string `json:"tactic_ids"`
 	TechniqueIDs []string `json:"technique_ids"`
 }
 
-// parseMapTactics extracts a mapTacticsResult from raw LLM output, stripping
+// parseMapTactics extracts a MapTacticsResult from raw LLM output, stripping
 // markdown code fences if present.
-func parseMapTactics(raw string) (*mapTacticsResult, error) {
+func parseMapTactics(raw string) (*MapTacticsResult, error) {
 	s := strings.TrimSpace(raw)
 	// Strip markdown fences: find first '{' and last '}'
 	if start := strings.Index(s, "{"); start > 0 {
@@ -41,7 +43,7 @@ func parseMapTactics(raw string) (*mapTacticsResult, error) {
 	if end := strings.LastIndex(s, "}"); end >= 0 && end < len(s)-1 {
 		s = s[:end+1]
 	}
-	var r mapTacticsResult
+	var r MapTacticsResult
 	if err := json.Unmarshal([]byte(s), &r); err != nil {
 		return nil, fmt.Errorf("parse map tactics JSON: %w", err)
 	}
@@ -52,12 +54,29 @@ func parseMapTactics(raw string) (*mapTacticsResult, error) {
 	if len(r.TechniqueIDs) > 5 {
 		r.TechniqueIDs = r.TechniqueIDs[:5]
 	}
+	// Filter out LLM-hallucinated IDs not present in the MITRE catalog.
+	validTactics := r.TacticIDs[:0]
+	for _, id := range r.TacticIDs {
+		if mitre.ValidTacticID(id) {
+			validTactics = append(validTactics, id)
+		}
+	}
+	r.TacticIDs = validTactics
+
+	validTechs := r.TechniqueIDs[:0]
+	for _, id := range r.TechniqueIDs {
+		if mitre.ValidTechniqueID(id) {
+			validTechs = append(validTechs, id)
+		}
+	}
+	r.TechniqueIDs = validTechs
+
 	return &r, nil
 }
 
 // GenerateMapTactics uses the LLM to map a gap prose and log source to MITRE
 // ATT&CK tactic and technique IDs.
-func GenerateMapTactics(ctx context.Context, provider Provider, input MapTacticsInput) (*mapTacticsResult, error) {
+func GenerateMapTactics(ctx context.Context, provider Provider, input MapTacticsInput) (*MapTacticsResult, error) {
 	userMsg := fmt.Sprintf("Gap: %s\nLog source: %s", input.Prose, input.LogSource)
 
 	resp, err := provider.Complete(ctx, CompletionRequest{
