@@ -25,7 +25,8 @@ interface AlertRule {
   severity: Severity;
   tids: string[];
   count: number;
-  noisePct: number;
+  noiseType: 'behavioral' | 'structural' | 'both' | null;
+  triggerCount: number;
   lastSeenHrs: number;
   trend: number;
   owner: string;
@@ -108,6 +109,12 @@ function fmtNum(n: number): string {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
 }
 
+function noiseLabel(noiseType: 'behavioral' | 'structural' | 'both', triggerCount: number): string {
+  if (noiseType === 'behavioral') return `Fired ${triggerCount}× · Behavioral`;
+  if (noiseType === 'structural') return 'Too broad · Structural';
+  return `Fired ${triggerCount}× · Both`;
+}
+
 function deterministicN(seed: string, offset: number, min: number, max: number): number {
   let h = 5381 + offset;
   for (let i = 0; i < seed.length; i++) h = ((h << 5) + h) ^ seed.charCodeAt(i);
@@ -150,13 +157,19 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
     }
   }
 
-  const noiseNames = new Set((data.alert_insights.noise_alerts ?? []).map(n => n.name));
+  // Build real noise map from backend data
+  const noiseMap = new Map<string, { triggerCount: number; noiseType: 'behavioral' | 'structural' | 'both' }>();
+  for (const n of data.alert_insights.noise_alerts ?? []) {
+    noiseMap.set(n.name, {
+      triggerCount: n.trigger_count ?? 0,
+      noiseType: n.noise_type ?? 'structural',
+    });
+  }
+
   return data.integrations
     .filter(int => int.alert_count > 0)
     .map((int, i) => {
-      const isNoisy = noiseNames.has(int.name);
-      const noisePct = isNoisy ? deterministicN(int.name, 9, 50, 90)
-                               : deterministicN(int.name, 9, 5, 40);
+      const noise = noiseMap.get(int.name);
       return {
         id: `int-${i}`,
         name: int.name,
@@ -164,7 +177,8 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
         severity: dominantSeverity(int.priority_counts ?? {}),
         tids: [...(prefixToTids.get(int.name.toLowerCase()) ?? [])],
         count: int.alert_count,
-        noisePct,
+        noiseType: noise?.noiseType ?? null,
+        triggerCount: noise?.triggerCount ?? 0,
         lastSeenHrs: deterministicN(int.name, 1, 0, 72),
         trend: (deterministicN(int.name, 2, 0, 200) - 100) / 100,
         owner: ['SOC Tier 1', 'SOC Tier 2', 'IR Team', 'Cloud Sec'][deterministicN(int.name, 3, 0, 3)],
@@ -500,10 +514,10 @@ function AlertDrillPanel({
       <StatGrid items={[
         { label: 'Volume (30d)', value: fmtNum(a.count), sub: trendStr,
           accent: trendUp ? 'crit' : trendDown ? 'ok' : undefined },
-        { label: 'Assets',        value: String(a.assets),      sub: 'affected' },
-        { label: 'Noise share',   value: `${a.noisePct}%` },
-        { label: 'MTTD',          value: `${a.mttd}m`,          sub: 'detect' },
-        { label: 'MTTR',          value: `${a.mttr}m`,          sub: 'respond' },
+        { label: 'Assets',      value: String(a.assets), sub: 'affected' },
+        { label: 'Noise',       value: a.noiseType ? noiseLabel(a.noiseType, a.triggerCount) : 'None' },
+        { label: 'MTTD',        value: `${a.mttd}m`, sub: 'detect' },
+        { label: 'MTTR',        value: `${a.mttr}m`, sub: 'respond' },
       ]} />
 
       <div className="cx-kv-list">
