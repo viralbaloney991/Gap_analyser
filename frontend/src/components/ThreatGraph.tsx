@@ -972,7 +972,28 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
   const { vp, setVp, fit, onMouseDown } = useViewport(svgRef, layout);
 
   const [pick, setPick] = useState<Pick | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
+  const [hovered, setHovered]     = useState<string | null>(null);
+  const hoverLeaveTimer           = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setHoveredDebounced = useCallback((id: string | null) => {
+    if (id !== null) {
+      if (hoverLeaveTimer.current !== null) {
+        clearTimeout(hoverLeaveTimer.current);
+        hoverLeaveTimer.current = null;
+      }
+      setHovered(id);
+    } else {
+      hoverLeaveTimer.current = setTimeout(() => {
+        hoverLeaveTimer.current = null;
+        setHovered(null);
+      }, 60);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (hoverLeaveTimer.current !== null) clearTimeout(hoverLeaveTimer.current);
+  }, []);
+
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set());
 
   const focusedId = pick?.data.id ?? null;
@@ -1023,7 +1044,7 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
               vp={vp}
               focusedId={focusedId}
               hoveredId={hovered}
-              setHovered={setHovered}
+              setHovered={setHoveredDebounced}
               onPickAlert={a => setPick({ type: 'alert', data: a })}
               onPickTech={t => setPick({ type: 'tech', data: t })}
               severityFilter={severityFilter}
