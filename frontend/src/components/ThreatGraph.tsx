@@ -160,9 +160,10 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
   // Build real noise map from backend data
   const noiseMap = new Map<string, { triggerCount: number; noiseType: 'behavioral' | 'structural' | 'both' }>();
   for (const n of data.alert_insights.noise_alerts ?? []) {
+    if (!n.noise_type) continue;
     noiseMap.set(n.name, {
       triggerCount: n.trigger_count ?? 0,
-      noiseType: n.noise_type ?? 'structural',
+      noiseType: n.noise_type,
     });
   }
 
