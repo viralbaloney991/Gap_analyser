@@ -1434,3 +1434,77 @@ func buildSuggestionLogSources(integrations []monday.Integration, alerts []*mode
 	}
 	return logSources
 }
+
+// HandleMapTactics handles POST /api/map-tactics.
+// It maps a gap prose description to MITRE ATT&CK tactic and technique IDs via LLM.
+// On LLM failure it returns empty arrays rather than an error, so the frontend can
+// still navigate to the builder.
+func (h *Handler) HandleMapTactics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req models.MapTacticsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	req.Client = strings.TrimSpace(req.Client)
+	req.Prose = strings.TrimSpace(req.Prose)
+	if req.Client == "" {
+		writeError(w, http.StatusBadRequest, "missing required field: client")
+		return
+	}
+	if req.Prose == "" {
+		writeError(w, http.StatusBadRequest, "missing required field: prose")
+		return
+	}
+	if _, ok := h.config.Clients[req.Client]; !ok {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("unknown client: %s", req.Client))
+		return
+	}
+
+	nvidiaKey := h.config.LLM.NvidiaAPIKey
+	if h.config.LLM.NvidiaSuggestionAPIKey != "" {
+		nvidiaKey = h.config.LLM.NvidiaSuggestionAPIKey
+	}
+	providerName := h.config.LLM.SuggestionProvider
+	if providerName == "" {
+		providerName = h.config.LLM.DefaultProvider
+	}
+	provider, err := llm.NewClassifierProvider(providerName, h.config.LLM.SuggestionModel, llm.ProviderConfig{
+		AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+		ClaudeModel:     h.config.LLM.ClaudeModel,
+		NvidiaAPIKey:    nvidiaKey,
+		NvidiaModel:     h.config.LLM.NvidiaModel,
+		NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+		GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+		GeminiModel:     h.config.LLM.GeminiModel,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("provider init: %v", err))
+		return
+	}
+
+	ctx := r.Context()
+	result, llmErr := llm.GenerateMapTactics(ctx, provider, llm.MapTacticsInput{
+		Prose:     req.Prose,
+		LogSource: req.LogSource,
+	})
+	if llmErr != nil {
+		log.Printf("WARN HandleMapTactics client=%s llm error: %v — returning empty", req.Client, llmErr)
+		writeJSON(w, http.StatusOK, models.MapTacticsResponse{
+			TacticIDs:    []string{},
+			TechniqueIDs: []string{},
+		})
+		return
+	}
+
+	log.Printf("INFO HandleMapTactics client=%s tactics=%d techniques=%d",
+		req.Client, len(result.TacticIDs), len(result.TechniqueIDs))
+	writeJSON(w, http.StatusOK, models.MapTacticsResponse{
+		TacticIDs:    result.TacticIDs,
+		TechniqueIDs: result.TechniqueIDs,
+	})
+}
