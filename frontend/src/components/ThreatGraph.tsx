@@ -25,7 +25,8 @@ interface AlertRule {
   severity: Severity;
   tids: string[];
   count: number;
-  noisePct: number;
+  noiseType: 'behavioral' | 'structural' | 'both' | null;
+  triggerCount: number;
   lastSeenHrs: number;
   trend: number;
   owner: string;
@@ -108,6 +109,12 @@ function fmtNum(n: number): string {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
 }
 
+function noiseLabel(noiseType: 'behavioral' | 'structural' | 'both', triggerCount: number): string {
+  if (noiseType === 'behavioral') return `Fired ${triggerCount}× · Behavioral`;
+  if (noiseType === 'structural') return 'Too broad · Structural';
+  return `Fired ${triggerCount}× · Both`;
+}
+
 function deterministicN(seed: string, offset: number, min: number, max: number): number {
   let h = 5381 + offset;
   for (let i = 0; i < seed.length; i++) h = ((h << 5) + h) ^ seed.charCodeAt(i);
@@ -150,13 +157,20 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
     }
   }
 
-  const noiseNames = new Set((data.alert_insights.noise_alerts ?? []).map(n => n.name));
+  // Build real noise map from backend data
+  const noiseMap = new Map<string, { triggerCount: number; noiseType: 'behavioral' | 'structural' | 'both' }>();
+  for (const n of data.alert_insights.noise_alerts ?? []) {
+    if (!n.noise_type) continue;
+    noiseMap.set(n.name, {
+      triggerCount: n.trigger_count ?? 0,
+      noiseType: n.noise_type,
+    });
+  }
+
   return data.integrations
     .filter(int => int.alert_count > 0)
     .map((int, i) => {
-      const isNoisy = noiseNames.has(int.name);
-      const noisePct = isNoisy ? deterministicN(int.name, 9, 50, 90)
-                               : deterministicN(int.name, 9, 5, 40);
+      const noise = noiseMap.get(int.name);
       return {
         id: `int-${i}`,
         name: int.name,
@@ -164,7 +178,8 @@ function buildAlertRules(data: AnalyzeResponse): AlertRule[] {
         severity: dominantSeverity(int.priority_counts ?? {}),
         tids: [...(prefixToTids.get(int.name.toLowerCase()) ?? [])],
         count: int.alert_count,
-        noisePct,
+        noiseType: noise?.noiseType ?? null,
+        triggerCount: noise?.triggerCount ?? 0,
         lastSeenHrs: deterministicN(int.name, 1, 0, 72),
         trend: (deterministicN(int.name, 2, 0, 200) - 100) / 100,
         owner: ['SOC Tier 1', 'SOC Tier 2', 'IR Team', 'Cloud Sec'][deterministicN(int.name, 3, 0, 3)],
@@ -342,18 +357,33 @@ function useViewport(svgRef: RefObject<SVGSVGElement | null>, layout: BipartiteL
     const handler = (e: WheelEvent) => {
       e.preventDefault();
       const rect = el.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      setVp(v => {
-        const factor = Math.exp(-e.deltaY * 0.0015);
-        const k = Math.max(0.3, Math.min(2.4, v.k * factor));
-        const rawX = mx - ((mx - v.x) * k) / v.k;
-        const rawY = my - ((my - v.y) * k) / v.k;
-        const L = layoutRef.current;
-        if (!L) return { k, x: rawX, y: rawY };
-        const { x, y } = clampTranslate(rawX, rawY, k, L, rect.width, rect.height);
-        return { k, x, y };
-      });
+
+      if (e.ctrlKey) {
+        // Pinch-to-zoom: ctrlKey is set by the OS for pinch gestures and Ctrl+scroll
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        setVp(v => {
+          const factor = Math.exp(-e.deltaY * 0.0015);
+          const k = Math.max(0.3, Math.min(2.4, v.k * factor));
+          const rawX = mx - ((mx - v.x) * k) / v.k;
+          const rawY = my - ((my - v.y) * k) / v.k;
+          const L = layoutRef.current;
+          if (!L) return { k, x: rawX, y: rawY };
+          const { x, y } = clampTranslate(rawX, rawY, k, L, rect.width, rect.height);
+          return { k, x, y };
+        });
+      } else {
+        // Two-finger scroll → pan. Normalize deltaMode: 0=pixels, 1=lines (~40px), 2=pages (~300px)
+        const scale = e.deltaMode === 2 ? 300 : e.deltaMode === 1 ? 40 : 1;
+        setVp(v => {
+          const rawX = v.x - e.deltaX * scale;
+          const rawY = v.y - e.deltaY * scale;
+          const L = layoutRef.current;
+          if (!L) return { ...v, x: rawX, y: rawY };
+          const { x, y } = clampTranslate(rawX, rawY, v.k, L, rect.width, rect.height);
+          return { ...v, x, y };
+        });
+      }
     };
     el.addEventListener('wheel', handler, { passive: false });
     return () => el.removeEventListener('wheel', handler);
@@ -500,10 +530,10 @@ function AlertDrillPanel({
       <StatGrid items={[
         { label: 'Volume (30d)', value: fmtNum(a.count), sub: trendStr,
           accent: trendUp ? 'crit' : trendDown ? 'ok' : undefined },
-        { label: 'Assets',        value: String(a.assets),      sub: 'affected' },
-        { label: 'Noise share',   value: `${a.noisePct}%` },
-        { label: 'MTTD',          value: `${a.mttd}m`,          sub: 'detect' },
-        { label: 'MTTR',          value: `${a.mttr}m`,          sub: 'respond' },
+        { label: 'Assets',      value: String(a.assets), sub: 'affected' },
+        { label: 'Noise',       value: a.noiseType ? noiseLabel(a.noiseType, a.triggerCount) : 'None' },
+        { label: 'MTTD',        value: `${a.mttd}m`, sub: 'detect' },
+        { label: 'MTTR',        value: `${a.mttr}m`, sub: 'respond' },
       ]} />
 
       <div className="cx-kv-list">
@@ -957,7 +987,28 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
   const { vp, setVp, fit, onMouseDown } = useViewport(svgRef, layout);
 
   const [pick, setPick] = useState<Pick | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null);
+  const [hovered, setHovered]     = useState<string | null>(null);
+  const hoverLeaveTimer           = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const setHoveredDebounced = useCallback((id: string | null) => {
+    if (id !== null) {
+      if (hoverLeaveTimer.current !== null) {
+        clearTimeout(hoverLeaveTimer.current);
+        hoverLeaveTimer.current = null;
+      }
+      setHovered(id);
+    } else {
+      hoverLeaveTimer.current = setTimeout(() => {
+        hoverLeaveTimer.current = null;
+        setHovered(null);
+      }, 60);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (hoverLeaveTimer.current !== null) clearTimeout(hoverLeaveTimer.current);
+  }, []);
+
   const [severityFilter, setSeverityFilter] = useState<Set<Severity>>(new Set());
 
   const focusedId = pick?.data.id ?? null;
@@ -1008,7 +1059,7 @@ export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitr
               vp={vp}
               focusedId={focusedId}
               hoveredId={hovered}
-              setHovered={setHovered}
+              setHovered={setHoveredDebounced}
               onPickAlert={a => setPick({ type: 'alert', data: a })}
               onPickTech={t => setPick({ type: 'tech', data: t })}
               severityFilter={severityFilter}

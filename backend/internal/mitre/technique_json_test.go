@@ -85,6 +85,30 @@ func TestValidTechniqueID_UnknownSubTechnique(t *testing.T) {
 	}
 }
 
+func TestValidTacticID_Known(t *testing.T) {
+	if !ValidTacticID("TA0001") {
+		t.Error("expected TA0001 to be valid")
+	}
+}
+
+func TestValidTacticID_KnownRecon(t *testing.T) {
+	if !ValidTacticID("TA0043") {
+		t.Error("expected TA0043 (Reconnaissance) to be valid")
+	}
+}
+
+func TestValidTacticID_Unknown(t *testing.T) {
+	if ValidTacticID("TA9999") {
+		t.Error("expected TA9999 to be invalid")
+	}
+}
+
+func TestValidTacticID_Empty(t *testing.T) {
+	if ValidTacticID("") {
+		t.Error("expected empty string to be invalid")
+	}
+}
+
 func TestAnalyzeCoverage_TechniqueLevel(t *testing.T) {
 	// Unscoped alert (no DataSources, no Entities) — should mark T1059 as weak
 	unscopedAlert := &models.AlertDef{

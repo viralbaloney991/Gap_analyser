@@ -1200,6 +1200,20 @@ html, body, #root {
   color: #fb923c;
 }
 
+.build-detection-btn {
+  color: #38bdf8;
+}
+
+.build-detection-btn:hover:not(:disabled) {
+  border-color: #38bdf8;
+  color: #7dd3fc;
+}
+
+.build-detection-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* =====================================================================
    Threat Graph
    ===================================================================== */

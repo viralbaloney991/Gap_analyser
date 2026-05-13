@@ -112,6 +112,7 @@ func main() {
 	mux.HandleFunc("/api/suggestions", handler.HandleSuggestions)
 	mux.HandleFunc("/api/correlations", handler.HandleCorrelations)
 	mux.HandleFunc("/api/build-detection", handler.HandleBuildDetection)
+	mux.HandleFunc("/api/map-tactics", handler.HandleMapTactics)
 	mux.HandleFunc("/api/export/narrative", handler.HandleExportNarrative)
 
 	// Serve static frontend files in production.

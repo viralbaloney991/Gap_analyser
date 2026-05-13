@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, ClientInfo, CorrelationsResponse, ExportNarrativeReport, GenerationResult, InsightsReport, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
+import type { AnalyzeResponse, ClientInfo, CorrelationsResponse, ExportNarrativeReport, GenerationResult, InsightsReport, MapTacticsResponse, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -113,6 +113,23 @@ export async function fetchCorrelations(
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Correlations failed' }));
     throw new Error(err.error || 'Failed to generate correlation suggestions');
+  }
+  return res.json();
+}
+
+export async function fetchMapTactics(
+  client: string,
+  prose: string,
+  logSource: string,
+): Promise<MapTacticsResponse> {
+  const res = await fetch(`${API_BASE}/api/map-tactics`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client, prose, log_source: logSource }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Map tactics failed' }));
+    throw new Error(err.error ?? 'Map tactics failed');
   }
   return res.json();
 }

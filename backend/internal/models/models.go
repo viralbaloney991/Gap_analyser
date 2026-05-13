@@ -336,3 +336,19 @@ type BuildDetectionResponse struct {
 	Correlation BuildDetectionCorrelation `json:"correlation"`
 	Provider    string                    `json:"provider"`
 }
+
+// ── Map Tactics ──────────────────────────────────────────────────────────
+
+// MapTacticsRequest is the payload for POST /api/map-tactics.
+type MapTacticsRequest struct {
+	Client    string `json:"client"`
+	Prose     string `json:"prose"`
+	LogSource string `json:"log_source"`
+	Provider  string `json:"provider,omitempty"`
+}
+
+// MapTacticsResponse is the payload returned by POST /api/map-tactics.
+type MapTacticsResponse struct {
+	TacticIDs    []string `json:"tactic_ids"`
+	TechniqueIDs []string `json:"technique_ids"`
+}

@@ -591,6 +591,32 @@ func GetAllTactics() []string {
 	return result
 }
 
+// tacticIDs maps the canonical TA-prefixed numeric IDs to their tactic slugs.
+// These are the 14 standard MITRE ATT&CK Enterprise tactic IDs.
+var tacticIDs = map[string]struct{}{
+	"TA0043": {}, // reconnaissance
+	"TA0042": {}, // resource-development
+	"TA0001": {}, // initial-access
+	"TA0002": {}, // execution
+	"TA0003": {}, // persistence
+	"TA0004": {}, // privilege-escalation
+	"TA0005": {}, // defense-evasion
+	"TA0006": {}, // credential-access
+	"TA0007": {}, // discovery
+	"TA0008": {}, // lateral-movement
+	"TA0009": {}, // collection
+	"TA0011": {}, // command-and-control
+	"TA0010": {}, // exfiltration
+	"TA0040": {}, // impact
+}
+
+// ValidTacticID reports whether id is a known MITRE ATT&CK Enterprise tactic ID
+// (e.g. "TA0001", "TA0008"). Returns false for hallucinated IDs like "TA9999".
+func ValidTacticID(id string) bool {
+	_, ok := tacticIDs[id]
+	return ok
+}
+
 // GetTechniqueName returns the display name for a technique ID.
 func GetTechniqueName(id string) string {
 	for _, t := range masterTechniqueList {

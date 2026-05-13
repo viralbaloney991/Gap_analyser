@@ -33,6 +33,7 @@ function App() {
   const [insightsReport, setInsightsReport] = useState<InsightsReport | null>(null);
   const [insightsError, setInsightsError] = useState(false);
   const [noiseLoading, setNoiseLoading] = useState(false);
+  const [builderPreselectedIds, setBuilderPreselectedIds] = useState<string[]>([]);
   const [lookbackDays, setLookbackDays] = useState<number>(() => {
     const stored = localStorage.getItem('noise_lookback_days');
     const parsed = stored ? Number(stored) : 30;
@@ -84,6 +85,7 @@ function App() {
   };
 
   const goBack = () => {
+    if (view === 'builder') setBuilderPreselectedIds([]);
     if (view === 'mitre' || view === 'insights' || view === 'graph' || view === 'builder') {
       setView('summary');
     } else {
@@ -102,7 +104,14 @@ function App() {
     setClientName('');
     setInsightsReport(null);
     setInsightsError(false);
+    setBuilderPreselectedIds([]);
     setError('');
+  };
+
+  const handleBuildDetectionFromInsights = (tacticIds: string[], techniqueIds: string[]) => {
+    void tacticIds; // tactic selection is driven by technique membership in DetectionBuilder
+    setBuilderPreselectedIds(techniqueIds);
+    setView('builder');
   };
 
   // Build breadcrumb segments for non-landing views
@@ -170,7 +179,7 @@ function App() {
                 onViewMITRE={() => setView('mitre')}
                 onViewInsights={() => setView('insights')}
                 onViewGraph={() => setView('graph')}
-                onViewBuilder={() => setView('builder')}
+                onViewBuilder={() => { setBuilderPreselectedIds([]); setView('builder'); }}
                 onRefresh={() => handleAnalyze(clientName, true)}
               />
             </motion.div>
@@ -194,6 +203,7 @@ function App() {
                 lookbackDays={lookbackDays}
                 onReanalyze={handleReanalyze}
                 noiseLoading={noiseLoading}
+                onBuildDetection={handleBuildDetectionFromInsights}
               />
             </motion.div>
           )}
@@ -211,7 +221,7 @@ function App() {
 
           {view === 'builder' && data && (
             <motion.div key="builder" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <DetectionBuilder clientName={clientName} />
+              <DetectionBuilder clientName={clientName} preselectedIds={builderPreselectedIds.length > 0 ? builderPreselectedIds : undefined} />
             </motion.div>
           )}
         </AnimatePresence>

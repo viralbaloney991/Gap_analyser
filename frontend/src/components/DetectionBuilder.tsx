@@ -49,12 +49,15 @@ const BANDS_START_X = TRIGGER_X + TRIGGER_W + 40; // 188
 
 interface Props {
   clientName: string;
+  preselectedIds?: string[];
 }
 
 // ── Root component ───────────────────────────────────────────────────────────
 
-export default function DetectionBuilder({ clientName }: Props) {
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+export default function DetectionBuilder({ clientName, preselectedIds }: Props) {
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(preselectedIds ?? [])
+  );
   const [query, setQuery]             = useState('');
   const [generating, setGenerating]   = useState(false);
   const [result, setResult]           = useState<GenerationResult | null>(null);

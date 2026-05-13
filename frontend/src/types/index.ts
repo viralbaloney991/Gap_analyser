@@ -128,6 +128,11 @@ export interface ActionableGapCategories {
   advanced_use_cases: ActionableRecommendation[];
 }
 
+export interface MapTacticsResponse {
+  tactic_ids: string[];
+  technique_ids: string[];
+}
+
 export interface SimilarityResult {
   families: DetectionFamily[];
   duplicates: DuplicateGroup[];
