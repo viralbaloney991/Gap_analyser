@@ -188,3 +188,33 @@ func parseOllySections(output string) map[string]string {
 	}
 	return sections
 }
+
+// ── Verdict derivation ────────────────────────────────────────────────────────
+
+var severityRe = regexp.MustCompile(`(?i)Severity:\s*(\w+)`)
+var confidenceRe = regexp.MustCompile(`(?i)Confidence:\s*(\w+)`)
+
+func deriveVerdict(hits int, section1 string) (verdict, confidence string) {
+	sev := "medium"
+	conf := "medium"
+
+	if m := severityRe.FindStringSubmatch(section1); len(m) > 1 {
+		sev = strings.ToLower(m[1])
+	}
+	if m := confidenceRe.FindStringSubmatch(section1); len(m) > 1 {
+		conf = strings.ToLower(m[1])
+	}
+
+	if hits == 0 {
+		return "clean", conf
+	}
+
+	isCritical := sev == "critical"
+	isHighSev := sev == "high"
+	isHighConf := conf == "high"
+
+	if isCritical || (isHighSev && isHighConf) {
+		return "threat", conf
+	}
+	return "suspicious", conf
+}

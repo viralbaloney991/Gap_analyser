@@ -79,3 +79,28 @@ func TestSanitizeQuery(t *testing.T) {
 		}
 	}
 }
+
+func TestDeriveVerdict(t *testing.T) {
+	tests := []struct {
+		hits        int
+		section1    string
+		wantVerdict string
+		wantConf    string
+	}{
+		{0, "Severity: High\nConfidence: High", "clean", "high"},
+		{5, "Severity: Low\nConfidence: Low", "suspicious", "low"},
+		{5, "Severity: Medium\nConfidence: Medium", "suspicious", "medium"},
+		{10, "Severity: High\nConfidence: High", "threat", "high"},
+		{10, "Severity: Critical\nConfidence: Medium", "threat", "medium"},
+		{3, "Severity: High\nConfidence: Low", "suspicious", "low"},
+	}
+	for _, tc := range tests {
+		v, c := deriveVerdict(tc.hits, tc.section1)
+		if v != tc.wantVerdict {
+			t.Errorf("hits=%d sect=%q: verdict=%q want %q", tc.hits, tc.section1, v, tc.wantVerdict)
+		}
+		if c != tc.wantConf {
+			t.Errorf("hits=%d sect=%q: conf=%q want %q", tc.hits, tc.section1, c, tc.wantConf)
+		}
+	}
+}
