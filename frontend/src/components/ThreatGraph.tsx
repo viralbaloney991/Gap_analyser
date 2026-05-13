@@ -951,7 +951,7 @@ function TacticJumpList({
 
 // ── Main component ──────────────────────────────────────────────────────
 
-export default function ThreatGraph({ data, clientName, lookbackDays, onViewMitre }: Props) {
+export default function ThreatGraph({ data, clientName: _clientName, lookbackDays, onViewMitre }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 1200, height: 720 });

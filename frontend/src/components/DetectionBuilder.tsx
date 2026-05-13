@@ -191,6 +191,7 @@ export default function DetectionBuilder({ clientName, preselectedIds, onHunt }:
             generating={generating}
             onClose={() => setResult(null)}
             onRegenerate={handleGenerate}
+            onHunt={onHunt}
           />
         </div>
       </div>
@@ -589,9 +590,10 @@ interface GeneratedPanelProps {
   generating: boolean;
   onClose: () => void;
   onRegenerate: () => void;
+  onHunt?: (alert: FlowAlert) => void;
 }
 
-function GeneratedPanel({ result, generating, onClose, onRegenerate }: GeneratedPanelProps) {
+function GeneratedPanel({ result, generating, onClose, onRegenerate, onHunt }: GeneratedPanelProps) {
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
