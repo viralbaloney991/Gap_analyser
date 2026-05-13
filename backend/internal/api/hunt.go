@@ -75,7 +75,7 @@ type huntErrorData struct {
 // ── Input sanitization ───────────────────────────────────────────────────────
 
 var queryAllowlist = regexp.MustCompile(`^[\x20-\x7E]+$`)
-var queryForbidden = regexp.MustCompile(`[$` + "`" + `;\|\n\r]`)
+var queryForbidden = regexp.MustCompile(`[$` + "`" + `;|\\&><\n\r]`)
 
 func sanitizeQuery(q string) error {
 	if len(q) > 1000 {
