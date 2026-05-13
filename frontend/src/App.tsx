@@ -219,7 +219,7 @@ function App() {
 
           {view === 'builder' && data && (
             <motion.div key="builder" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <DetectionBuilder clientName={clientName} preselectedIds={builderPreselectedIds} />
+              <DetectionBuilder clientName={clientName} preselectedIds={builderPreselectedIds.length > 0 ? builderPreselectedIds : undefined} />
             </motion.div>
           )}
         </AnimatePresence>

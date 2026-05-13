@@ -14,7 +14,7 @@ interface Props {
   lookbackDays: number;
   onReanalyze: (days: number) => void;
   noiseLoading?: boolean;
-  onBuildDetection: (tacticIds: string[], techniqueIds: string[]) => void;
+  onBuildDetection?: (tacticIds: string[], techniqueIds: string[]) => void;
 }
 
 type Tab = 'duplicates' | 'families' | 'merge' | 'gaps' | 'noise' | 'unique';
@@ -181,10 +181,10 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     setBuildingId(itemKey);
     try {
       const result = await fetchMapTactics(client, prose, logSource);
-      onBuildDetection(result.tactic_ids, result.technique_ids);
+      onBuildDetection?.(result.tactic_ids, result.technique_ids);
     } catch {
       // On network error: still navigate (open builder empty)
-      onBuildDetection([], []);
+      onBuildDetection?.([], []);
     } finally {
       setBuildingId(null);
     }
@@ -381,7 +381,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                       type="button"
                       className="corr-suggest-btn build-detection-btn"
                       onClick={() => handleBuildDetection(item.prose ?? '', item.log_source ?? '', itemKey)}
-                      disabled={buildingId !== null}
+                      disabled={buildingId === itemKey}
                     >
                       {buildingId === itemKey ? '…' : 'Build Detection →'}
                     </button>
@@ -747,7 +747,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 {renderActionableSection('No Detection', effectiveReport?.actionable_gaps?.no_detection, effectiveReport?.gap_categories.no_detection)}
                 {renderGapSection('Poor Tactic Coverage', effectiveReport?.gap_categories.poor_tactic_coverage)}
                 {renderActionableSection('Weak Detection Quality', effectiveReport?.actionable_gaps?.weak_detection_quality, effectiveReport?.gap_categories.weak_detection_quality)}
-                {renderActionableSection('Advanced Use Cases', effectiveReport?.actionable_gaps?.advanced_use_cases, effectiveReport?.gap_categories.advanced_use_cases, openCorrelationDrawer, true)}
+                {renderActionableSection('Advanced Use Cases', effectiveReport?.actionable_gaps?.advanced_use_cases, effectiveReport?.gap_categories.advanced_use_cases, openCorrelationDrawer, !!onBuildDetection)}
                 {renderActionableSection('Missing Source Alerts', effectiveReport?.actionable_gaps?.missing_source_alerts, effectiveReport?.gap_categories.missing_source_alerts)}
               </>
             ) : (
