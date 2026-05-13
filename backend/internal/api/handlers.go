@@ -1469,22 +1469,43 @@ func (h *Handler) HandleMapTactics(w http.ResponseWriter, r *http.Request) {
 	if h.config.LLM.NvidiaSuggestionAPIKey != "" {
 		nvidiaKey = h.config.LLM.NvidiaSuggestionAPIKey
 	}
-	providerName := h.config.LLM.SuggestionProvider
-	if providerName == "" {
-		providerName = h.config.LLM.DefaultProvider
+
+	// Resolve provider — same pattern as HandleCorrelations.
+	var provider llm.Provider
+	var err error
+	if req.Provider != "" {
+		provider, err = llm.NewProvider(req.Provider, llm.ProviderConfig{
+			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+			ClaudeModel:     h.config.LLM.ClaudeModel,
+			NvidiaAPIKey:    nvidiaKey,
+			NvidiaModel:     h.config.LLM.NvidiaModel,
+			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
+		})
+	} else {
+		providerName := h.config.LLM.SuggestionProvider
+		if providerName == "" {
+			providerName = h.config.LLM.DefaultProvider
+		}
+		provider, err = llm.NewClassifierProvider(providerName, h.config.LLM.SuggestionModel, llm.ProviderConfig{
+			AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
+			ClaudeModel:     h.config.LLM.ClaudeModel,
+			NvidiaAPIKey:    nvidiaKey,
+			NvidiaModel:     h.config.LLM.NvidiaModel,
+			NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
+			GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
+			GeminiModel:     h.config.LLM.GeminiModel,
+		})
 	}
-	provider, err := llm.NewClassifierProvider(providerName, h.config.LLM.SuggestionModel, llm.ProviderConfig{
-		AnthropicAPIKey: h.config.LLM.AnthropicAPIKey,
-		ClaudeModel:     h.config.LLM.ClaudeModel,
-		NvidiaAPIKey:    nvidiaKey,
-		NvidiaModel:     h.config.LLM.NvidiaModel,
-		NvidiaEndpoint:  h.config.LLM.NvidiaEndpoint,
-		GeminiAPIKey:    h.config.LLM.GeminiAPIKey,
-		GeminiModel:     h.config.LLM.GeminiModel,
-	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("provider init: %v", err))
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+
+	effectiveProvider := req.Provider
+	if effectiveProvider == "" {
+		effectiveProvider = h.config.LLM.SuggestionProvider
 	}
 
 	ctx := r.Context()
@@ -1501,8 +1522,8 @@ func (h *Handler) HandleMapTactics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("INFO HandleMapTactics client=%s tactics=%d techniques=%d",
-		req.Client, len(result.TacticIDs), len(result.TechniqueIDs))
+	log.Printf("INFO HandleMapTactics client=%s provider=%s tactics=%d techniques=%d",
+		req.Client, effectiveProvider, len(result.TacticIDs), len(result.TechniqueIDs))
 	writeJSON(w, http.StatusOK, models.MapTacticsResponse{
 		TacticIDs:    result.TacticIDs,
 		TechniqueIDs: result.TechniqueIDs,

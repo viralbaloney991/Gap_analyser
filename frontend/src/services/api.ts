@@ -131,7 +131,7 @@ export async function fetchMapTactics(
     const err = await res.json().catch(() => ({ error: 'Map tactics failed' }));
     throw new Error(err.error ?? 'Map tactics failed');
   }
-  return res.json() as Promise<MapTacticsResponse>;
+  return res.json();
 }
 
 export async function buildDetection(

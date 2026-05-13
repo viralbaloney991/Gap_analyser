@@ -344,6 +344,7 @@ type MapTacticsRequest struct {
 	Client    string `json:"client"`
 	Prose     string `json:"prose"`
 	LogSource string `json:"log_source"`
+	Provider  string `json:"provider,omitempty"`
 }
 
 // MapTacticsResponse is the payload returned by POST /api/map-tactics.
