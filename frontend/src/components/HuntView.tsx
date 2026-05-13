@@ -63,7 +63,9 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
   const [huntId, setHuntId] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['1']));
+  const [ollyElapsed, setOllyElapsed] = useState(0);
   const esRef = useRef<EventSource | null>(null);
+  const ollyTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const payload = {
@@ -91,6 +93,10 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
       setQueryResult(data);
       setDoneSteps(prev => new Set([...prev, 'query' as Step]));
       setActiveStep('olly');
+      // Start elapsed timer for Olly phase; request notification permission
+      setOllyElapsed(0);
+      ollyTimerRef.current = setInterval(() => setOllyElapsed(s => s + 1), 1000);
+      if (Notification.permission === 'default') Notification.requestPermission();
     });
 
     es.addEventListener('olly_done', (e) => {
@@ -98,6 +104,7 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
       setOllySections(data.sections);
       setDoneSteps(prev => new Set([...prev, 'olly' as Step]));
       setActiveStep('report');
+      if (ollyTimerRef.current) { clearInterval(ollyTimerRef.current); ollyTimerRef.current = null; }
     });
 
     es.addEventListener('report_ready', (e) => {
@@ -105,6 +112,10 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
       setReport(data);
       setDoneSteps(prev => new Set([...prev, 'report' as Step]));
       es.close();
+      // Browser notification if tab is in background
+      if (document.hidden && Notification.permission === 'granted') {
+        new Notification('Hunt complete', { body: `${detection.name} — ${data.verdict}`, icon: '/favicon.ico' });
+      }
     });
 
     es.addEventListener('error', (e) => {
@@ -117,7 +128,10 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
       es.close();
     });
 
-    return () => { es.close(); };
+    return () => {
+      es.close();
+      if (ollyTimerRef.current) clearInterval(ollyTimerRef.current);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleSection = (key: string) => {
@@ -281,7 +295,21 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
               );
             })
           ) : (
-            <div>{[0,1,2,3].map(i => <div key={i} className="shimmer shimmer-accordion" />)}</div>
+            <div>
+              {activeStep === 'olly' && (
+                <div className="olly-waiting">
+                  <div className="olly-waiting-title">
+                    Olly is analyzing your environment
+                    <span className="olly-elapsed">{ollyElapsed}s</span>
+                  </div>
+                  <div className="olly-waiting-sub">
+                    Running live queries against your Coralogix data — typically takes 3–4 minutes.
+                    {ollyElapsed >= 60 && ' You can switch tabs; we\'ll notify you when done.'}
+                  </div>
+                </div>
+              )}
+              {[0,1,2,3].map(i => <div key={i} className="shimmer shimmer-accordion" />)}
+            </div>
           )}
         </div>
       </div>

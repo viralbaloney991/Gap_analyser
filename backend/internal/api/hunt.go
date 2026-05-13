@@ -299,9 +299,9 @@ func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, e
 }
 
 func (r *cxRunner) runOllyChat(ctx context.Context, prompt string) ([]byte, error) {
-	// --mode fast reduces sub-queries; requires a compatible model (gpt-5.2 is invalid for fast mode).
-	// claude-haiku-4-5 is the fastest available model and keeps execution under Cloudflare's ~5-min limit.
-	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask", "--mode", "fast", "--model", "claude-haiku-4-5", prompt)
+	// claude-sonnet-4-5 gives the best analysis quality. Focus mode (default) runs
+	// thorough live Coralogix queries — typical latency is 3-4 minutes per hunt.
+	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask", "--model", "claude-sonnet-4-5", prompt)
 	cmd.Env = r.env()
 	return readCapped(cmd, maxOutputBytes)
 }
