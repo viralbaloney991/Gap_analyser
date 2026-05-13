@@ -36,6 +36,18 @@ func TestParseMapTacticsResponse(t *testing.T) {
 			raw:     `not json at all`,
 			wantErr: true,
 		},
+		{
+			name:        "hallucinated tactic ID dropped",
+			raw:         `{"tactic_ids":["TA9999","TA0008"],"technique_ids":["T1021.001"]}`,
+			wantTactics: []string{"TA0008"},
+			wantTechs:   []string{"T1021.001"},
+		},
+		{
+			name:        "hallucinated technique ID dropped",
+			raw:         `{"tactic_ids":["TA0008"],"technique_ids":["T9999.001","T1021.001"]}`,
+			wantTactics: []string{"TA0008"},
+			wantTechs:   []string{"T1021.001"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -51,10 +63,22 @@ func TestParseMapTacticsResponse(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if len(got.TacticIDs) != len(tc.wantTactics) {
-				t.Errorf("tactic_ids: got %v, want %v", got.TacticIDs, tc.wantTactics)
+				t.Errorf("tactic_ids length: got %d (%v), want %d (%v)", len(got.TacticIDs), got.TacticIDs, len(tc.wantTactics), tc.wantTactics)
+			} else {
+				for i, id := range got.TacticIDs {
+					if id != tc.wantTactics[i] {
+						t.Errorf("tactic_ids[%d]: got %q, want %q", i, id, tc.wantTactics[i])
+					}
+				}
 			}
 			if len(got.TechniqueIDs) != len(tc.wantTechs) {
-				t.Errorf("technique_ids: got %v, want %v", got.TechniqueIDs, tc.wantTechs)
+				t.Errorf("technique_ids length: got %d (%v), want %d (%v)", len(got.TechniqueIDs), got.TechniqueIDs, len(tc.wantTechs), tc.wantTechs)
+			} else {
+				for i, id := range got.TechniqueIDs {
+					if id != tc.wantTechs[i] {
+						t.Errorf("technique_ids[%d]: got %q, want %q", i, id, tc.wantTechs[i])
+					}
+				}
 			}
 		})
 	}
