@@ -5,6 +5,50 @@ import (
 	"testing"
 )
 
+func TestBuildOllyPrompt(t *testing.T) {
+	prompt, err := buildOllyPrompt(`event_type:"cmd_exec"`, 47, "host1 svc-deploy 2024-01-01T10:00:00 cmd -enc abc\nhost2 admin 2024-01-01T10:05:00 cmd -enc xyz")
+	if err != nil {
+		t.Fatalf("buildOllyPrompt: %v", err)
+	}
+	if !strings.Contains(prompt, `event_type:"cmd_exec"`) {
+		t.Error("prompt missing lucene query")
+	}
+	if !strings.Contains(prompt, "47") {
+		t.Error("prompt missing hit count")
+	}
+	if !strings.Contains(prompt, "svc-deploy") {
+		t.Error("prompt missing sample events")
+	}
+}
+
+func TestParseOllySections(t *testing.T) {
+	raw := `## §1 Hunt Summary
+Severity: High
+Confidence: High
+
+## §2 Original Query
+event_type:"cmd_exec"
+
+## §3 Schema Mapping
+| field | cx_path | app | gaps |
+|-------|---------|-----|------|
+| event_type | log.type | auth | none |
+`
+	sections := parseOllySections(raw)
+	if sections["1"] == "" {
+		t.Error("section 1 missing")
+	}
+	if !strings.Contains(sections["1"], "Severity: High") {
+		t.Errorf("section 1 content wrong: %q", sections["1"])
+	}
+	if sections["2"] == "" {
+		t.Error("section 2 missing")
+	}
+	if sections["3"] == "" {
+		t.Error("section 3 missing")
+	}
+}
+
 func TestSanitizeQuery(t *testing.T) {
 	valid := []string{
 		`event_type:"cmd_exec" AND cmd:"-EncodedCommand"`,
