@@ -40,6 +40,7 @@ function App() {
   const [noiseLoading, setNoiseLoading] = useState(false);
   const [builderPreselectedIds, setBuilderPreselectedIds] = useState<string[]>([]);
   const [huntDetection, setHuntDetection] = useState<FlowAlert | null>(null);
+  const [huntOrigin, setHuntOrigin] = useState<'builder' | 'mitre'>('builder');
   const [lookbackDays, setLookbackDays] = useState<number>(() => {
     const stored = localStorage.getItem('noise_lookback_days');
     const parsed = stored ? Number(stored) : 30;
@@ -234,6 +235,7 @@ function App() {
                     source: payload.source,
                     severity: validSeverities.includes(sev) ? sev : 'medium',
                   });
+                  setHuntOrigin('mitre');
                   navigate('hunt');
                 }}
               />
@@ -273,7 +275,7 @@ function App() {
               <DetectionBuilder
                 clientName={clientName}
                 preselectedIds={builderPreselectedIds.length > 0 ? builderPreselectedIds : undefined}
-                onHunt={(alert) => { setHuntDetection(alert); navigate('hunt'); }}
+                onHunt={(alert) => { setHuntDetection(alert); setHuntOrigin('builder'); navigate('hunt'); }}
               />
             </motion.div>
           )}
@@ -282,7 +284,8 @@ function App() {
               <HuntView
                 detection={huntDetection}
                 cxRegion={import.meta.env.VITE_CX_REGION}
-                onBack={() => navigate('builder')}
+                origin={huntOrigin}
+                onBack={() => navigate(huntOrigin)}
               />
             </motion.div>
           )}
