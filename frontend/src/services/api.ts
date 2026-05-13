@@ -172,6 +172,7 @@ export function openHuntStream(detection: HuntPayload): EventSource {
     techniqueId: detection.techniqueId,
     tacticId:    detection.tacticId,
     source:      detection.source,
+    client:      detection.client,
   });
   return new EventSource(`${API_BASE}/api/hunt/stream?${params.toString()}`);
 }

@@ -283,6 +283,7 @@ function App() {
             <motion.div key="hunt" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto' }}>
               <HuntView
                 detection={huntDetection}
+                clientName={clientName}
                 cxRegion={import.meta.env.VITE_CX_REGION}
                 origin={huntOrigin}
                 onBack={() => navigate(huntOrigin)}

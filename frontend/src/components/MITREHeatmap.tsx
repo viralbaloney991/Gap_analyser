@@ -656,6 +656,7 @@ function SuggestionsPanel({
                         window: '30d',
                         source: s.log_source,
                         severity: s.priority.toLowerCase(),
+                        client: clientName,
                       })}
                     >
                       Hunt

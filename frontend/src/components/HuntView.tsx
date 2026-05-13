@@ -6,8 +6,10 @@ import './HuntView.css';
 
 interface Props {
   detection: FlowAlert;
+  clientName: string;
   cxRegion?: string;
   onBack: () => void;
+  origin?: 'builder' | 'mitre';
 }
 
 type Step = 'query' | 'olly' | 'report';
@@ -27,7 +29,7 @@ const OLLY_LABELS: Record<string, string> = {
   '12': 'Alert Definition Skeleton',
 };
 
-export default function HuntView({ detection, cxRegion, onBack }: Props) {
+export default function HuntView({ detection, clientName, cxRegion, onBack, origin = 'builder' }: Props) {
   const [activeStep, setActiveStep] = useState<Step>('query');
   const [doneSteps, setDoneSteps] = useState<Set<Step>>(new Set());
   const [queryResult, setQueryResult] = useState<HuntQueryResult | null>(null);
@@ -48,6 +50,7 @@ export default function HuntView({ detection, cxRegion, onBack }: Props) {
       window: detection.window,
       source: detection.source,
       severity: detection.severity,
+      client: clientName,
     };
 
     const es = openHuntStream(payload);
@@ -102,7 +105,7 @@ export default function HuntView({ detection, cxRegion, onBack }: Props) {
 
   const stepStatus = (step: Step): 'done' | 'active' | 'pending' => {
     if (doneSteps.has(step)) return 'done';
-    if (activeStep === step) return 'active';
+    if (!error && activeStep === step) return 'active';
     return 'pending';
   };
 
@@ -137,7 +140,7 @@ export default function HuntView({ detection, cxRegion, onBack }: Props) {
   return (
     <div className="hunt-page">
       <button className="hunt-back" onClick={onBack}>
-        <ArrowLeft size={14} /> Back to Detection Builder
+        <ArrowLeft size={14} /> Back to {origin === 'mitre' ? 'MITRE Coverage' : 'Detection Builder'}
       </button>
 
       <div className="hunt-title">Hunt: {detection.name}</div>

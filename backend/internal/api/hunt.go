@@ -238,18 +238,33 @@ type cxExecutor interface {
 
 type cxRunner struct {
 	binPath string
+	apiKey  string
+	region  string
 }
 
 const maxOutputBytes = 64 * 1024 // 64 KB
 
+func (r *cxRunner) env() []string {
+	e := os.Environ()
+	if r.apiKey != "" {
+		e = append(e, "CX_API_KEY="+r.apiKey)
+	}
+	if r.region != "" {
+		e = append(e, "CX_REGION="+r.region)
+	}
+	return e
+}
+
 func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, r.binPath, "logs", query,
 		"--start", "now-"+window, "--output", "json", "--limit", "50")
+	cmd.Env = r.env()
 	return readCapped(cmd, maxOutputBytes)
 }
 
 func (r *cxRunner) runOllyChat(ctx context.Context, prompt string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, r.binPath, "olly", "chat", prompt)
+	cmd.Env = r.env()
 	return readCapped(cmd, maxOutputBytes)
 }
 
@@ -317,6 +332,7 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	name := q.Get("name")
 	severity := q.Get("severity")
 	techniqueId := q.Get("techniqueId")
+	clientName := q.Get("client")
 
 	if lucene == "" {
 		writeError(w, http.StatusBadRequest, "missing required param: lucene")
@@ -351,7 +367,12 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 
 	cx := h.cxExec
 	if cx == nil {
-		cx = &cxRunner{binPath: h.cxBinPath}
+		runner := &cxRunner{binPath: h.cxBinPath}
+		if clientCfg, ok := h.config.Clients[clientName]; ok {
+			runner.apiKey = clientCfg.APIKey
+			runner.region = clientCfg.Region
+		}
+		cx = runner
 	}
 
 	// Step 1: cx logs

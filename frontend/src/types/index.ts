@@ -272,6 +272,7 @@ export interface HuntPayload {
   window: string
   source: string
   severity: string
+  client: string
 }
 
 export type HuntVerdict = 'clean' | 'suspicious' | 'threat'
