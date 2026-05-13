@@ -373,10 +373,11 @@ function useViewport(svgRef: RefObject<SVGSVGElement | null>, layout: BipartiteL
           return { k, x, y };
         });
       } else {
-        // Two-finger scroll → pan
+        // Two-finger scroll → pan. Normalize deltaMode: 0=pixels, 1=lines (~40px), 2=pages (~300px)
+        const scale = e.deltaMode === 2 ? 300 : e.deltaMode === 1 ? 40 : 1;
         setVp(v => {
-          const rawX = v.x - e.deltaX;
-          const rawY = v.y - e.deltaY;
+          const rawX = v.x - e.deltaX * scale;
+          const rawY = v.y - e.deltaY * scale;
           const L = layoutRef.current;
           if (!L) return { ...v, x: rawX, y: rawY };
           const { x, y } = clampTranslate(rawX, rawY, v.k, L, rect.width, rect.height);
