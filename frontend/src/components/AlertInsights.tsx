@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { SimilarityResult, InsightsReport, MITRECoverageResult, DetectionFamily, ActionableRecommendation, CorrelationSuggestion } from '../types';
-import { fetchInsights, fetchExportNarrative, fetchCorrelations } from '../services/api';
+import { fetchInsights, fetchExportNarrative, fetchCorrelations, fetchMapTactics } from '../services/api';
 import { exportTabAsXLSX, exportTabAsPDF, exportFullReportPDF } from '../utils/export';
 import NoisePills from './NoisePills';
 
@@ -14,6 +14,7 @@ interface Props {
   lookbackDays: number;
   onReanalyze: (days: number) => void;
   noiseLoading?: boolean;
+  onBuildDetection: (tacticIds: string[], techniqueIds: string[]) => void;
 }
 
 type Tab = 'duplicates' | 'families' | 'merge' | 'gaps' | 'noise' | 'unique';
@@ -107,7 +108,7 @@ function computeTopGaps(
   return candidates.slice(0, n).map((c, i) => ({ ...c, rank: i + 1 }));
 }
 
-export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage, totalAlerts, lookbackDays, onReanalyze, noiseLoading }: Props) {
+export default function AlertInsights({ data, report, insightsError = false, client, mitreCoverage, totalAlerts, lookbackDays, onReanalyze, noiseLoading, onBuildDetection }: Props) {
   const [activeTab, setActiveTab]         = useState<Tab>('duplicates');
   const [localReport, setLocalReport]     = useState<InsightsReport | null>(report);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -136,6 +137,8 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     cached: boolean;
     error: boolean;
   } | null>(null);
+
+  const [buildingId, setBuildingId] = useState<string | null>(null);
 
   const correlationAbortRef = useRef<AbortController | null>(null);
 
@@ -173,6 +176,19 @@ export default function AlertInsights({ data, report, insightsError = false, cli
       }
     }
   }, [client, coveredTechniques]);
+
+  const handleBuildDetection = async (prose: string, logSource: string, itemKey: string) => {
+    setBuildingId(itemKey);
+    try {
+      const result = await fetchMapTactics(client, prose, logSource);
+      onBuildDetection(result.tactic_ids, result.technique_ids);
+    } catch {
+      // On network error: still navigate (open builder empty)
+      onBuildDetection([], []);
+    } finally {
+      setBuildingId(null);
+    }
+  };
 
   const toggleQuery = (key: string) => {
     setExpandedQueries(prev => {
@@ -309,6 +325,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
     actionable: ActionableRecommendation[] | undefined,
     fallback: string[] | undefined,
     onCorrelate?: (rec: ActionableRecommendation) => void,
+    showBuildDetection = false,
   ) => {
     if (actionable && actionable.length > 0) {
       return (
@@ -317,6 +334,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
           {actionable.map((item, i) => {
             const queryKey = `${title}-${i}`;
             const expanded = expandedQueries.has(queryKey);
+            const itemKey = item.prose ? `${title}-${item.prose.slice(0, 40)}` : String(i);
             return (
               <div key={queryKey} className="insight-card insight-card--coverage" style={{ marginBottom: 8 }}>
                 <div className="insight-card-header" style={{ marginBottom: 4 }}>
@@ -348,15 +366,27 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                     </button>
                   </div>
                 )}
-                {onCorrelate && (
-                  <button
-                    type="button"
-                    className="corr-suggest-btn"
-                    onClick={() => onCorrelate(item)}
-                  >
-                    Suggest correlations →
-                  </button>
-                )}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: onCorrelate || showBuildDetection ? 4 : 0 }}>
+                  {onCorrelate && (
+                    <button
+                      type="button"
+                      className="corr-suggest-btn"
+                      onClick={() => onCorrelate(item)}
+                    >
+                      Suggest correlations →
+                    </button>
+                  )}
+                  {showBuildDetection && (
+                    <button
+                      type="button"
+                      className="corr-suggest-btn build-detection-btn"
+                      onClick={() => handleBuildDetection(item.prose ?? '', item.log_source ?? '', itemKey)}
+                      disabled={buildingId !== null}
+                    >
+                      {buildingId === itemKey ? '…' : 'Build Detection →'}
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -717,7 +747,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                 {renderActionableSection('No Detection', effectiveReport?.actionable_gaps?.no_detection, effectiveReport?.gap_categories.no_detection)}
                 {renderGapSection('Poor Tactic Coverage', effectiveReport?.gap_categories.poor_tactic_coverage)}
                 {renderActionableSection('Weak Detection Quality', effectiveReport?.actionable_gaps?.weak_detection_quality, effectiveReport?.gap_categories.weak_detection_quality)}
-                {renderActionableSection('Advanced Use Cases', effectiveReport?.actionable_gaps?.advanced_use_cases, effectiveReport?.gap_categories.advanced_use_cases, openCorrelationDrawer)}
+                {renderActionableSection('Advanced Use Cases', effectiveReport?.actionable_gaps?.advanced_use_cases, effectiveReport?.gap_categories.advanced_use_cases, openCorrelationDrawer, true)}
                 {renderActionableSection('Missing Source Alerts', effectiveReport?.actionable_gaps?.missing_source_alerts, effectiveReport?.gap_categories.missing_source_alerts)}
               </>
             ) : (
