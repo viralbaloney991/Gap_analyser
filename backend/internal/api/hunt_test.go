@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -103,4 +104,24 @@ func TestDeriveVerdict(t *testing.T) {
 			t.Errorf("hits=%d sect=%q: conf=%q want %q", tc.hits, tc.section1, c, tc.wantConf)
 		}
 	}
+}
+
+type mockCxExecutor struct {
+	logsOutput  []byte
+	logsErr     error
+	ollyOutput  []byte
+	ollyErr     error
+}
+
+func (m *mockCxExecutor) runLogs(ctx context.Context, query, window string) ([]byte, error) {
+	return m.logsOutput, m.logsErr
+}
+
+func (m *mockCxExecutor) runOllyChat(ctx context.Context, prompt string) ([]byte, error) {
+	return m.ollyOutput, m.ollyErr
+}
+
+func TestMockCxExecutorInterface(t *testing.T) {
+	// Verifies mockCxExecutor satisfies the cxExecutor interface at compile time.
+	var _ cxExecutor = &mockCxExecutor{}
 }

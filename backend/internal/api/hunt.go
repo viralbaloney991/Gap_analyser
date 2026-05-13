@@ -2,8 +2,12 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 	"text/template"
@@ -217,4 +221,55 @@ func deriveVerdict(hits int, section1 string) (verdict, confidence string) {
 		return "threat", conf
 	}
 	return "suspicious", conf
+}
+
+// ── cx executor ────────────────────────────────────────────────────────────────
+
+type cxExecutor interface {
+	runLogs(ctx context.Context, query, window string) ([]byte, error)
+	runOllyChat(ctx context.Context, prompt string) ([]byte, error)
+}
+
+type cxRunner struct {
+	binPath string
+}
+
+const maxOutputBytes = 64 * 1024 // 64 KB
+
+func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, r.binPath, "logs", query,
+		"--start", "now-"+window, "--output", "json", "--limit", "50")
+	return readCapped(cmd, maxOutputBytes)
+}
+
+func (r *cxRunner) runOllyChat(ctx context.Context, prompt string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, r.binPath, "olly", "chat", prompt)
+	return readCapped(cmd, maxOutputBytes)
+}
+
+func readCapped(cmd *exec.Cmd, limit int64) ([]byte, error) {
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	cmd.Stdout = pw
+
+	if err := cmd.Start(); err != nil {
+		pr.Close()
+		pw.Close()
+		return nil, fmt.Errorf("cx start: %w", err)
+	}
+
+	pw.Close()
+	limited, readErr := io.ReadAll(io.LimitReader(pr, limit))
+	pr.Close()
+
+	if werr := cmd.Wait(); werr != nil {
+		return nil, fmt.Errorf("cx exit: %w; stderr: %s", werr, stderr.String())
+	}
+	_ = readErr
+	return limited, nil
 }
