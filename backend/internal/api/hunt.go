@@ -144,6 +144,8 @@ func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (str
 // ── Section parser ────────────────────────────────────────────────────────────
 
 var sectionHeaderRe = regexp.MustCompile(`(?m)^##\s+§(\d+)\s+`)
+// numberedHeaderRe matches "## 1. Title" or "## 12. Title" (Olly structured output).
+var numberedHeaderRe = regexp.MustCompile(`(?m)^##\s+(\d+)\.\s+`)
 var genericHeaderRe = regexp.MustCompile(`(?m)^##\s+(.+?)\s*$`)
 
 // genericSectionMap maps Olly's native free-form header names to §N slot numbers.
@@ -157,7 +159,16 @@ var genericSectionMap = map[string]string{
 }
 
 func parseOllySections(output string) map[string]string {
-	sections := make(map[string]string, 12)
+	sections := make(map[string]string, 14)
+
+	// Extract Olly chat URL from any artifact link in the response.
+	if m := ollyURLRe.FindString(output); m != "" {
+		// Keep only the base chat URL (strip /artifact/... suffix if present).
+		if idx := strings.Index(m, "/artifact/"); idx != -1 {
+			m = m[:idx]
+		}
+		sections["chat_url"] = m
+	}
 
 	// Try structured §N format first.
 	matches := sectionHeaderRe.FindAllStringIndex(output, -1)
@@ -172,6 +183,23 @@ func parseOllySections(output string) map[string]string {
 				end = len(output)
 			}
 			sections[nums[i][1]] = strings.TrimSpace(output[start:end])
+		}
+		return sections
+	}
+
+	// Try numbered format: "## 1. Title", "## 12. Title" (Olly structured 12-section output).
+	nmatches := numberedHeaderRe.FindAllStringIndex(output, -1)
+	if len(nmatches) > 0 {
+		nnums := numberedHeaderRe.FindAllStringSubmatch(output, -1)
+		for i, loc := range nmatches {
+			start := loc[1]
+			var end int
+			if i+1 < len(nmatches) {
+				end = nmatches[i+1][0]
+			} else {
+				end = len(output)
+			}
+			sections[nnums[i][1]] = strings.TrimSpace(output[start:end])
 		}
 		return sections
 	}
@@ -204,6 +232,7 @@ func parseOllySections(output string) map[string]string {
 }
 
 var chatIDLineRe = regexp.MustCompile(`(?m)^Chat ID:.*\n?`)
+var ollyURLRe = regexp.MustCompile(`https://[^)\s]+\.coralogix\.com/#/olly/chat/[a-f0-9-]+`)
 
 // ── Verdict derivation ────────────────────────────────────────────────────────
 

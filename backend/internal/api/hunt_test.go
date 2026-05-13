@@ -94,6 +94,36 @@ Analysis with no structured headers.`
 	}
 }
 
+func TestParseOllySectionsNumberedFormat(t *testing.T) {
+	raw := `## 1. Hunt Summary
+Objective: detect IFEO persistence. Severity: High.
+
+## 2. Original Query
+` + "```lucene\nEventID:13 AND TargetObject:*IFEO*\n```" + `
+
+## 6. Detection Logic Explained
+Sysmon Event ID 13 captures registry value set operations.
+
+## 11. Recommended Follow-up Hunts
+- T1547.001 Run Keys`
+	sections := parseOllySections(raw)
+	if sections["1"] == "" {
+		t.Error("section 1 should be populated from numbered format")
+	}
+	if sections["2"] == "" {
+		t.Error("section 2 should be populated from numbered format")
+	}
+	if sections["6"] == "" {
+		t.Error("section 6 should be populated from numbered format")
+	}
+	if sections["11"] == "" {
+		t.Error("section 11 should be populated from numbered format")
+	}
+	if !strings.Contains(sections["1"], "IFEO") {
+		t.Errorf("section 1 content wrong: %q", sections["1"])
+	}
+}
+
 func TestSanitizeQuery(t *testing.T) {
 	valid := []string{
 		`event_type:"cmd_exec" AND cmd:"-EncodedCommand"`,

@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ExternalLink, Download, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Download, ChevronDown, ChevronRight, MessageSquare } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { FlowAlert, HuntQueryResult, HuntReport } from '../types';
 import { openHuntStream, exportHuntReport } from '../services/api';
 import './HuntView.css';
@@ -28,6 +30,29 @@ const OLLY_LABELS: Record<string, string> = {
   '11': 'Recommended Follow-up Hunts',
   '12': 'Alert Definition Skeleton',
 };
+
+// Renders inline markdown: **bold**, `code`, and [text](url) links.
+function renderMd(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  // Combined regex: markdown link [text](url), **bold**, or `code`
+  const re = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)|\*\*([^*]+)\*\*|`([^`]+)`/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    if (match[1] && match[2]) {
+      parts.push(<a key={key++} href={match[2]} target="_blank" rel="noopener noreferrer" className="finding-link">{match[1]}</a>);
+    } else if (match[3]) {
+      parts.push(<strong key={key++}>{match[3]}</strong>);
+    } else if (match[4]) {
+      parts.push(<code key={key++} className="finding-code">{match[4]}</code>);
+    }
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length ? <>{parts}</> : text;
+}
 
 export default function HuntView({ detection, clientName, cxRegion, onBack, origin = 'builder' }: Props) {
   const [activeStep, setActiveStep] = useState<Step>('query');
@@ -242,11 +267,14 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
                     {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                   </div>
                   {isExpanded && (
-                    <div className="olly-acc-body">
+                    <div className="olly-acc-body olly-md">
                       {key === '10' && content && (
                         <div className="olly-gap-alert">Visibility gaps detected — review before deploying this detection.</div>
                       )}
-                      {content || <span style={{ color: '#6E7B8B', fontStyle: 'italic' }}>No content returned.</span>}
+                      {content
+                        ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                        : <span style={{ color: '#6E7B8B', fontStyle: 'italic' }}>No content returned.</span>
+                      }
                     </div>
                   )}
                 </div>
@@ -311,7 +339,7 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
                   <div className="report-section-title">Key Findings</div>
                   <ul className="report-findings">
                     {report.findings.map((f, i) => (
-                      <li key={i}><div className={`finding-dot dot-${f.severity}`} /><span>{f.text}</span></li>
+                      <li key={i}><div className={`finding-dot dot-${f.severity}`} /><span>{renderMd(f.text)}</span></li>
                     ))}
                   </ul>
                 </>
@@ -351,8 +379,18 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
                 {new Date(report.timestamp).toLocaleString()} · {report.run_duration_ms}ms
               </span>
               <div className="report-actions-row">
+                {ollySections?.['chat_url'] && (
+                  <a
+                    className="hunt-btn hunt-btn-primary"
+                    href={ollySections['chat_url']}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <MessageSquare size={13} /> Continue in CX
+                  </a>
+                )}
                 {ollySections?.['5'] && cxRegion && (
-                  <button className="hunt-btn hunt-btn-primary" onClick={openInCoralogix}>
+                  <button className="hunt-btn hunt-btn-secondary" onClick={openInCoralogix}>
                     <ExternalLink size={13} /> Open in Coralogix
                   </button>
                 )}
