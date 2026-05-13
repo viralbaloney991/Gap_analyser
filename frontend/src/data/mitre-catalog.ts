@@ -35,6 +35,12 @@ export const MITRE_TACTICS: MITRETactic[] = [
 const TACTIC_MAP = Object.fromEntries(MITRE_TACTICS.map(t => [t.id, t]));
 
 const RAW_TECHNIQUES: Omit<MITRETechnique, 'tacticName' | 'tacticOrder'>[] = [
+  // Reconnaissance
+  { id: 'T1595',     name: 'Active Scanning',                          tactic: 'TA0043', source: 'Network'        },
+  { id: 'T1595.002', name: 'Vulnerability Scanning',                   tactic: 'TA0043', source: 'Network'        },
+  { id: 'T1592',     name: 'Gather Victim Host Information',           tactic: 'TA0043', source: 'Network / OSINT' },
+  { id: 'T1598',     name: 'Phishing for Information',                 tactic: 'TA0043', source: 'Email Gateway'  },
+  { id: 'T1596',     name: 'Search Open Technical Databases',          tactic: 'TA0043', source: 'Network / OSINT' },
   // Initial Access
   { id: 'T1078',     name: 'Valid Accounts',                        tactic: 'TA0001', source: 'IdP / Cloud'    },
   { id: 'T1078.004', name: 'Cloud Accounts',                        tactic: 'TA0001', source: 'CloudTrail'     },

@@ -31,7 +31,7 @@ Your job:
    - name: short stage label e.g. "Stage 1: Valid Account Login"
    - description: one-line summary
    - techniqueId: the MITRE T-id this alert primarily detects (from the user's list)
-   - logic: plain-English detection logic, one sentence
+   - logic: Lucene/OpenSearch DSL query string that detects this behavior (used verbatim in Coralogix). Use real field names: process.name, process.args, event.action, source.ip, user.name, file.path, network.bytes_out, http.request.uri, registry.path, etc. Example for T1059: process.name:("powershell.exe" OR "cmd.exe") AND process.args:(*-enc* OR *-nop* OR *IEX*)
    - window: realistic per-stage correlation window. Use "5m" for execution/cred-access; "15m" for initial access; "30m" for evasion; "1h" for persistence; "6h" for lateral/discovery; "12h" for collection; "24h" for C2/exfil.
    - windowReason: one sentence explaining the time window choice (this surfaces in the UI)
    - source: telemetry source — one of "EDR", "CloudTrail", "IdP", "Email", "Network", "WAF"
@@ -159,22 +159,66 @@ func mockBuildDetection(techs []BuildTechnique) *models.BuildDetectionResponse {
 		"TA0009": "medium", "TA0011": "medium", "TA0010": "critical", "TA0040": "critical",
 	}
 
-	cap := len(ordered)
-	if cap > 4 {
-		cap = 4
+	// Per-technique Lucene queries grounded in standard telemetry field names.
+	luceneByTech := map[string]string{
+		"T1078":     `event.action:"login_success" AND NOT source.ip:("10.0.0.0/8" OR "192.168.0.0/16") AND (mfa_result:("timeout" OR "auto_push") OR source.country:NOT_IN_BASELINE)`,
+		"T1078.004": `event.provider:"sts.amazonaws.com" AND event.action:("AssumeRole" OR "GetFederationToken") AND NOT user_agent:*boto* AND source.ip:NOT_IN_BASELINE`,
+		"T1190":     `http.response.status_code:(400 OR 401 OR 403 OR 500) AND (http.request.uri:(*union+select* OR *<script* OR *..\/..\/etc*) OR http.request.body.bytes:>100000)`,
+		"T1566":     `email.attachments.file.extension:("exe" OR "doc" OR "xlsm" OR "js" OR "vbs" OR "lnk") AND email.sender.domain:NOT_IN_ALLOWLIST`,
+		"T1133":     `event.action:("vpn_auth_success" OR "rdp_session_start") AND (source.geo.country_iso_code:NOT_IN_BASELINE OR source.ip:NOT_IN_BASELINE)`,
+		"T1059":     `process.name:("powershell.exe" OR "cmd.exe" OR "wscript.exe" OR "cscript.exe") AND process.args:(*-enc* OR *-EncodedCommand* OR *IEX* OR *-nop* OR *bypass*)`,
+		"T1204":     `process.parent.name:("WINWORD.EXE" OR "EXCEL.EXE" OR "POWERPNT.EXE" OR "outlook.exe") AND process.name:("powershell.exe" OR "cmd.exe" OR "mshta.exe")`,
+		"T1610":     `event.provider:("ecs.amazonaws.com" OR "eks.amazonaws.com") AND event.action:("RunTask" OR "CreateDeployment") AND NOT user.name:*ci-*`,
+		"T1098":     `event.action:("Add member to role" OR "Update user" OR "Reset password") AND target.user.is_privileged:true`,
+		"T1098.001": `event.provider:"iam.amazonaws.com" AND event.action:("CreateAccessKey" OR "CreateLoginProfile" OR "AttachUserPolicy") AND event.outcome:"success"`,
+		"T1136":     `event.action:("CreateUser" OR "net user /add") AND NOT process.name:("sAMAccountName" OR "adws.exe")`,
+		"T1547":     `registry.path:("HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run" OR "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run") AND registry.data.type:"REG_SZ"`,
+		"T1053":     `(process.name:"schtasks.exe" AND process.args:(*\/create* OR *\/change*)) OR event.action:"SchRpcRegisterTask"`,
+		"T1548":     `event.action:("PromptForCredentials" OR "AdjustTokenPrivileges" OR "sudo") AND user.name:NOT_IN_ADMIN_BASELINE`,
+		"T1068":     `process.parent.name:("iexplore.exe" OR "chrome.exe" OR "firefox.exe") AND process.name:("cmd.exe" OR "powershell.exe") AND process.privilege_level:"high"`,
+		"T1484":     `(event.action:"Modify Group Policy Object" OR process.name:"gpupdate.exe") AND user.name:NOT_IN_DOMAIN_ADMIN_BASELINE`,
+		"T1027":     `(process.args:(*-enc* OR *-EncodedCommand*) AND process.args_length:>500) OR file.pe.imphash:IN_KNOWN_PACKERS`,
+		"T1070":     `(process.name:"wevtutil.exe" AND process.args:(*cl* OR *clear*)) OR (event.action:"DeleteFile" AND file.path:*\\System32\\winevt\\*)`,
+		"T1562":     `(process.name:("sc.exe" OR "net.exe") AND process.args:(*stop* OR *delete*) AND process.args:("WinDefend" OR "MpsSvc" OR "wscsvc" OR "Sense"))`,
+		"T1110":     `event.action:("login_fail" OR "authentication_failed") AND event.count:>10 AND timeframe:5m AND source.ip:SAME_IP`,
+		"T1003":     `(process.name:"lsass.exe" AND event.action:"OpenProcess" AND process.access.rights:("0x1010" OR "0x1038" OR "0x143a")) OR process.name:("procdump.exe" OR "mimikatz.exe")`,
+		"T1555":     `(process.name:("mimikatz.exe" OR "lazagne.exe") OR registry.path:*VaultFiles*) OR (process.name:"cmd.exe" AND process.args:*cmdkey*)`,
+		"T1087":     `process.name:("net.exe" OR "net1.exe") AND process.args:(*user* OR *group* OR *localgroup*) AND NOT process.parent.name:"services.exe"`,
+		"T1018":     `(process.name:("nmap" OR "netscan.exe" OR "arp.exe") OR (network.destination.port:445 AND event.count:>20 AND timeframe:1m AND source.ip:SAME_IP))`,
+		"T1538":     `event.provider:"signin.amazonaws.com" AND event.action:"ConsoleLogin" AND event.outcome:"success" AND source.ip:NOT_IN_BASELINE`,
+		"T1021":     `(event.action:("smb_connect" OR "rdp_session_start") OR network.destination.port:(22 OR 445 OR 3389)) AND source.ip:NOT_IN_INTERNAL_RANGE`,
+		"T1550":     `(event.action:("kerberoasting" OR "AS-REP Roasting")) OR (network.protocol:"kerberos" AND kerberos.ticket.encryption_type:"0x17")`,
+		"T1570":     `network.protocol:"smb" AND file.action:"create" AND file.extension:("exe" OR "dll" OR "bat" OR "ps1") AND NOT source.user:IN_ASSET_BASELINE`,
+		"T1005":     `file.action:"read" AND file.path:(*\\Documents\\* OR *\\Desktop\\* OR *\\Downloads\\*) AND process.name:NOT_IN_ALLOWLIST AND file.size:>10MB`,
+		"T1530":     `event.provider:"s3.amazonaws.com" AND event.action:"GetObject" AND source.ip:NOT_IN_TRUSTED_RANGES AND event.count:>50 AND timeframe:15m`,
+		"T1560":     `process.name:("7z.exe" OR "rar.exe" OR "zip.exe" OR "tar") AND file.action:"create" AND file.size:>50MB AND file.path:NOT_IN_BACKUP_PATHS`,
+		"T1071":     `network.transport:"tcp" AND NOT network.destination.port:(80 OR 443 OR 53 OR 8080 OR 8443) AND network.bytes_out:>1MB AND timeframe:1h`,
+		"T1573":     `ssl.certificate.issuer:NOT_IN_KNOWN_CAS AND network.bytes_out:>500KB AND ssl.established:true AND destination.ip:NOT_IN_BASELINE`,
+		"T1105":     `network.protocol:"http" AND http.request.method:"GET" AND file.action:"create" AND file.extension:("exe" OR "dll" OR "ps1") AND process.name:NOT_IN_BROWSERS`,
+		"T1041":     `network.bytes_out:>100MB AND network.destination.ip:IN_THREAT_INTEL AND event.duration:>300s`,
+		"T1567":     `http.request.method:"POST" AND http.request.body.bytes:>10MB AND http.destination.domain:("transfer.sh" OR "mega.nz" OR "wetransfer.com" OR "file.io")`,
+		"T1567.002": `event.provider:"s3.amazonaws.com" AND event.action:"PutObject" AND bucket.acl:"public-read" AND source.ip:NOT_IN_TRUSTED_RANGES`,
+		"T1486":     `file.action:"rename" AND file.path_new:(*\.encrypted OR *\.locked OR *\.crypt) AND event.count:>50 AND timeframe:1m`,
+		"T1490":     `(process.name:"vssadmin.exe" AND process.args:(*delete* OR *resize shadows*)) OR (process.name:"wbadmin.exe" AND process.args:*delete*)`,
+		"T1485":     `file.action:"delete" AND event.count:>200 AND timeframe:2m AND process.name:NOT_IN_ALLOWLIST`,
 	}
-	alerts := make([]models.BuildDetectionAlert, cap)
-	for i, t := range ordered[:cap] {
+
+	alerts := make([]models.BuildDetectionAlert, len(ordered))
+	for i, t := range ordered {
 		wt := windowByTactic[t.TacticID]
 		if wt.w == "" {
 			wt = struct{ w, why string }{"1h", "Standard correlation window for this stage."}
 		}
 		src := strings.SplitN(t.Source, "/", 2)[0]
+		lucene, ok := luceneByTech[t.ID]
+		if !ok {
+			lucene = fmt.Sprintf(`event.category:"%s" AND technique.id:"%s"`, strings.ToLower(t.TacticName), t.ID)
+		}
 		alerts[i] = models.BuildDetectionAlert{
 			Name:         fmt.Sprintf("Stage %d: %s", i+1, t.Name),
 			Description:  fmt.Sprintf("Detect %s activity (%s).", strings.ToLower(t.Name), t.TacticName),
 			TechniqueID:  t.ID,
-			Logic:        fmt.Sprintf("Event matching %s pattern observed via %s.", t.ID, t.Source),
+			Logic:        lucene,
 			Window:       wt.w,
 			WindowReason: wt.why,
 			Source:       strings.TrimSpace(src),

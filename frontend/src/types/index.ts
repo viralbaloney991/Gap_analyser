@@ -239,3 +239,24 @@ export interface GenerationResult {
   correlation: CorrelationRule;
   provider?: string;
 }
+
+export interface MitreTactic {
+  id: string;
+  name: string;
+  short: string;
+  order: number;
+}
+
+export interface MitreTechniqueEntry {
+  id: string;
+  name: string;
+  tactic: string;
+  tacticName: string;
+  tacticOrder: number;
+  source: string;
+}
+
+export interface MitreCatalog {
+  tactics: MitreTactic[];
+  techniques: MitreTechniqueEntry[];
+}

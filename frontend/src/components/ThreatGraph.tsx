@@ -2,6 +2,7 @@ import {
   useState, useEffect, useRef, useMemo,
   useLayoutEffect, useCallback, type RefObject,
 } from 'react';
+import { ArrowRight } from 'lucide-react';
 import type { AnalyzeResponse, TacticCoverage } from '../types';
 
 // ── Prop types ──────────────────────────────────────────────────────────
@@ -573,7 +574,7 @@ function AlertDrillPanel({
       </Section>
 
       <div className="cx-panel-actions">
-        <button type="button" className="cx-btn cx-btn-primary">Open in console →</button>
+        <button type="button" className="cx-btn cx-btn-primary">Open in console <ArrowRight size={13} style={{ verticalAlign: 'middle' }} /></button>
         <button type="button" className="cx-btn">Tune rule</button>
         <button type="button" className="cx-btn">Suppress…</button>
       </div>
@@ -634,7 +635,7 @@ function TechDrillPanel({
 
       <div className="cx-panel-actions">
         <button type="button" className="cx-btn cx-btn-primary" onClick={onViewMitre}>
-          Open in MITRE coverage →
+          Open in MITRE coverage <ArrowRight size={13} style={{ verticalAlign: 'middle' }} />
         </button>
         <button type="button" className="cx-btn">View ATT&amp;CK page</button>
       </div>

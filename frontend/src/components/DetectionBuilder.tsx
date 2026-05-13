@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, Fragment, useRef } from 'react';
+import { AlertTriangle, Info, XCircle } from 'lucide-react';
 import { MITRE_TACTICS, MITRE_TECHNIQUES, mockGenerate } from '../data/mitre-catalog';
 import type { MITRETechnique } from '../data/mitre-catalog';
 import { buildDetection, fetchMitreCatalog } from '../services/api';
@@ -293,8 +294,29 @@ function SourceMatrix({ selectedIds, onAdd, query, tactics, techniques }: Source
     e.dataTransfer.effectAllowed = 'copy';
   }, []);
 
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollToTactic = useCallback((tacticId: string) => {
+    if (!containerRef.current) return;
+    const band = bands.find(b => b.id === tacticId);
+    if (band) containerRef.current.scrollLeft = Math.max(0, band.x - 40);
+  }, [bands]);
+
   return (
-    <div className="src-graph">
+    <div className="src-matrix-wrap">
+      <div className="tactic-nav">
+        {bands.map(b => (
+          <button
+            key={b.id}
+            className="tactic-chip"
+            style={{ '--chip-c': TACTIC_COLOR[b.id] ?? '#6366f1' } as React.CSSProperties}
+            onClick={() => scrollToTactic(b.id)}
+          >
+            <span className="chip-glyph">{TACTIC_GLYPH[b.id] ?? '◆'}</span>
+            {b.short}
+          </button>
+        ))}
+      </div>
+    <div ref={containerRef} className="src-graph">
       <div className="src-graph-grid" />
       <svg
         className="src-graph-svg"
@@ -383,6 +405,7 @@ function SourceMatrix({ selectedIds, onAdd, query, tactics, techniques }: Source
           );
         })}
       </svg>
+    </div>
     </div>
   );
 }
@@ -506,6 +529,58 @@ function Basket({ selected, tactics, onRemove, onClear, onGenerate, generating }
   );
 }
 
+// ── YAML export helpers ───────────────────────────────────────────────────────
+
+function yamlStr(v: string) {
+  return `"${v.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function resultToYaml(result: GenerationResult): string {
+  const lines: string[] = [
+    '# Detection chain — Coralogix Detection Builder',
+    '',
+    `validation:`,
+    `  verdict: ${result.validation.verdict}`,
+  ];
+  if (result.validation.findings.length) {
+    lines.push('  findings:');
+    for (const f of result.validation.findings) {
+      lines.push(`    - level: ${f.level}`);
+      lines.push(`      message: ${yamlStr(f.message)}`);
+    }
+  }
+  lines.push('', 'alerts:');
+  for (const a of result.alerts) {
+    lines.push(`  - name: ${yamlStr(a.name)}`);
+    lines.push(`    technique: ${a.techniqueId}`);
+    lines.push(`    severity: ${a.severity}`);
+    lines.push(`    window: ${a.window}`);
+    lines.push(`    source: ${yamlStr(a.source)}`);
+    lines.push(`    logic: |`);
+    for (const ln of a.logic.split('\n')) lines.push(`      ${ln}`);
+    lines.push('');
+  }
+  lines.push(
+    'correlation:',
+    `  name: ${yamlStr(result.correlation.name)}`,
+    `  severity: ${result.correlation.severity}`,
+    `  window: ${result.correlation.window}`,
+    '  logic: |',
+    ...result.correlation.logic.split('\n').map(ln => `    ${ln}`),
+  );
+  return lines.join('\n');
+}
+
+function downloadYaml(result: GenerationResult) {
+  const blob = new Blob([resultToYaml(result)], { type: 'text/yaml' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `detection-chain-${Date.now()}.yaml`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── GeneratedPanel ───────────────────────────────────────────────────────────
 
 interface GeneratedPanelProps {
@@ -516,6 +591,15 @@ interface GeneratedPanelProps {
 }
 
 function GeneratedPanel({ result, generating, onClose, onRegenerate }: GeneratedPanelProps) {
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    if (!result) return;
+    navigator.clipboard.writeText(resultToYaml(result)).catch(() => {});
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   if (!result && !generating) return null;
 
   return (
@@ -553,7 +637,7 @@ function GeneratedPanel({ result, generating, onClose, onRegenerate }: Generated
               {result.validation.findings.map((f, i) => (
                 <li key={i} className={cls('val-finding', `val-${f.level}`)}>
                   <span className="val-bullet">
-                    {f.level === 'error' ? '✕' : f.level === 'warn' ? '!' : 'i'}
+                    {f.level === 'error' ? <XCircle size={12} /> : f.level === 'warn' ? <AlertTriangle size={12} /> : <Info size={12} />}
                   </span>
                   {f.message}
                 </li>
@@ -617,12 +701,12 @@ function GeneratedPanel({ result, generating, onClose, onRegenerate }: Generated
             </div>
           </div>
 
-          {/* Actions (stubs for v1) */}
+          {/* Actions */}
           <div className="gen-actions">
-            <button className="btn btn-primary" onClick={() => console.log('save', result)}>
-              Save to detections →
+            <button className="btn btn-primary" onClick={handleSave} disabled={saved}>
+              {saved ? '✓ Copied to clipboard' : 'Save to detections →'}
             </button>
-            <button className="btn" onClick={() => console.log('export', result)}>
+            <button className="btn" onClick={() => result && downloadYaml(result)}>
               Export YAML
             </button>
           </div>

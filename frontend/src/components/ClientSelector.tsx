@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Search, ArrowRight } from 'lucide-react';
 import { fetchClients } from '../services/api';
 import type { ClientInfo } from '../types';
 
@@ -66,7 +67,7 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
 
       {/* Search bar */}
       <div className="cs-search">
-        <span className="cs-search__icon">⌕</span>
+        <span className="cs-search__icon"><Search size={14} /></span>
         <input
           className="cs-search__input"
           type="text"
@@ -140,7 +141,7 @@ export default function ClientSelector({ onAnalyze, loading }: Props) {
           onClick={() => { if (selected && !loading) onAnalyze(selected); }}
           disabled={loading || !selected}
         >
-          {loading ? 'Analyzing...' : `Analyze ${selected} →`}
+          {loading ? 'Analyzing…' : <>{`Analyze ${selected}`} <ArrowRight size={13} style={{ verticalAlign: 'middle' }} /></>}
         </button>
       </div>
     </div>

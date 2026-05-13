@@ -1,3 +1,4 @@
+import { ShieldCheck, ScanSearch, Workflow, Hammer, RefreshCw } from 'lucide-react';
 import type { AnalyzeResponse } from '../types';
 
 interface Props {
@@ -63,38 +64,38 @@ export default function IntegrationSummary({ data, clientName, loading, onViewMI
         <div className="summary-panel-actions-label">Explore</div>
         <div className="summary-panel-actions">
           <button className="btn-action" onClick={onViewMITRE}>
-            <div className="action-icon">▦</div>
+            <div className="action-icon action-icon--cyan"><ShieldCheck size={17} /></div>
             <div>
               <span className="action-title">MITRE Coverage</span>
               <span className="action-desc">ATT&CK heatmap &amp; gaps</span>
             </div>
           </button>
           <button className="btn-action" onClick={onViewInsights}>
-            <div className="action-icon">◈</div>
+            <div className="action-icon action-icon--amber"><ScanSearch size={17} /></div>
             <div>
               <span className="action-title">Alert Insights</span>
               <span className="action-desc">AI-powered analysis</span>
             </div>
           </button>
           <button className="btn-action" onClick={onViewGraph}>
-            <div className="action-icon">⬡</div>
+            <div className="action-icon action-icon--violet"><Workflow size={17} /></div>
             <div>
               <span className="action-title">Threat Graph</span>
               <span className="action-desc">Alert correlation network</span>
             </div>
           </button>
           <button className="btn-action" onClick={onViewBuilder}>
-            <div className="action-icon">⚡</div>
+            <div className="action-icon action-icon--orange"><Hammer size={17} /></div>
             <div>
               <span className="action-title">Build detections</span>
               <span className="action-desc">Compose multi-stage flow alerts</span>
             </div>
           </button>
           <button className="btn-action" onClick={onRefresh} disabled={loading}>
-            <div className="action-icon">↻</div>
+            <div className="action-icon action-icon--green"><RefreshCw size={17} /></div>
             <div>
               <span className="action-title">Refresh</span>
-              <span className="action-desc">{loading ? 'Refreshing...' : 'Re-fetch live data'}</span>
+              <span className="action-desc">{loading ? 'Refreshing…' : 'Re-fetch live data'}</span>
             </div>
           </button>
         </div>

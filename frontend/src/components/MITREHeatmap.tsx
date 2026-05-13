@@ -7,6 +7,7 @@
  */
 
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { Download } from 'lucide-react';
 import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse } from '../types';
 import { fetchSuggestions } from '../services/api';
 
@@ -851,7 +852,7 @@ export default function MITREHeatmap({ data, clientName }: Props) {
             </button>
           </div>
           <button type="button" className="mitre-download-btn" onClick={downloadLayer}>
-            ↓ ATT&CK Layer
+            <Download size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />ATT&CK Layer
           </button>
         </div>
       </div>
