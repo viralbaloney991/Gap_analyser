@@ -548,3 +548,90 @@ func truncateString(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
+
+// ── HandleHuntExport ──────────────────────────────────────────────────────────
+
+func (h *Handler) HandleHuntExport(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing required param: id")
+		return
+	}
+
+	if h.cache == nil {
+		writeError(w, http.StatusNotFound, "hunt result not found or expired")
+		return
+	}
+
+	raw, ok := h.cache.GetString(r.Context(), "hunt_result:"+id)
+	if !ok {
+		writeError(w, http.StatusNotFound, "hunt result not found or expired")
+		return
+	}
+
+	var report huntReport
+	if err := json.Unmarshal([]byte(raw), &report); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to decode hunt result")
+		return
+	}
+
+	md := serializeReportToMarkdown(report)
+	filename := fmt.Sprintf("hunt-%s.md", sanitizeFilename(report.Title))
+
+	w.Header().Set("Content-Type", "text/markdown")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	fmt.Fprint(w, md)
+}
+
+func serializeReportToMarkdown(r huntReport) string {
+	verdictLabel := map[string]string{
+		"threat":     "THREAT DETECTED",
+		"suspicious": "SUSPICIOUS ACTIVITY",
+		"clean":      "NO THREATS FOUND",
+	}[r.Verdict]
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "# Hunt Report — %s\n\n", r.Title)
+	fmt.Fprintf(&sb, "**Verdict:** %s  \n", verdictLabel)
+	fmt.Fprintf(&sb, "**Confidence:** %s  \n", r.Confidence)
+	fmt.Fprintf(&sb, "**Timestamp:** %s  \n", r.Timestamp)
+	fmt.Fprintf(&sb, "**Duration:** %dms\n\n", r.RunDurationMs)
+	fmt.Fprintf(&sb, "---\n\n")
+	fmt.Fprintf(&sb, "## Summary\n\n%s\n\n", r.Subtitle)
+
+	if len(r.Findings) > 0 {
+		fmt.Fprintf(&sb, "## Key Findings\n\n")
+		for _, f := range r.Findings {
+			fmt.Fprintf(&sb, "- [%s] %s\n", strings.ToUpper(f.Severity), f.Text)
+		}
+		fmt.Fprintf(&sb, "\n")
+	}
+
+	if len(r.Actions) > 0 {
+		fmt.Fprintf(&sb, "## Immediate Actions\n\n")
+		for _, a := range r.Actions {
+			fmt.Fprintf(&sb, "%d. **[%s]** %s\n", a.Priority, strings.ToUpper(a.Level), a.Description)
+		}
+		fmt.Fprintf(&sb, "\n")
+	}
+
+	fmt.Fprintf(&sb, "## Alert Definition Skeleton\n\n")
+	fmt.Fprintf(&sb, "| Field | Value |\n|-------|-------|\n")
+	fmt.Fprintf(&sb, "| Name | %s |\n", r.AlertDef.Name)
+	fmt.Fprintf(&sb, "| Type | %s |\n", r.AlertDef.Type)
+	fmt.Fprintf(&sb, "| Condition | %s |\n", r.AlertDef.Condition)
+	fmt.Fprintf(&sb, "| Severity | %s |\n", r.AlertDef.Severity)
+	fmt.Fprintf(&sb, "| Group By | %s |\n", r.AlertDef.GroupBy)
+
+	return sb.String()
+}
+
+var filenameRe = regexp.MustCompile(`[^a-zA-Z0-9\-_]`)
+
+func sanitizeFilename(s string) string {
+	result := filenameRe.ReplaceAllString(strings.ReplaceAll(s, " ", "-"), "")
+	if len(result) > 80 {
+		return result[:80]
+	}
+	return result
+}

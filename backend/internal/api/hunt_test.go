@@ -174,3 +174,13 @@ func TestHandleHuntStream_MockSuccess(t *testing.T) {
 		t.Errorf("missing report_ready: %s", body)
 	}
 }
+
+func TestHandleHuntExport_NotFound(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodGet, "/api/hunt/export?id=nonexistent-id", nil)
+	w := httptest.NewRecorder()
+	h.HandleHuntExport(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}

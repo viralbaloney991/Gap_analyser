@@ -102,6 +102,7 @@ func main() {
 	}
 
 	handler := api.NewHandler(cfg, redisStore, neonStore, prewarmWorker, sem)
+	handler.SetCxBinPath(os.Getenv("CX_BIN_PATH"))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", handler.HandleHealth)
@@ -113,7 +114,10 @@ func main() {
 	mux.HandleFunc("/api/correlations", handler.HandleCorrelations)
 	mux.HandleFunc("/api/build-detection", handler.HandleBuildDetection)
 	mux.HandleFunc("/api/map-tactics", handler.HandleMapTactics)
+	mux.HandleFunc("/api/mitre-catalog", handler.HandleMitreCatalog)
 	mux.HandleFunc("/api/export/narrative", handler.HandleExportNarrative)
+	mux.HandleFunc("/api/hunt/stream", handler.HandleHuntStream)
+	mux.HandleFunc("/api/hunt/export", handler.HandleHuntExport)
 
 	// Serve static frontend files in production.
 	frontendDist := os.Getenv("FRONTEND_DIST")
