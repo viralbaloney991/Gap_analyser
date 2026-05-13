@@ -3,14 +3,19 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 // ── Data models ──────────────────────────────────────────────────────────────
@@ -274,4 +279,271 @@ func readCapped(cmd *exec.Cmd, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("cx exit: %w; stderr: %s", werr, stderr.String())
 	}
 	return limited, nil
+}
+
+// ── SSE helpers ───────────────────────────────────────────────────────────────
+
+// noopFlusher is a fallback Flusher for environments that don't support
+// http.Flusher (notably httptest.ResponseRecorder in some Go versions).
+type noopFlusher struct{}
+
+func (noopFlusher) Flush() {}
+
+func sendSSE(w http.ResponseWriter, f http.Flusher, event string, data any) {
+	b, _ := json.Marshal(data)
+	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
+	f.Flush()
+}
+
+// ── HandleHuntStream ──────────────────────────────────────────────────────────
+
+const huntTimeout = 45 * time.Second
+
+func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
+	var flusher http.Flusher
+	if f, ok := w.(http.Flusher); ok {
+		flusher = f
+	} else {
+		flusher = noopFlusher{}
+	}
+
+	q := r.URL.Query()
+	lucene := q.Get("lucene")
+	window := q.Get("window")
+	if window == "" {
+		window = "30d"
+	}
+	name := q.Get("name")
+	severity := q.Get("severity")
+	techniqueId := q.Get("techniqueId")
+
+	if lucene == "" {
+		writeError(w, http.StatusBadRequest, "missing required param: lucene")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	huntID := uuid.New().String()
+	sendSSE(w, flusher, "stream_opened", map[string]string{"hunt_id": huntID})
+
+	if err := sanitizeQuery(lucene); err != nil {
+		sendSSE(w, flusher, "error", huntErrorData{Code: "invalid_query", Message: err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), huntTimeout)
+	defer cancel()
+
+	start := time.Now()
+
+	cx := h.cxExec
+	if cx == nil {
+		cx = &cxRunner{binPath: h.cxBinPath}
+	}
+
+	// Step 1: cx logs
+	cxCmd := fmt.Sprintf("cx logs '%s' --start now-%s --output json --limit 50", lucene, window)
+	logsOut, err := cx.runLogs(ctx, lucene, window)
+	if err != nil {
+		sendSSE(w, flusher, "error", huntErrorData{Code: "cx_logs_failed", Message: err.Error()})
+		return
+	}
+
+	qd := parseLogsOutput(logsOut, cxCmd)
+	sendSSE(w, flusher, "query_done", qd)
+
+	// Step 2: Olly analysis
+	sampleText := formatSampleEvents(qd.SampleEvents)
+	prompt, err := buildOllyPrompt(lucene, qd.Hits, sampleText)
+	if err != nil {
+		sendSSE(w, flusher, "error", huntErrorData{Code: "prompt_build_failed", Message: err.Error()})
+		return
+	}
+
+	ollyOut, err := cx.runOllyChat(ctx, prompt)
+	if err != nil {
+		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: err.Error()})
+		return
+	}
+
+	sections := parseOllySections(string(ollyOut))
+	sendSSE(w, flusher, "olly_done", ollyDoneData{Sections: sections})
+
+	// Step 3: Build report
+	verdict, confidence := deriveVerdict(qd.Hits, sections["1"])
+	report := huntReport{
+		Verdict:    verdict,
+		Confidence: confidence,
+		Title:      deriveThreatTitle(verdict, qd.Hits, name),
+		Subtitle:   sections["1"],
+		Stats: huntStats{
+			Hits:         fmt.Sprintf("%d", qd.Hits),
+			Hosts:        fmt.Sprintf("%d", qd.Hosts),
+			AttackWindow: window,
+		},
+		Findings:      extractFindings(sections, severity),
+		Actions:       extractActions(sections["11"]),
+		AlertDef:      parseAlertDef(sections["12"], name, techniqueId),
+		RunDurationMs: time.Since(start).Milliseconds(),
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+	}
+
+	if h.cache != nil {
+		b, _ := json.Marshal(report)
+		h.cache.SetString(ctx, "hunt_result:"+huntID, string(b), time.Hour)
+	}
+
+	sendSSE(w, flusher, "report_ready", report)
+}
+
+// ── Parse helpers ─────────────────────────────────────────────────────────────
+
+func parseLogsOutput(raw []byte, cxCmd string) queryDoneData {
+	var parsed struct {
+		Hits   int `json:"hits"`
+		Events []struct {
+			Timestamp string `json:"timestamp"`
+			Host      string `json:"host"`
+			User      string `json:"user"`
+			Cmd       string `json:"cmd"`
+		} `json:"events"`
+	}
+	qd := queryDoneData{CxCommand: cxCmd, LastSeen: "unknown"}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+		qd.Hits = len(lines)
+		return qd
+	}
+	qd.Hits = parsed.Hits
+	seen := make(map[string]bool)
+	users := make(map[string]bool)
+	for _, e := range parsed.Events {
+		qd.SampleEvents = append(qd.SampleEvents, huntLogEvent{
+			Timestamp: e.Timestamp,
+			Host:      e.Host,
+			User:      e.User,
+			Command:   e.Cmd,
+		})
+		seen[e.Host] = true
+		if e.User != "" {
+			users[e.User] = true
+		}
+		if e.Timestamp != "" {
+			qd.LastSeen = e.Timestamp
+		}
+	}
+	qd.Hosts = len(seen)
+	qd.UniqueUsers = len(users)
+	return qd
+}
+
+func formatSampleEvents(events []huntLogEvent) string {
+	var sb strings.Builder
+	for _, e := range events {
+		fmt.Fprintf(&sb, "%s  %s  %s  %s\n", e.Timestamp, e.Host, e.User, e.Command)
+	}
+	return sb.String()
+}
+
+func deriveThreatTitle(verdict string, hits int, name string) string {
+	switch verdict {
+	case "threat":
+		return fmt.Sprintf("Active threat confirmed — %d hits for %q", hits, name)
+	case "suspicious":
+		return fmt.Sprintf("%d suspicious events detected for %q", hits, name)
+	default:
+		return fmt.Sprintf("No threats found for %q", name)
+	}
+}
+
+func extractFindings(sections map[string]string, severity string) []huntFinding {
+	var findings []huntFinding
+	for _, src := range []string{"1", "6", "10"} {
+		text := sections[src]
+		if text == "" {
+			continue
+		}
+		for _, line := range strings.Split(text, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "-") || strings.HasPrefix(line, "*") {
+				level := "info"
+				if severity == "critical" || severity == "high" {
+					level = "critical"
+				} else if severity == "medium" {
+					level = "warning"
+				}
+				findings = append(findings, huntFinding{
+					Text:     strings.TrimLeft(line, "-* "),
+					Severity: level,
+				})
+			}
+		}
+	}
+	return findings
+}
+
+func extractActions(section11 string) []huntAction {
+	var actions []huntAction
+	priority := 1
+	for _, line := range strings.Split(section11, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "-") || strings.HasPrefix(line, "*") || (len(line) > 2 && line[1] == '.') {
+			level := "info"
+			lower := strings.ToLower(line)
+			if strings.Contains(lower, "immediately") || strings.Contains(lower, "critical") || strings.Contains(lower, "isolate") {
+				level = "critical"
+			} else if strings.Contains(lower, "review") || strings.Contains(lower, "investigate") {
+				level = "warning"
+			}
+			text := strings.TrimLeft(line, "-*0123456789. ")
+			actions = append(actions, huntAction{
+				Priority:    priority,
+				Title:       truncateString(text, 80),
+				Description: text,
+				Level:       level,
+			})
+			priority++
+		}
+	}
+	return actions
+}
+
+func parseAlertDef(section12, name, techniqueId string) huntAlertDef {
+	_ = techniqueId // reserved for future tagging; keeps signature stable
+	ad := huntAlertDef{Name: name, Type: "standard", Condition: "count > 0", Severity: "high", GroupBy: "host.name"}
+	for _, line := range strings.Split(section12, "\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(parts[0]))
+		val := strings.TrimSpace(parts[1])
+		switch key {
+		case "name":
+			ad.Name = val
+		case "type":
+			ad.Type = val
+		case "condition":
+			ad.Condition = val
+		case "severity":
+			ad.Severity = val
+		case "group-by", "group_by", "groupby":
+			ad.GroupBy = val
+		}
+	}
+	return ad
+}
+
+func truncateString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

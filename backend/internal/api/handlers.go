@@ -37,6 +37,8 @@ type Handler struct {
 	prewarmWorker  *prewarm.Worker
 	prewarmCancels sync.Map // client string → context.CancelFunc
 	sem            *pipeline.Semaphore
+	cxBinPath      string     // path to cx binary; empty means cx not configured
+	cxExec         cxExecutor // nil → real cxRunner; non-nil → injected (tests)
 }
 
 // NewHandler creates a new Handler.
@@ -50,6 +52,11 @@ func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.S
 		prewarmWorker: prewarmWorker,
 		sem:           sem,
 	}
+}
+
+// SetCxBinPath configures the cx binary path for the hunt feature.
+func (h *Handler) SetCxBinPath(path string) {
+	h.cxBinPath = path
 }
 
 // HandleClients returns the list of configured clients with their region.
