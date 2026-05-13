@@ -85,6 +85,7 @@ function App() {
   };
 
   const goBack = () => {
+    if (view === 'builder') setBuilderPreselectedIds([]);
     if (view === 'mitre' || view === 'insights' || view === 'graph' || view === 'builder') {
       setView('summary');
     } else {
@@ -103,6 +104,7 @@ function App() {
     setClientName('');
     setInsightsReport(null);
     setInsightsError(false);
+    setBuilderPreselectedIds([]);
     setError('');
   };
 
@@ -177,7 +179,7 @@ function App() {
                 onViewMITRE={() => setView('mitre')}
                 onViewInsights={() => setView('insights')}
                 onViewGraph={() => setView('graph')}
-                onViewBuilder={() => setView('builder')}
+                onViewBuilder={() => { setBuilderPreselectedIds([]); setView('builder'); }}
                 onRefresh={() => handleAnalyze(clientName, true)}
               />
             </motion.div>
