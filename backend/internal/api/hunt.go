@@ -15,6 +15,7 @@ import (
 	"text/template"
 	"time"
 
+	"coralogix-alert-analyzer/internal/llm"
 	"github.com/google/uuid"
 )
 
@@ -103,42 +104,182 @@ func sanitizeQuery(q string) error {
 	return nil
 }
 
-// ── Olly prompt ───────────────────────────────────────────────────────────────
+// ── Olly schema-discovery prompt ─────────────────────────────────────────────
+//
+// This prompt is intentionally narrow. Olly runs live Coralogix queries as part
+// of its response; long prompts trigger many sub-queries and cause Cloudflare 524
+// timeouts (>5 min). We ask only 3 targeted field-discovery questions so Olly
+// finishes in ~90 s. Claude then uses the confirmed field names for full analysis.
 
-// ollyPromptTemplate is intentionally concise. Olly runs live Coralogix queries
-// as part of its response, so long prompts cause Cloudflare 524 timeouts (>5 min).
-// We ask for Olly's native 3-section format and parse it in parseOllySections.
-const ollyPromptTemplate = `Threat hunt analysis request.
+const ollySchemaPromptTemplate = `Schema discovery for threat hunt — answer 3 questions only.
 
 Query: {{.LuceneQuery}}
-Hits in window: {{.HitCount}}
-{{if .SampleEvents}}Sample events:
+Hits so far: {{.HitCount}}
+{{if .SampleEvents}}Sample events (for context):
 {{.SampleEvents}}
 {{end}}
-Please:
-1. Check if this query matches actual log fields in this environment and suggest corrections if needed.
-2. Summarise what threat behaviour it detects and the risk level (Critical/High/Medium/Low).
-3. List 2-3 recommended follow-up pivot queries or investigation steps.`
+Questions:
+1. What URL/URI/path/link fields exist in these logs? Check common names: $d.url, $d.uri, $d.path, $d.request_url, $d.cx_security.uri, $d.Island.details.file_processing_details.urls, $d.page, $d.Url, $d.MessageURLs — report which ones actually have data.
+2. Do any of the following domains appear in those URL fields: webhook.site, discord.com/api/webhooks, hooks.slack.com, zapier.com/hooks, pipedream.net, requestbin.com? If yes, which field, which domain, and how many hits?
+3. What is the event_type distribution? Run: source logs | groupby $d.event_type aggregate count() as hits | orderby hits desc | limit 10
 
-type ollyPromptData struct {
+Answer concisely. No preamble. Just facts from live queries.`
+
+type ollySchemaPromptData struct {
 	LuceneQuery  string
 	HitCount     int
 	SampleEvents string
 }
 
-var ollyTmpl = template.Must(template.New("olly").Parse(ollyPromptTemplate))
+var ollySchemaTmpl = template.Must(template.New("ollySchema").Parse(ollySchemaPromptTemplate))
 
-func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (string, error) {
+func buildOllySchemaPrompt(luceneQuery string, hitCount int, sampleEvents string) (string, error) {
 	var buf bytes.Buffer
-	err := ollyTmpl.Execute(&buf, ollyPromptData{
+	err := ollySchemaTmpl.Execute(&buf, ollySchemaPromptData{
 		LuceneQuery:  luceneQuery,
 		HitCount:     hitCount,
 		SampleEvents: sampleEvents,
 	})
 	if err != nil {
-		return "", fmt.Errorf("render olly prompt: %w", err)
+		return "", fmt.Errorf("render olly schema prompt: %w", err)
 	}
 	return buf.String(), nil
+}
+
+// ── Claude full-analysis prompt ───────────────────────────────────────────────
+
+// claudeHuntSystemPrompt instructs Claude to produce a 12-section numbered hunt
+// report using DataPrime syntax. It embeds the minimum DataPrime reference needed
+// for Claude to generate syntactically correct queries from the real field names
+// discovered by Olly.
+const claudeHuntSystemPrompt = `You are a senior threat-hunting analyst for a SIEM platform. You will be given:
+- A Lucene detection query
+- Hit count and sample events from a live environment
+- Field-discovery output from Coralogix Olly AI (which ran actual queries and found real field names)
+- DataPrime query syntax reference
+
+Using the REAL field names confirmed by Olly, produce a complete threat hunt report in EXACTLY this numbered-section format. Every section heading must start with "## N." (e.g. "## 1. Summary").
+
+DataPrime Syntax Reference:
+  source logs
+  | filter $d.field == 'value'
+  | filter $d.field.contains('substring')
+  | filter $d.field ~ /regex/
+  | groupby $d.field aggregate count() as hits
+  | orderby hits desc
+  | limit 100
+  Time filter: | filter $m.timestamp > '2024-01-01T00:00:00.000Z'
+  Logical: && (AND), || (OR), ! (NOT)
+  Null check: | filter $d.field != null
+  String ops: .startsWith('x'), .endsWith('x'), .contains('x'), .length()
+  Number ops: ==, !=, <, >, <=, >=
+
+ONLY use field names that were confirmed by Olly's schema discovery. If Olly says a field does not exist, do not use it. If you are uncertain, note it and provide a discovery query instead.
+
+Report sections (produce ALL 12):
+## 1. Summary & Verdict
+Brief 2-3 sentence summary. Include: Severity: [Critical/High/Medium/Low] and Confidence: [High/Medium/Low]
+
+## 2. Query Analysis
+What threat behaviour does this Lucene query detect? Plain English.
+
+## 3. Schema Validation
+Fields confirmed by Olly that exist. Fields from original query that are missing. Corrections made.
+
+## 4. Validated DataPrime Query
+The corrected query in DataPrime syntax using confirmed fields. Ready to paste into Coralogix.
+
+## 5. Threat Behaviour
+MITRE ATT&CK context. What attacker technique does this represent?
+
+## 6. Key Findings
+Bullet list of significant observations from the sample events and hit data.
+
+## 7. Risk Assessment
+Risk level and business impact. What happens if this is a true positive?
+
+## 8. MITRE ATT&CK Mapping
+Tactic, Technique ID, Technique Name. Sub-technique if applicable.
+
+## 9. Pivot Hunt Queries
+3-5 DataPrime follow-up queries for deeper investigation. Each with a comment explaining its purpose.
+
+## 10. Forensic Indicators
+IOCs, suspicious patterns, or anomalies found. Bullet list.
+
+## 11. Recommended Actions
+Numbered action items. Mark urgency: [Immediately] [Within 24h] [This week]
+
+## 12. Alert Definition
+Name: [descriptive alert name]
+Type: standard
+Condition: count > 0
+Severity: [Critical/High/Medium/Low]
+Group-By: [most relevant grouping field]`
+
+const claudeHuntUserTemplate = `Threat hunt analysis request.
+
+**Original Lucene query:**
+{{.LuceneQuery}}
+
+**Hit count (30-day window):** {{.HitCount}}
+
+{{if .SampleEvents}}**Sample events:**
+{{.SampleEvents}}
+{{end}}
+**Olly schema discovery output:**
+{{.OllySchemaOutput}}
+
+Using the real field names Olly confirmed above, produce the complete 12-section hunt report.`
+
+type claudeHuntUserData struct {
+	LuceneQuery      string
+	HitCount         int
+	SampleEvents     string
+	OllySchemaOutput string
+}
+
+var claudeHuntTmpl = template.Must(template.New("claudeHunt").Parse(claudeHuntUserTemplate))
+
+func buildClaudeHuntPrompt(luceneQuery string, hitCount int, sampleEvents, ollySchemaOutput string) (string, error) {
+	var buf bytes.Buffer
+	err := claudeHuntTmpl.Execute(&buf, claudeHuntUserData{
+		LuceneQuery:      luceneQuery,
+		HitCount:         hitCount,
+		SampleEvents:     sampleEvents,
+		OllySchemaOutput: ollySchemaOutput,
+	})
+	if err != nil {
+		return "", fmt.Errorf("render claude hunt prompt: %w", err)
+	}
+	return buf.String(), nil
+}
+
+// runClaudeHuntAnalysis calls the Anthropic API directly (no cx, no Cloudflare proxy)
+// to produce the full 12-section analysis grounded in Olly's real field names.
+func runClaudeHuntAnalysis(ctx context.Context, apiKey, userPrompt string) (string, error) {
+	p, err := llm.NewProvider("claude", llm.ProviderConfig{
+		AnthropicAPIKey: apiKey,
+		ClaudeModel:     "claude-sonnet-4-6",
+	})
+	if err != nil {
+		return "", fmt.Errorf("init claude provider: %w", err)
+	}
+	result, err := p.Complete(ctx, llm.CompletionRequest{
+		SystemPrompt: claudeHuntSystemPrompt,
+		UserMessage:  userPrompt,
+		MaxTokens:    4096,
+	})
+	if err != nil {
+		return "", fmt.Errorf("claude analysis: %w", err)
+	}
+	return result, nil
+}
+
+// buildOllyPrompt is kept as an alias to the schema-discovery builder so existing
+// test helpers and the handler call site remain compatible.
+func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (string, error) {
+	return buildOllySchemaPrompt(luceneQuery, hitCount, sampleEvents)
 }
 
 // ── Section parser ────────────────────────────────────────────────────────────
@@ -426,21 +567,44 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	qd := parseLogsOutput(logsOut, cxCmd)
 	sendSSE(w, flusher, "query_done", qd)
 
-	// Step 2: Olly analysis
+	// Step 2: Olly schema discovery (short focused prompt, ~90s, no 524 risk)
 	sampleText := formatSampleEvents(qd.SampleEvents)
-	prompt, err := buildOllyPrompt(lucene, qd.Hits, sampleText)
+	schemaPrompt, err := buildOllySchemaPrompt(lucene, qd.Hits, sampleText)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "prompt_build_failed", Message: err.Error()})
 		return
 	}
 
-	ollyOut, err := cx.runOllyChat(ctx, prompt)
+	ollySchemaOut, err := cx.runOllyChat(ctx, schemaPrompt)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: err.Error()})
 		return
 	}
 
-	sections := parseOllySections(string(ollyOut))
+	// Step 3: Claude full analysis (direct Anthropic API, ~25s, no Cloudflare proxy)
+	anthropicKey := ""
+	if h.config != nil {
+		anthropicKey = h.config.LLM.AnthropicAPIKey
+	}
+
+	var analysisOutput string
+	if anthropicKey != "" {
+		claudePrompt, perr := buildClaudeHuntPrompt(lucene, qd.Hits, sampleText, string(ollySchemaOut))
+		if perr != nil {
+			sendSSE(w, flusher, "error", huntErrorData{Code: "prompt_build_failed", Message: perr.Error()})
+			return
+		}
+		analysisOutput, err = runClaudeHuntAnalysis(ctx, anthropicKey, claudePrompt)
+		if err != nil {
+			// Fall back to Olly schema output if Claude API fails
+			analysisOutput = string(ollySchemaOut)
+		}
+	} else {
+		// No Anthropic key: use Olly schema output directly as the report body
+		analysisOutput = string(ollySchemaOut)
+	}
+
+	sections := parseOllySections(analysisOutput)
 	sendSSE(w, flusher, "olly_done", ollyDoneData{Sections: sections})
 
 	// Step 3: Build report
