@@ -299,9 +299,9 @@ func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, e
 }
 
 func (r *cxRunner) runOllyChat(ctx context.Context, prompt string) ([]byte, error) {
-	// --mode fast reduces the number of sub-queries Olly runs, keeping total
-	// execution time under Cloudflare's ~5-minute gateway timeout (524 error).
-	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask", "--mode", "fast", prompt)
+	// --mode fast reduces sub-queries; requires a compatible model (gpt-5.2 is invalid for fast mode).
+	// claude-haiku-4-5 is the fastest available model and keeps execution under Cloudflare's ~5-min limit.
+	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask", "--mode", "fast", "--model", "claude-haiku-4-5", prompt)
 	cmd.Env = r.env()
 	return readCapped(cmd, maxOutputBytes)
 }
