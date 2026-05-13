@@ -1,5 +1,10 @@
 # Agentic Hunt — Multi-Model Tool Use Design
 
+> **STATUS: DEFERRED — Security Hold**
+> Customer log data (raw events, field values, URLs, usernames) would be sent to external LLM providers (Anthropic, Google) as tool call results. This violates data residency and customer privacy requirements. All hunt analysis must remain inside Coralogix infrastructure. Revisit if/when a self-hosted model option is available, or if per-client external-LLM opt-in is approved.
+>
+> Current approach: Olly handles all analysis inside Coralogix infra — no data leaves.
+
 ## Goal
 
 Replace the current Olly → Claude pipe with a fully agentic hunt loop where the selected LLM (Claude or Gemini) autonomously runs `cx` DataPrime/Lucene queries as tools, discovers the real log schema, investigates the detection, and produces a complete 12-section threat hunt report. The model, query count, and investigation depth are all model-driven — no hard cap except a 30-turn safety net.
