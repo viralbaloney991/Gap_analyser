@@ -10,7 +10,7 @@ import ThreatGraph from './components/ThreatGraph';
 import DetectionBuilder from './components/DetectionBuilder';
 import HuntView from './components/HuntView';
 import { analyzeClient, fetchInsights, fetchNoise } from './services/api';
-import type { AnalyzeResponse, InsightsReport, SimilarityResult, FlowAlert } from './types';
+import type { AnalyzeResponse, InsightsReport, SimilarityResult, FlowAlert, HuntPayload } from './types';
 import './App.css';
 
 const VALID_LOOKBACK = [7, 14, 30, 90];
@@ -218,7 +218,25 @@ function App() {
 
           {view === 'mitre' && data && (
             <motion.div key="mitre" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <MITREHeatmap data={data.mitre_coverage} clientName={clientName} />
+              <MITREHeatmap
+                data={data.mitre_coverage}
+                clientName={clientName}
+                onHunt={(payload: HuntPayload) => {
+                  const validSeverities = ['critical', 'high', 'medium', 'low'] as const;
+                  const sev = payload.severity.toLowerCase() as FlowAlert['severity'];
+                  setHuntDetection({
+                    name: payload.name,
+                    description: '',
+                    techniqueId: payload.techniqueId,
+                    logic: payload.logic,
+                    window: payload.window,
+                    windowReason: '',
+                    source: payload.source,
+                    severity: validSeverities.includes(sev) ? sev : 'medium',
+                  });
+                  navigate('hunt');
+                }}
+              />
             </motion.div>
           )}
 

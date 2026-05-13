@@ -8,12 +8,13 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Download } from 'lucide-react';
-import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse } from '../types';
+import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse, HuntPayload } from '../types';
 import { fetchSuggestions } from '../services/api';
 
 interface Props {
   data: MITRECoverageResult;
   clientName: string;
+  onHunt?: (payload: HuntPayload) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -541,9 +542,11 @@ function ForceGraph({
 function SuggestionsPanel({
   technique,
   clientName,
+  onHunt,
 }: {
   technique: NavigatorTechnique;
   clientName: string;
+  onHunt?: (payload: HuntPayload) => void;
 }) {
   const [suggestions, setSuggestions] = useState<SuggestionsResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -640,6 +643,25 @@ function SuggestionsPanel({
                 <div className="suggestion-query">
                   <code>{s.query_hint}</code>
                 </div>
+                {onHunt && (
+                  <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      className="hunt-trigger-btn"
+                      onClick={() => onHunt({
+                        detectionId: `${technique.techniqueID}-${i}-${Date.now()}`,
+                        name: s.alert_name,
+                        logic: s.query_hint,
+                        techniqueId: technique.techniqueID,
+                        tacticId: technique.tactic,
+                        window: '30d',
+                        source: s.log_source,
+                        severity: s.priority.toLowerCase(),
+                      })}
+                    >
+                      Hunt
+                    </button>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -657,10 +679,12 @@ function TechniqueDetailPanel({
   technique,
   clientName,
   onClose,
+  onHunt,
 }: {
   technique: NavigatorTechnique;
   clientName: string;
   onClose: () => void;
+  onHunt?: (payload: HuntPayload) => void;
 }) {
   return (
     <div
@@ -708,7 +732,7 @@ function TechniqueDetailPanel({
                 </div>
               </div>
             )}
-            <SuggestionsPanel technique={technique} clientName={clientName} />
+            <SuggestionsPanel technique={technique} clientName={clientName} onHunt={onHunt} />
           </div>
         )}
       </div>
@@ -722,7 +746,7 @@ function TechniqueDetailPanel({
 
 type ViewMode = 'heatmap' | 'graph';
 
-export default function MITREHeatmap({ data, clientName }: Props) {
+export default function MITREHeatmap({ data, clientName, onHunt }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('heatmap');
   const [selectedTechnique, setSelectedTechnique] = useState<NavigatorTechnique | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -935,6 +959,7 @@ export default function MITREHeatmap({ data, clientName }: Props) {
           technique={selectedTechnique}
           clientName={clientName}
           onClose={() => handleSelectTechnique(null)}
+          onHunt={onHunt}
         />
       )}
     </div>
