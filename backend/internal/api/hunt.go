@@ -202,6 +202,7 @@ func parseOllySections(output string) map[string]string {
 
 var severityRe = regexp.MustCompile(`(?i)Severity:\s*(\w+)`)
 var confidenceRe = regexp.MustCompile(`(?i)Confidence:\s*(\w+)`)
+var numberedListRe = regexp.MustCompile(`^\d+\.\s`)
 
 func deriveVerdict(hits int, section1 string) (verdict, confidence string) {
 	sev := "medium"
@@ -494,7 +495,7 @@ func extractActions(section11 string) []huntAction {
 		if line == "" {
 			continue
 		}
-		if strings.HasPrefix(line, "-") || strings.HasPrefix(line, "*") || (len(line) > 2 && line[1] == '.') {
+		if strings.HasPrefix(line, "-") || strings.HasPrefix(line, "*") || numberedListRe.MatchString(line) {
 			level := "info"
 			lower := strings.ToLower(line)
 			if strings.Contains(lower, "immediately") || strings.Contains(lower, "critical") || strings.Contains(lower, "isolate") {
