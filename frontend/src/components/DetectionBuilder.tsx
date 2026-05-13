@@ -51,11 +51,12 @@ const BANDS_START_X = TRIGGER_X + TRIGGER_W + 40; // 188
 interface Props {
   clientName: string;
   preselectedIds?: string[];
+  onHunt?: (alert: FlowAlert) => void;
 }
 
 // ── Root component ───────────────────────────────────────────────────────────
 
-export default function DetectionBuilder({ clientName, preselectedIds }: Props) {
+export default function DetectionBuilder({ clientName, preselectedIds, onHunt }: Props) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(
     () => new Set(preselectedIds ?? [])
   );
@@ -680,6 +681,16 @@ function GeneratedPanel({ result, generating, onClose, onRegenerate }: Generated
                   <div className="ac-window-reason">
                     <span className="awr-label">Why this window:</span> {a.windowReason}
                   </div>
+                  {onHunt && (
+                    <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        className="hunt-trigger-btn"
+                        onClick={() => onHunt(a)}
+                      >
+                        Hunt
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
