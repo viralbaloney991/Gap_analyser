@@ -573,6 +573,10 @@ function SuggestionsPanel({
     }
   };
 
+  // Auto-load cached suggestions when the panel opens.
+  // force=false means the backend returns cached results instantly if available.
+  useEffect(() => { generate(false); }, [technique.techniqueID, technique.tactic]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="suggestions-section">
       <div className="suggestions-controls">
@@ -591,7 +595,7 @@ function SuggestionsPanel({
           onClick={() => generate(true)}
           disabled={loading}
         >
-          {loading ? 'Generating...' : 'Generate Suggestions'}
+          {loading ? 'Generating...' : suggestions ? 'Regenerate' : 'Generate Suggestions'}
         </button>
       </div>
 
