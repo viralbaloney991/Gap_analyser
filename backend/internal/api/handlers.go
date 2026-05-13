@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os/exec"
 	"sort"
 	"strings"
 	"sync"
@@ -55,7 +56,13 @@ func NewHandler(cfg *config.Config, redisStore *cache.Store, alertStore *store.S
 }
 
 // SetCxBinPath configures the cx binary path for the hunt feature.
+// If path is empty it tries to auto-discover cx via PATH.
 func (h *Handler) SetCxBinPath(path string) {
+	if path == "" {
+		if found, err := exec.LookPath("cx"); err == nil {
+			path = found
+		}
+	}
 	h.cxBinPath = path
 }
 

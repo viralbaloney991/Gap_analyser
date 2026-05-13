@@ -336,6 +336,14 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.cxExec == nil && h.cxBinPath == "" {
+		sendSSE(w, flusher, "error", huntErrorData{
+			Code:    "cx_not_configured",
+			Message: "cx CLI not configured: set CX_BIN_PATH environment variable or install cx in PATH",
+		})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), huntTimeout)
 	defer cancel()
 
