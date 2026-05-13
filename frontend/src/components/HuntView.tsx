@@ -197,11 +197,11 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
                   </div>
                 ))}
               </div>
-              {queryResult.sample_events.length > 0 && (
+              {queryResult.sample_events?.length > 0 && (
                 <table className="hunt-log-table">
                   <thead><tr><th>Time</th><th>Host</th><th>User</th><th>Command</th></tr></thead>
                   <tbody>
-                    {queryResult.sample_events.slice(0, 5).map((ev, i) => (
+                    {queryResult.sample_events?.slice(0, 5).map((ev, i) => (
                       <tr key={i}>
                         <td>{ev.timestamp}</td>
                         <td>{ev.host}</td>
@@ -306,7 +306,7 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
             </div>
 
             <div className="report-body">
-              {report.findings.length > 0 && (
+              {report.findings?.length > 0 && (
                 <>
                   <div className="report-section-title">Key Findings</div>
                   <ul className="report-findings">
@@ -316,7 +316,7 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
                   </ul>
                 </>
               )}
-              {report.actions.length > 0 && (
+              {report.actions?.length > 0 && (
                 <>
                   <div className="report-section-title">Immediate Actions</div>
                   <div className="report-actions">
@@ -329,17 +329,21 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
                   </div>
                 </>
               )}
-              <div className="report-section-title">Alert Definition Skeleton</div>
-              <div className="report-alert-def">
-                <div className="alert-def-grid">
-                  {(Object.entries(report.alert_def) as [string, string][]).map(([k, val]) => (
-                    <React.Fragment key={k}>
-                      <span className="alert-def-key">{k.replace('_', ' ')}</span>
-                      <span className="alert-def-val">{val}</span>
-                    </React.Fragment>
-                  ))}
-                </div>
-              </div>
+              {report.alert_def && Object.keys(report.alert_def).length > 0 && (
+                <>
+                  <div className="report-section-title">Alert Definition Skeleton</div>
+                  <div className="report-alert-def">
+                    <div className="alert-def-grid">
+                      {(Object.entries(report.alert_def) as [string, string][]).map(([k, val]) => (
+                        <React.Fragment key={k}>
+                          <span className="alert-def-key">{k.replace('_', ' ')}</span>
+                          <span className="alert-def-val">{val}</span>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="report-footer">

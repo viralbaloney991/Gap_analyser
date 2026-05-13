@@ -88,7 +88,7 @@ type huntErrorData struct {
 // ── Input sanitization ───────────────────────────────────────────────────────
 
 var queryAllowlist = regexp.MustCompile(`^[\x20-\x7E]+$`)
-var queryForbidden = regexp.MustCompile(`[$` + "`" + `;|\\&><\n\r]`)
+var queryForbidden = regexp.MustCompile("[`" + `;|\\&\n\r]|\$[({]`)
 
 func sanitizeQuery(q string) error {
 	if len(q) > 1000 {
@@ -105,55 +105,20 @@ func sanitizeQuery(q string) error {
 
 // ── Olly prompt ───────────────────────────────────────────────────────────────
 
-const ollyPromptTemplate = `You are a Coralogix threat-hunting specialist. Analyse the detection query and log results below and return a structured threat-hunting report.
+// ollyPromptTemplate is intentionally concise. Olly runs live Coralogix queries
+// as part of its response, so long prompts cause Cloudflare 524 timeouts (>5 min).
+// We ask for Olly's native 3-section format and parse it in parseOllySections.
+const ollyPromptTemplate = `Threat hunt analysis request.
 
-Your response MUST follow this exact structure with section headers:
-
-## §1 Hunt Summary
-[Provide: Severity (Critical/High/Medium/Low), Confidence (High/Medium/Low), Search Window, Hunt Objective, MITRE ATT&CK Technique/Tactic]
-
-## §2 Original Query
-[Echo the exact Lucene query provided]
-
-## §3 Schema Mapping
-[Table with columns: Original Field | CX Log Path | Application/Subsystem | Gaps]
-
-## §4 Translated Query — DataPrime
-[The query translated to Coralogix DataPrime syntax]
-
-## §5 Translated Query — Lucene
-[Optimised Lucene query for Coralogix Explore]
-
-## §6 Detection Logic Explained
-[Plain-language explanation of what the query detects and why]
-
-## §7 Hunt Workflow
-[Step-by-step manual investigation workflow for a tier-2 analyst]
-
-## §8 Suggested Aggregation / Pivot Query
-[DataPrime or Lucene aggregation query to reveal attack patterns]
-
-## §9 False Positive Considerations
-[List likely false positive sources with suppression suggestions]
-
-## §10 Visibility Gaps & Assumptions
-[List missing log sources, fields, or coverage gaps that limit this hunt]
-
-## §11 Recommended Follow-up Hunts
-[3-5 related hunts with brief description and query sketch]
-
-## §12 Alert Definition Skeleton
-[Key-value block: Name, Type, Condition, Severity, Group-by fields]
-
----
-
-## QUERY TO HUNT
-{{.LuceneQuery}}
-
-## LOG RESULTS (cx logs output)
-Total hits: {{.HitCount}}
-Sample events:
-{{.SampleEvents}}`
+Query: {{.LuceneQuery}}
+Hits in window: {{.HitCount}}
+{{if .SampleEvents}}Sample events:
+{{.SampleEvents}}
+{{end}}
+Please:
+1. Check if this query matches actual log fields in this environment and suggest corrections if needed.
+2. Summarise what threat behaviour it detects and the risk level (Critical/High/Medium/Low).
+3. List 2-3 recommended follow-up pivot queries or investigation steps.`
 
 type ollyPromptData struct {
 	LuceneQuery  string
@@ -179,24 +144,66 @@ func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (str
 // ── Section parser ────────────────────────────────────────────────────────────
 
 var sectionHeaderRe = regexp.MustCompile(`(?m)^##\s+§(\d+)\s+`)
+var genericHeaderRe = regexp.MustCompile(`(?m)^##\s+(.+?)\s*$`)
+
+// genericSectionMap maps Olly's native free-form header names to §N slot numbers.
+var genericSectionMap = map[string]string{
+	"summary":      "1",
+	"findings":     "6",
+	"next steps":   "11",
+	"next step":    "11",
+	"action items": "11",
+	"actions":      "11",
+}
 
 func parseOllySections(output string) map[string]string {
-	matches := sectionHeaderRe.FindAllStringIndex(output, -1)
-	nums := sectionHeaderRe.FindAllStringSubmatch(output, -1)
 	sections := make(map[string]string, 12)
-	for i, loc := range matches {
-		start := loc[1] // after the header
+
+	// Try structured §N format first.
+	matches := sectionHeaderRe.FindAllStringIndex(output, -1)
+	if len(matches) > 0 {
+		nums := sectionHeaderRe.FindAllStringSubmatch(output, -1)
+		for i, loc := range matches {
+			start := loc[1]
+			var end int
+			if i+1 < len(matches) {
+				end = matches[i+1][0]
+			} else {
+				end = len(output)
+			}
+			sections[nums[i][1]] = strings.TrimSpace(output[start:end])
+		}
+		return sections
+	}
+
+	// Fall back: Olly's native free-form ## Header format.
+	gmatches := genericHeaderRe.FindAllStringIndex(output, -1)
+	gheaders := genericHeaderRe.FindAllStringSubmatch(output, -1)
+	for i, loc := range gmatches {
+		start := loc[1]
 		var end int
-		if i+1 < len(matches) {
-			end = matches[i+1][0]
+		if i+1 < len(gmatches) {
+			end = gmatches[i+1][0]
 		} else {
 			end = len(output)
 		}
 		content := strings.TrimSpace(output[start:end])
-		sections[nums[i][1]] = content
+		name := strings.ToLower(strings.TrimSpace(gheaders[i][1]))
+		if slot, ok := genericSectionMap[name]; ok {
+			sections[slot] = content
+		}
+	}
+
+	// Ensure section "1" has at least a trimmed version of the full response as
+	// the report subtitle, stripping the leading "Chat ID: ..." line if present.
+	if sections["1"] == "" {
+		body := strings.TrimSpace(chatIDLineRe.ReplaceAllString(output, ""))
+		sections["1"] = body
 	}
 	return sections
 }
+
+var chatIDLineRe = regexp.MustCompile(`(?m)^Chat ID:.*\n?`)
 
 // ── Verdict derivation ────────────────────────────────────────────────────────
 
@@ -263,7 +270,7 @@ func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, e
 }
 
 func (r *cxRunner) runOllyChat(ctx context.Context, prompt string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, r.binPath, "olly", "chat", prompt)
+	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask", prompt)
 	cmd.Env = r.env()
 	return readCapped(cmd, maxOutputBytes)
 }
@@ -313,7 +320,7 @@ func sendSSE(w http.ResponseWriter, f http.Flusher, event string, data any) {
 
 // ── HandleHuntStream ──────────────────────────────────────────────────────────
 
-const huntTimeout = 45 * time.Second
+const huntTimeout = 6 * time.Minute
 
 func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	var flusher http.Flusher
@@ -368,9 +375,11 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	cx := h.cxExec
 	if cx == nil {
 		runner := &cxRunner{binPath: h.cxBinPath}
-		if clientCfg, ok := h.config.Clients[clientName]; ok {
-			runner.apiKey = clientCfg.APIKey
-			runner.region = clientCfg.Region
+		if h.config != nil {
+			if clientCfg, ok := h.config.Clients[clientName]; ok {
+				runner.apiKey = clientCfg.APIKey
+				runner.region = clientCfg.Region
+			}
 		}
 		cx = runner
 	}

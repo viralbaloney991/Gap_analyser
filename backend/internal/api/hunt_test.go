@@ -52,11 +52,55 @@ event_type:"cmd_exec"
 	}
 }
 
+func TestParseOllySectionsNativeFormat(t *testing.T) {
+	raw := `Chat ID: abc-123
+
+## Summary
+Analysis of geo-anomaly query. 29 events matched from RU/CN.
+
+## Findings
+- No matching fields in ECS schema.
+- Salesforce LoginEvent has CountryIso field that matches.
+
+## Next Steps
+- Pivot on username and source IP.
+- Check if Azure AD logs are ingested.
+`
+	sections := parseOllySections(raw)
+	if sections["1"] == "" {
+		t.Error("section 1 (Summary) missing")
+	}
+	if !strings.Contains(sections["1"], "29 events") {
+		t.Errorf("section 1 content wrong: %q", sections["1"])
+	}
+	if !strings.Contains(sections["6"], "Salesforce") {
+		t.Errorf("section 6 (Findings) wrong: %q", sections["6"])
+	}
+	if !strings.Contains(sections["11"], "Pivot") {
+		t.Errorf("section 11 (Next Steps) wrong: %q", sections["11"])
+	}
+}
+
+func TestParseOllySectionsNativeFormatNoHeaders(t *testing.T) {
+	raw := `Chat ID: abc-123
+
+Analysis with no structured headers.`
+	sections := parseOllySections(raw)
+	if sections["1"] == "" {
+		t.Error("section 1 fallback missing")
+	}
+	if strings.Contains(sections["1"], "Chat ID:") {
+		t.Error("Chat ID line should be stripped from section 1 fallback")
+	}
+}
+
 func TestSanitizeQuery(t *testing.T) {
 	valid := []string{
 		`event_type:"cmd_exec" AND cmd:"-EncodedCommand"`,
 		`source.ip:10.0.0.1 AND user:admin`,
 		`kubernetes.pod:frontend-*`,
+		`user.risk_score:>70 OR source.geo.country_iso_code:<10`, // comparison operators are safe with argv exec
+		`$m.severity:"high" AND $l.subsystemName:"auth"`,         // DataPrime field references
 	}
 	for _, q := range valid {
 		if err := sanitizeQuery(q); err != nil {
@@ -74,7 +118,8 @@ func TestSanitizeQuery(t *testing.T) {
 		strings.Repeat(" ", 1001),           // 1001 printable ASCII chars — tests length guard exclusively
 		`event_type:cmd\injected`,           // backslash
 		`event_type:cmd & id`,               // background exec
-		`event_type:cmd > /tmp/out`,         // output redirect
+		`event_type:cmd $(cat /etc/passwd)`, // subshell via $()
+		`event_type:cmd ${PATH}`,            // variable expansion via ${}
 	}
 	for _, q := range invalid {
 		if err := sanitizeQuery(q); err == nil {
