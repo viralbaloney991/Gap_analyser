@@ -260,3 +260,72 @@ export interface MitreCatalog {
   tactics: MitreTactic[];
   techniques: MitreTechniqueEntry[];
 }
+
+// ── Hunt feature ─────────────────────────────────────────────────────────────
+
+export interface HuntPayload {
+  detectionId: string
+  name: string
+  logic: string
+  techniqueId: string
+  tacticId: string
+  window: string
+  source: string
+  severity: string
+}
+
+export type HuntVerdict = 'clean' | 'suspicious' | 'threat'
+
+export interface HuntLogEvent {
+  timestamp: string
+  host: string
+  user: string
+  command: string
+}
+
+export interface HuntQueryResult {
+  hits: number
+  hosts: number
+  last_seen: string
+  unique_users: number
+  sample_events: HuntLogEvent[]
+  cx_command: string
+}
+
+export interface HuntReport {
+  verdict: HuntVerdict
+  confidence: 'low' | 'medium' | 'high'
+  title: string
+  subtitle: string
+  stats: {
+    hits: string
+    hosts: string
+    attack_window: string
+    c2_flagged: boolean
+  }
+  findings: HuntFinding[]
+  actions: HuntAction[]
+  alert_def: HuntAlertDef
+  run_duration_ms: number
+  timestamp: string
+}
+
+export interface HuntFinding {
+  text: string
+  severity: 'critical' | 'warning' | 'info'
+}
+
+export interface HuntAction {
+  priority: number
+  title: string
+  description: string
+  level: 'critical' | 'warning' | 'info'
+}
+
+export interface HuntAlertDef {
+  name: string
+  type: string
+  condition: string
+  severity: string
+  group_by: string
+}

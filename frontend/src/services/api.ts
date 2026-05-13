@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, ClientInfo, CorrelationsResponse, ExportNarrativeReport, GenerationResult, InsightsReport, MapTacticsResponse, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
+import type { AnalyzeResponse, ClientInfo, CorrelationsResponse, ExportNarrativeReport, GenerationResult, HuntPayload, InsightsReport, MapTacticsResponse, MitreCatalog, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -154,4 +154,36 @@ export async function buildDetection(
     throw new Error(err.error || 'Failed to generate detection');
   }
   return res.json();
+}
+
+
+export async function fetchMitreCatalog(): Promise<MitreCatalog> {
+  const res = await fetch(`${API_BASE}/api/mitre-catalog`);
+  if (!res.ok) throw new Error('Failed to fetch MITRE catalog');
+  return res.json();
+}
+
+export function openHuntStream(detection: HuntPayload): EventSource {
+  const params = new URLSearchParams({
+    lucene:      detection.logic,
+    window:      detection.window,
+    name:        detection.name,
+    severity:    detection.severity,
+    techniqueId: detection.techniqueId,
+    tacticId:    detection.tacticId,
+    source:      detection.source,
+  });
+  return new EventSource(`${API_BASE}/api/hunt/stream?${params.toString()}`);
+}
+
+export async function exportHuntReport(huntId: string): Promise<void> {
+  const url = `${API_BASE}/api/hunt/export?id=${encodeURIComponent(huntId)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Export failed: ${res.statusText}`);
+  const blob = await res.blob();
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] ?? 'hunt-report.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
