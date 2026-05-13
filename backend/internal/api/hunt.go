@@ -264,12 +264,14 @@ func readCapped(cmd *exec.Cmd, limit int64) ([]byte, error) {
 	}
 
 	pw.Close()
-	limited, readErr := io.ReadAll(io.LimitReader(pr, limit))
+	limited, _ := io.ReadAll(io.LimitReader(pr, limit))
 	pr.Close()
 
-	if werr := cmd.Wait(); werr != nil {
+	werr := cmd.Wait()
+	// If we read a full limit-sized chunk, the child likely got SIGPIPE when we
+	// closed the pipe. Treat that as a successful cap rather than an error.
+	if werr != nil && int64(len(limited)) < limit {
 		return nil, fmt.Errorf("cx exit: %w; stderr: %s", werr, stderr.String())
 	}
-	_ = readErr
 	return limited, nil
 }
