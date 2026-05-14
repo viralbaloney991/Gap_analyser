@@ -350,6 +350,11 @@ func deriveVerdict(hits int, section1 string) (verdict, confidence string) {
 
 // ── cx executor ────────────────────────────────────────────────────────────────
 
+// ollyReportModel is the cx model used for pass 2 (full 12-section report).
+// Pinned to claude-sonnet-4-5 for its DataPrime skill and reasoning depth.
+// Update here when the model is retired.
+const ollyReportModel = "claude-sonnet-4-5"
+
 type cxExecutor interface {
 	runLogs(ctx context.Context, query, window string) ([]byte, error)
 	runOllySchema(ctx context.Context, prompt string) ([]byte, error)
@@ -383,8 +388,10 @@ func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, e
 }
 
 func (r *cxRunner) runOllySchema(ctx context.Context, prompt string) ([]byte, error) {
-	// Pass 1: gpt-5.2 default, focus mode, agents output for chat_id extraction.
-	// No --model flag → uses cx default (gpt-5.2), faster for schema discovery.
+	// Pass 1: no --model → cx uses its built-in default (gpt-5.2 as of May 2026),
+	// which is faster for the focused 3-question schema discovery.
+	// --output agents returns structured CSV: "chat_id","interaction_id",status,"response",mode,"model"
+	// The first UUID in the output is the chat_id used to continue in pass 2.
 	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask",
 		"--output", "agents", "--mode", "focus", "--timeout", "300", prompt)
 	cmd.Env = r.env()
@@ -392,9 +399,9 @@ func (r *cxRunner) runOllySchema(ctx context.Context, prompt string) ([]byte, er
 }
 
 func (r *cxRunner) runOllyReport(ctx context.Context, chatID, prompt string) ([]byte, error) {
-	// Pass 2: claude-sonnet-4-5, skill mode for DataPrime expertise, continues
-	// the pass-1 chat so Olly uses confirmed field names for live pivot queries.
-	args := []string{"olly", "ask", "--mode", "skill", "--model", "claude-sonnet-4-5", "--timeout", "600"}
+	// Pass 2: continues the pass-1 chat (via --chat-id) so Olly uses confirmed
+	// field names from schema discovery to run live pivot queries in section 8.
+	args := []string{"olly", "ask", "--mode", "skill", "--model", ollyReportModel, "--timeout", "600"}
 	if chatID != "" {
 		args = append(args, "--chat-id", chatID)
 	}
