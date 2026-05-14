@@ -289,6 +289,27 @@ func TestDeriveVerdict(t *testing.T) {
 	}
 }
 
+func TestParseLogsOutputBareArray(t *testing.T) {
+	raw := []byte(`[{"$m":{"timestamp":"2024-01-01T10:00:00"},"$l":{"applicationname":"host1"},"$d":{"user":"u1"}},{"$m":{"timestamp":"2024-01-01T10:05:00"},"$l":{"applicationname":"host2"},"$d":{"user":"u2"}}]`)
+	qd := parseLogsOutput(raw, "cx logs test")
+	if qd.Hits != 2 {
+		t.Errorf("Hits = %d, want 2", qd.Hits)
+	}
+	if qd.Hosts != 2 {
+		t.Errorf("Hosts = %d, want 2", qd.Hosts)
+	}
+	if qd.LastSeen != "2024-01-01T10:05:00" {
+		t.Errorf("LastSeen = %q, want 2024-01-01T10:05:00", qd.LastSeen)
+	}
+}
+
+func TestParseLogsOutputEmptyArray(t *testing.T) {
+	qd := parseLogsOutput([]byte("[]"), "cx logs test")
+	if qd.Hits != 0 {
+		t.Errorf("Hits = %d, want 0 for empty array", qd.Hits)
+	}
+}
+
 type mockCxExecutor struct {
 	logsOutput      []byte
 	logsErr         error
@@ -388,7 +409,7 @@ Severity: High
 Group-By: $d.suser`)
 
 	mock := &mockCxExecutor{
-		logsOutput:   []byte(`{"hits":2,"events":[{"timestamp":"2024-01-01","host":"h1","user":"u1","cmd":"enc"}]}`),
+		logsOutput:   []byte(`[{"$m":{"timestamp":"2024-01-01T10:00:00"},"$l":{"applicationname":"h1"},"$d":{"cmd":"enc"}}]`),
 		schemaOutput: schemaAgentsOut,
 		reportOutput: reportOut,
 	}

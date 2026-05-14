@@ -34,6 +34,7 @@ type queryDoneData struct {
 	UniqueUsers  int            `json:"unique_users"`
 	SampleEvents []huntLogEvent `json:"sample_events"`
 	CxCommand    string         `json:"cx_command"`
+	rawEvents    []json.RawMessage // excluded from SSE payload (unexported)
 }
 
 type ollyDoneData struct {
@@ -382,7 +383,7 @@ func (r *cxRunner) env() []string {
 
 func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, r.binPath, "logs", query,
-		"--start", "now-"+window, "--output", "json", "--limit", "50")
+		"--start", "now-"+window, "--output", "agents", "--limit", "50")
 	cmd.Env = r.env()
 	return readCapped(cmd, maxOutputBytes)
 }
@@ -522,7 +523,7 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 1: cx logs
-	cxCmd := fmt.Sprintf("cx logs '%s' --start now-%s --output json --limit 50", lucene, window)
+	cxCmd := fmt.Sprintf("cx logs '%s' --start now-%s --output agents --limit 50", lucene, window)
 	logsOut, err := cx.runLogs(ctx, lucene, window)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "cx_logs_failed", Message: err.Error()})
@@ -534,7 +535,7 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 
 	// Step 2a: Pass 1 — schema discovery (gpt-5.2, focus, ~72s)
 	// Uses --output agents to get structured output with chat_id.
-	sampleText := formatSampleEvents(qd.SampleEvents)
+	sampleText := formatSampleEvents(qd.rawEvents)
 	schemaPrompt, err := buildOllySchemaPrompt(lucene, qd.Hits, sampleText)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "prompt_build_failed", Message: err.Error()})
@@ -591,37 +592,39 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 // ── Parse helpers ─────────────────────────────────────────────────────────────
 
 func parseLogsOutput(raw []byte, cxCmd string) queryDoneData {
-	var parsed struct {
-		Hits   int `json:"hits"`
-		Events []struct {
-			Timestamp string `json:"timestamp"`
-			Host      string `json:"host"`
-			User      string `json:"user"`
-			Cmd       string `json:"cmd"`
-		} `json:"events"`
-	}
 	qd := queryDoneData{CxCommand: cxCmd, LastSeen: "unknown"}
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
-		qd.Hits = len(lines)
+	var events []json.RawMessage
+	if err := json.Unmarshal(raw, &events); err != nil || len(events) == 0 {
 		return qd
 	}
-	qd.Hits = parsed.Hits
+	qd.Hits = len(events)
+	qd.rawEvents = events
+
 	seen := make(map[string]bool)
 	users := make(map[string]bool)
-	for _, e := range parsed.Events {
-		qd.SampleEvents = append(qd.SampleEvents, huntLogEvent{
-			Timestamp: e.Timestamp,
-			Host:      e.Host,
-			User:      e.User,
-			Command:   e.Cmd,
-		})
-		seen[e.Host] = true
-		if e.User != "" {
-			users[e.User] = true
+	for _, rawEvent := range events {
+		var e struct {
+			M struct {
+				Timestamp string `json:"timestamp"`
+			} `json:"$m"`
+			L struct {
+				AppName string `json:"applicationname"`
+			} `json:"$l"`
 		}
-		if e.Timestamp != "" {
-			qd.LastSeen = e.Timestamp
+		if err := json.Unmarshal(rawEvent, &e); err != nil {
+			continue
+		}
+		ts := e.M.Timestamp
+		if ts != "" {
+			qd.LastSeen = ts
+		}
+		host := e.L.AppName
+		qd.SampleEvents = append(qd.SampleEvents, huntLogEvent{
+			Timestamp: ts,
+			Host:      host,
+		})
+		if host != "" {
+			seen[host] = true
 		}
 	}
 	qd.Hosts = len(seen)
@@ -629,10 +632,21 @@ func parseLogsOutput(raw []byte, cxCmd string) queryDoneData {
 	return qd
 }
 
-func formatSampleEvents(events []huntLogEvent) string {
+func formatSampleEvents(rawEvents []json.RawMessage) string {
+	if len(rawEvents) == 0 {
+		return ""
+	}
+	limit := 5
+	if len(rawEvents) < limit {
+		limit = len(rawEvents)
+	}
 	var sb strings.Builder
-	for _, e := range events {
-		fmt.Fprintf(&sb, "%s  %s  %s  %s\n", e.Timestamp, e.Host, e.User, e.Command)
+	for _, e := range rawEvents[:limit] {
+		var buf bytes.Buffer
+		if err := json.Compact(&buf, e); err == nil {
+			sb.WriteString(buf.String())
+			sb.WriteByte('\n')
+		}
 	}
 	return sb.String()
 }
