@@ -1288,7 +1288,6 @@ func TestAnalyzeNoiseMultiWindow_emptyAlerts(t *testing.T) {
 
 func TestAnalyzeNoiseMultiWindow_highVolume(t *testing.T) {
 	// 30d count > 10 → high_volume (same as legacy behavioral)
-	_ = sparseVector("High Volume Alert")
 	alert := makeAlert("hv-1", "logs_threshold", false, false, nil, "app", "svc")
 	multiCounts := map[string][4]int{
 		"hv-1": {3, 5, 8, 11}, // 30d = 11 > 10
@@ -1308,7 +1307,6 @@ func TestAnalyzeNoiseMultiWindow_highVolume(t *testing.T) {
 
 func TestAnalyzeNoiseMultiWindow_burstPattern(t *testing.T) {
 	// 8 fires in 7d, only 9 total — below old >10 threshold but burst score = 8/(9/4) ≈ 3.56
-	_ = sparseVector("Deployment Burst Alert")
 	alert := makeAlert("burst-1", "logs_threshold", false, false, nil, "app", "svc")
 	multiCounts := map[string][4]int{
 		"burst-1": {8, 1, 0, 9}, // burst score ≈ 3.56 > 2.5
@@ -1320,11 +1318,13 @@ func TestAnalyzeNoiseMultiWindow_burstPattern(t *testing.T) {
 	if noisy[0].NoisePattern != "burst" {
 		t.Errorf("noise_pattern: want burst, got %q", noisy[0].NoisePattern)
 	}
+	if noisy[0].WindowCounts == nil {
+		t.Error("window_counts must not be nil for burst pattern")
+	}
 }
 
 func TestAnalyzeNoiseMultiWindow_persistentPattern(t *testing.T) {
 	// Fires every week but stays under 10 total
-	_ = sparseVector("Weekly Persistent Alert")
 	alert := makeAlert("persist-1", "logs_threshold", false, false, nil, "app", "svc")
 	multiCounts := map[string][4]int{
 		"persist-1": {2, 3, 5, 8}, // fires in all 4 windows, total=8 ≤ 10
@@ -1336,11 +1336,13 @@ func TestAnalyzeNoiseMultiWindow_persistentPattern(t *testing.T) {
 	if noisy[0].NoisePattern != "persistent" {
 		t.Errorf("noise_pattern: want persistent, got %q", noisy[0].NoisePattern)
 	}
+	if noisy[0].WindowCounts == nil {
+		t.Error("window_counts must not be nil for persistent pattern")
+	}
 }
 
 func TestAnalyzeNoiseMultiWindow_noPattern_notFlagged(t *testing.T) {
 	// Total 4, no recognisable pattern — not behaviorally noisy
-	_ = sparseVector("Rare Security Alert")
 	alert := makeAlert("rare-1", "logs_threshold", false, false, nil, "app", "svc")
 	multiCounts := map[string][4]int{
 		"rare-1": {0, 1, 1, 4},
@@ -1352,7 +1354,6 @@ func TestAnalyzeNoiseMultiWindow_noPattern_notFlagged(t *testing.T) {
 }
 
 func TestAnalyzeNoiseMultiWindow_vendorCoveredExcluded(t *testing.T) {
-	_ = sparseVector("GCP SCC Vendor Alert")
 	alert := makeAlert("vendor-1", "logs_threshold", true, true, nil, "", "")
 	multiCounts := map[string][4]int{
 		"vendor-1": {5, 8, 10, 20}, // would be high_volume if not excluded

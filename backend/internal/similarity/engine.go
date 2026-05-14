@@ -1307,6 +1307,11 @@ func findNoiseAlertsMultiWindow(
 		})
 	}
 
+	if len(noisy) == 0 && len(vectors) > 0 {
+		log.Printf("DEBUG [noise] multi-window: 0 noisy alerts from %d vectors multiCountsAvailable=%v",
+			len(vectors), multiCounts != nil)
+	}
+
 	sort.Slice(noisy, func(i, j int) bool {
 		return noisy[i].Name < noisy[j].Name
 	})
