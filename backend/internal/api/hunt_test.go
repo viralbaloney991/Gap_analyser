@@ -124,6 +124,40 @@ Sysmon Event ID 13 captures registry value set operations.
 	}
 }
 
+func TestParseAgentsOutput_ExtractsChatID(t *testing.T) {
+	input := []byte(`Creating new chat...
+Sending message...
+[1]{chat_id,interaction_id,status,response,interaction_mode,model_choice}:
+  "3fe8d46b-ea69-4701-808d-43ac5c21ba55","eda6fe6e-b596-4ed8-a7ed-55436436f5ad",completed,"## Summary\nField found: $d.url",focus,"gpt-5.2"
+`)
+	chatID, response := parseAgentsOutput(input)
+	if chatID != "3fe8d46b-ea69-4701-808d-43ac5c21ba55" {
+		t.Errorf("chatID = %q, want 3fe8d46b-ea69-4701-808d-43ac5c21ba55", chatID)
+	}
+	if !strings.Contains(response, "$d.url") {
+		t.Errorf("response missing content: %q", response)
+	}
+}
+
+func TestParseAgentsOutput_EmptyOnBadInput(t *testing.T) {
+	chatID, response := parseAgentsOutput([]byte("Error: API request failed (500)"))
+	if chatID != "" {
+		t.Errorf("chatID should be empty, got %q", chatID)
+	}
+	if response != "" {
+		t.Errorf("response should be empty, got %q", response)
+	}
+}
+
+func TestParseAgentsOutput_TextFallback(t *testing.T) {
+	// When output is plain text (non-agents format), both should be empty.
+	chatID, response := parseAgentsOutput([]byte("Chat ID: abc-123\n\n## Summary\nsome analysis"))
+	if chatID != "" {
+		t.Errorf("chatID should be empty for text format, got %q", chatID)
+	}
+	_ = response
+}
+
 func TestSanitizeQuery(t *testing.T) {
 	valid := []string{
 		`event_type:"cmd_exec" AND cmd:"-EncodedCommand"`,

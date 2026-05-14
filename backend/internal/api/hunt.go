@@ -238,6 +238,22 @@ func parseOllySections(output string) map[string]string {
 var chatIDLineRe = regexp.MustCompile(`(?m)^Chat ID:.*\n?`)
 var ollyURLRe = regexp.MustCompile(`https://[^)\s]+\.coralogix\.com/#/olly/chat/[a-f0-9-]+`)
 
+var agentsUUIDRe = regexp.MustCompile(`"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"`)
+var agentsResponseRe = regexp.MustCompile(`(?s)completed,"(.*?)",(?:focus|skill|fast|deep-research),"`)
+
+// parseAgentsOutput extracts chatID and response text from cx olly --output agents format.
+// Returns empty strings if the format is not recognised (e.g. plain text or error output).
+func parseAgentsOutput(data []byte) (chatID, response string) {
+	if m := agentsUUIDRe.FindSubmatch(data); len(m) > 1 {
+		chatID = string(m[1])
+	}
+	if m := agentsResponseRe.FindSubmatch(data); len(m) > 1 {
+		// Unescape \n sequences that cx encodes in the agents JSON-like format.
+		response = strings.ReplaceAll(string(m[1]), `\n`, "\n")
+	}
+	return
+}
+
 // ── Verdict derivation ────────────────────────────────────────────────────────
 
 var severityRe = regexp.MustCompile(`(?i)Severity:\s*(\w+)`)
