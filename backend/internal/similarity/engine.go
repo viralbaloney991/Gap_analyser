@@ -1237,6 +1237,99 @@ func findNoiseAlerts(
 	return noisy
 }
 
+// findNoiseAlertsMultiWindow is like findNoiseAlerts but uses 4-window event
+// counts for richer behavioral pattern detection (burst, periodic, accelerating,
+// persistent) in addition to the existing high_volume signal.
+// multiCounts index: 0=7d, 1=14d, 2=21d, 3=30d.
+func findNoiseAlertsMultiWindow(
+	vectors []featureVector,
+	alerts []*models.AlertDef,
+	multiCounts map[string][4]int,
+	integrationCount int,
+	idf idfTable,
+	queryIDFThreshold float64,
+) []models.NoiseAlert {
+	var noisy []models.NoiseAlert
+
+	for i, v := range vectors {
+		var alert *models.AlertDef
+		if alerts != nil && i < len(alerts) {
+			alert = alerts[i]
+		}
+
+		// Exclusions — same as findNoiseAlerts.
+		if alert != nil {
+			if alert.Features.VendorCovered {
+				continue
+			}
+			if alert.Features.IsBuildingBlock {
+				continue
+			}
+		}
+
+		// Signal 1: multi-window behavioral classification.
+		var windowCounts [4]int
+		var pattern string
+		if alert != nil && multiCounts != nil {
+			windowCounts = multiCounts[alert.ID]
+			pattern = classifyNoisePattern(windowCounts)
+		}
+		isBehavioral := pattern != ""
+		triggerCount := windowCounts[3] // 30d count for display
+
+		// Signal 2: structural — identical to findNoiseAlerts.
+		isStructural := false
+		isUnscoped := false
+		isBroadQuery := false
+		if alert != nil && alert.Features.IsSecurityAlert {
+			app, sub := coralogix.ExtractAppSubsystem(alert.TypeDef)
+			isUnscoped = app == "" && sub == ""
+			noEntity := len(v.entities) == 0
+			isBroadQuery = hasWildcardQuery(v.luceneQuery) ||
+				avgIDF(v.luceneQuery, idf.luceneQuery) < queryIDFThreshold
+			isStructural = noEntity && (isUnscoped || isBroadQuery)
+		}
+
+		if !isBehavioral && !isStructural {
+			continue
+		}
+
+		wc := windowCounts
+		noisy = append(noisy, models.NoiseAlert{
+			Name:            v.alertName,
+			MissingFeatures: buildMissingFeatures(v),
+			Reason:          buildNoiseReason(triggerCount, integrationCount, isBehavioral, isUnscoped, isBroadQuery),
+			TriggerCount:    triggerCount,
+			NoiseType:       noiseTypeString(isBehavioral, isStructural),
+			NoisePattern:    pattern,
+			WindowCounts:    &wc,
+			BurstScore:      burstScore(windowCounts),
+		})
+	}
+
+	sort.Slice(noisy, func(i, j int) bool {
+		return noisy[i].Name < noisy[j].Name
+	})
+	return noisy
+}
+
+// AnalyzeNoiseMultiWindow is like AnalyzeNoise but accepts 4-window event
+// counts for richer behavioral pattern detection. Used by HandleNoise.
+// The existing AnalyzeNoise is kept unchanged for HandleAnalyze/HandleInsights.
+func AnalyzeNoiseMultiWindow(
+	alerts []*models.AlertDef,
+	multiCounts map[string][4]int,
+	integrationCount int,
+) []models.NoiseAlert {
+	if len(alerts) == 0 {
+		return nil
+	}
+	vectors := buildFeatureVectors(alerts)
+	idf := buildIDF(vectors)
+	threshold := computeQueryIDFThreshold(vectors, idf)
+	return findNoiseAlertsMultiWindow(vectors, alerts, multiCounts, integrationCount, idf, threshold)
+}
+
 // noiseTypeString returns "behavioral", "structural", or "both".
 // Callers must ensure at least one signal is true before calling.
 func noiseTypeString(isBehavioral, isStructural bool) string {

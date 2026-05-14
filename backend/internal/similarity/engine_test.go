@@ -1276,3 +1276,89 @@ func TestDeriveFamilyName_tier5_dataSource(t *testing.T) {
 		t.Errorf("want %q, got %q", "Okta Detections", got)
 	}
 }
+
+// ── AnalyzeNoiseMultiWindow tests ─────────────────────────────────────────────
+
+func TestAnalyzeNoiseMultiWindow_emptyAlerts(t *testing.T) {
+	result := AnalyzeNoiseMultiWindow(nil, nil, 0)
+	if result != nil {
+		t.Errorf("expected nil for nil alerts, got %v", result)
+	}
+}
+
+func TestAnalyzeNoiseMultiWindow_highVolume(t *testing.T) {
+	// 30d count > 10 → high_volume (same as legacy behavioral)
+	_ = sparseVector("High Volume Alert")
+	alert := makeAlert("hv-1", "logs_threshold", false, false, nil, "app", "svc")
+	multiCounts := map[string][4]int{
+		"hv-1": {3, 5, 8, 11}, // 30d = 11 > 10
+	}
+	noisy := AnalyzeNoiseMultiWindow([]*models.AlertDef{alert}, multiCounts, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 noisy alert, got %d", len(noisy))
+	}
+	if noisy[0].NoisePattern != "high_volume" {
+		t.Errorf("noise_pattern: want high_volume, got %q", noisy[0].NoisePattern)
+	}
+	wc := [4]int{3, 5, 8, 11}
+	if noisy[0].WindowCounts == nil || *noisy[0].WindowCounts != wc {
+		t.Errorf("window_counts: want %v, got %v", wc, noisy[0].WindowCounts)
+	}
+}
+
+func TestAnalyzeNoiseMultiWindow_burstPattern(t *testing.T) {
+	// 8 fires in 7d, only 9 total — below old >10 threshold but burst score = 8/(9/4) ≈ 3.56
+	_ = sparseVector("Deployment Burst Alert")
+	alert := makeAlert("burst-1", "logs_threshold", false, false, nil, "app", "svc")
+	multiCounts := map[string][4]int{
+		"burst-1": {8, 1, 0, 9}, // burst score ≈ 3.56 > 2.5
+	}
+	noisy := AnalyzeNoiseMultiWindow([]*models.AlertDef{alert}, multiCounts, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 noisy alert for burst pattern, got %d", len(noisy))
+	}
+	if noisy[0].NoisePattern != "burst" {
+		t.Errorf("noise_pattern: want burst, got %q", noisy[0].NoisePattern)
+	}
+}
+
+func TestAnalyzeNoiseMultiWindow_persistentPattern(t *testing.T) {
+	// Fires every week but stays under 10 total
+	_ = sparseVector("Weekly Persistent Alert")
+	alert := makeAlert("persist-1", "logs_threshold", false, false, nil, "app", "svc")
+	multiCounts := map[string][4]int{
+		"persist-1": {2, 3, 5, 8}, // fires in all 4 windows, total=8 ≤ 10
+	}
+	noisy := AnalyzeNoiseMultiWindow([]*models.AlertDef{alert}, multiCounts, 0)
+	if len(noisy) != 1 {
+		t.Fatalf("expected 1 noisy alert for persistent pattern, got %d", len(noisy))
+	}
+	if noisy[0].NoisePattern != "persistent" {
+		t.Errorf("noise_pattern: want persistent, got %q", noisy[0].NoisePattern)
+	}
+}
+
+func TestAnalyzeNoiseMultiWindow_noPattern_notFlagged(t *testing.T) {
+	// Total 4, no recognisable pattern — not behaviorally noisy
+	_ = sparseVector("Rare Security Alert")
+	alert := makeAlert("rare-1", "logs_threshold", false, false, nil, "app", "svc")
+	multiCounts := map[string][4]int{
+		"rare-1": {0, 1, 1, 4},
+	}
+	noisy := AnalyzeNoiseMultiWindow([]*models.AlertDef{alert}, multiCounts, 0)
+	if len(noisy) != 0 {
+		t.Errorf("expected 0 noisy alerts for rare alert, got %d: %v", len(noisy), noisy)
+	}
+}
+
+func TestAnalyzeNoiseMultiWindow_vendorCoveredExcluded(t *testing.T) {
+	_ = sparseVector("GCP SCC Vendor Alert")
+	alert := makeAlert("vendor-1", "logs_threshold", true, true, nil, "", "")
+	multiCounts := map[string][4]int{
+		"vendor-1": {5, 8, 10, 20}, // would be high_volume if not excluded
+	}
+	noisy := AnalyzeNoiseMultiWindow([]*models.AlertDef{alert}, multiCounts, 0)
+	if len(noisy) != 0 {
+		t.Errorf("vendor-covered alert must be excluded, got %d: %v", len(noisy), noisy)
+	}
+}
