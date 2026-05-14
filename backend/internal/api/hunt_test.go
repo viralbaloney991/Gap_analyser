@@ -26,21 +26,37 @@ func TestBuildOllyPrompt(t *testing.T) {
 
 func TestExtractTotalFromPass1(t *testing.T) {
 	tests := []struct {
-		input string
-		want  int
+		input   string
+		wantN   int
+		wantOK  bool
 	}{
-		{"Total: 47", 47},
-		{"some text\nTotal: 1234\nmore text", 1234},
-		{"total: 99", 99},
-		{"Total: 0", 0},
-		{"no total here", 0},
-		{"Total:", 0},
+		{"Total: 47", 47, true},
+		{"some text\nTotal: 1234\nmore text", 1234, true},
+		{"total: 99", 99, true},
+		{"Total: 0", 0, true},   // zero is a valid found result
+		{"no total here", 0, false},
+		{"Total:", 0, false},
 	}
 	for _, tc := range tests {
-		got := extractTotalFromPass1(tc.input)
-		if got != tc.want {
-			t.Errorf("extractTotalFromPass1(%q) = %d, want %d", tc.input, got, tc.want)
+		gotN, gotOK := extractTotalFromPass1(tc.input)
+		if gotN != tc.wantN || gotOK != tc.wantOK {
+			t.Errorf("extractTotalFromPass1(%q) = (%d, %v), want (%d, %v)",
+				tc.input, gotN, gotOK, tc.wantN, tc.wantOK)
 		}
+	}
+}
+
+// TestExtractTotalFromPass1_ZeroUpdatesHits verifies that when Olly reports
+// "Total: 0", qd.Hits is set to 0 (not left at whatever parseLogsOutput set).
+func TestExtractTotalFromPass1_ZeroUpdatesHits(t *testing.T) {
+	// Simulate parseLogsOutput having found 3 sample events (e.g. cx logs returned
+	// 3 rows) but Olly's authoritative count query says 0 matches.
+	qd := queryDoneData{Hits: 3}
+	if total, ok := extractTotalFromPass1("Total: 0"); ok {
+		qd.Hits = total
+	}
+	if qd.Hits != 0 {
+		t.Errorf("qd.Hits = %d after Total: 0, want 0", qd.Hits)
 	}
 }
 

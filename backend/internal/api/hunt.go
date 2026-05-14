@@ -108,7 +108,7 @@ func sanitizeQuery(q string) error {
 // ── Olly prompts ──────────────────────────────────────────────────────────────
 //
 // Two-pass design: pass 1 (gpt-5.2, focus, ~72s) discovers real field names
-// via 3 targeted questions and returns a chat_id. Pass 2 (claude-sonnet-4-5,
+// via 4 targeted questions and returns a chat_id. Pass 2 (claude-sonnet-4-5,
 // skill, --chat-id, ~216s) continues the same chat and produces the full
 // 12-section report with live pivot findings.
 // All analysis stays inside Coralogix infrastructure.
@@ -220,15 +220,16 @@ func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (str
 var totalCountRe = regexp.MustCompile(`(?i)Total:\s*(\d+)`)
 
 // extractTotalFromPass1 parses the "Total: N" line that the pass-1 prompt
-// instructs Olly to emit, returning the event count or 0 if not found.
-func extractTotalFromPass1(text string) int {
+// instructs Olly to emit. Returns (n, true) when the pattern is found (including
+// "Total: 0"), and (0, false) when the pattern is absent entirely.
+func extractTotalFromPass1(text string) (int, bool) {
 	if m := totalCountRe.FindStringSubmatch(text); len(m) > 1 {
 		n, err := strconv.Atoi(m[1])
 		if err == nil {
-			return n
+			return n, true
 		}
 	}
-	return 0
+	return 0, false
 }
 
 // ── Section parser ────────────────────────────────────────────────────────────
@@ -412,7 +413,7 @@ func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, e
 
 func (r *cxRunner) runOllySchema(ctx context.Context, prompt string) ([]byte, error) {
 	// Pass 1: claude-sonnet-4-5 in skill mode — same model as pass 2 because
-	// GPT focus mode reliably 524s on the Coralogix backend. The focused 3-question
+	// GPT focus mode reliably 524s on the Coralogix backend. The focused 4-question
 	// prompt completes quickly; --chat-id in pass 2 continues this session.
 	// --output agents returns structured CSV: "chat_id","interaction_id",status,"response",mode,"model"
 	// The first UUID in the output is the chat_id used to continue in pass 2.
@@ -571,7 +572,7 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chatID, schemaText := parseAgentsOutput(schemaOut)
-	if total := extractTotalFromPass1(schemaText); total > 0 {
+	if total, ok := extractTotalFromPass1(schemaText); ok {
 		qd.Hits = total
 	}
 
