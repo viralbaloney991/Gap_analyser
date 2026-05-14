@@ -155,7 +155,9 @@ func TestParseAgentsOutput_TextFallback(t *testing.T) {
 	if chatID != "" {
 		t.Errorf("chatID should be empty for text format, got %q", chatID)
 	}
-	_ = response
+	if response != "" {
+		t.Errorf("response should be empty for text format, got %q", response)
+	}
 }
 
 func TestSanitizeQuery(t *testing.T) {
