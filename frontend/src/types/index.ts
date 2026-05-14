@@ -95,6 +95,8 @@ export interface MergeSuggestion {
  * `missing_features` lists which feature dimensions are empty for this alert.
  * `trigger_count` is 0 when behavioral data is unavailable or alert is not behaviorally noisy.
  * `noise_type` is "behavioral" | "structural" | "both".
+ * `noise_pattern` is the detected behavioral shape (set when noise_type includes "behavioral").
+ * `window_counts` is [7d, 14d, 21d, 30d] fire counts (set when multi-window data is available).
  */
 export interface NoiseAlert {
   name: string;
@@ -103,6 +105,9 @@ export interface NoiseAlert {
   /** 0 when behavioral data unavailable or not behaviorally noisy */
   trigger_count?: number;
   noise_type?: 'behavioral' | 'structural' | 'both';
+  noise_pattern?: 'high_volume' | 'burst' | 'periodic' | 'accelerating' | 'persistent';
+  window_counts?: [number, number, number, number];
+  burst_score?: number;
 }
 
 export interface GapCategories {

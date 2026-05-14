@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { ChevronDown, ChevronRight, X, ArrowRight } from 'lucide-react';
 import type { SimilarityResult, InsightsReport, MITRECoverageResult, DetectionFamily, ActionableRecommendation, CorrelationSuggestion } from '../types';
 import { fetchInsights, fetchExportNarrative, fetchCorrelations, fetchMapTactics } from '../services/api';
 import { exportTabAsXLSX, exportTabAsPDF, exportFullReportPDF } from '../utils/export';
@@ -32,6 +33,17 @@ function noiseTypeLabel(noiseType?: string): string {
     case 'structural': return 'Structural';
     case 'both':       return 'Both';
     default:           return 'Structural'; // fallback for legacy data without noise_type
+  }
+}
+
+function noisePatternLabel(pattern: string): string {
+  switch (pattern) {
+    case 'high_volume':   return 'High Volume';
+    case 'burst':         return 'Burst';
+    case 'periodic':      return 'Periodic';
+    case 'accelerating':  return 'Accelerating';
+    case 'persistent':    return 'Persistent';
+    default:              return pattern;
   }
 }
 
@@ -351,7 +363,9 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                   onClick={() => toggleQuery(queryKey)}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60a5fa', fontSize: 12, padding: 0 }}
                 >
-                  {expanded ? '▼ Hide query' : '▶ Show query'}
+                  {expanded
+                    ? <><ChevronDown size={12} style={{ verticalAlign: 'middle' }} /> Hide query</>
+                    : <><ChevronRight size={12} style={{ verticalAlign: 'middle' }} /> Show query</>}
                 </button>
                 {expanded && (
                   <div style={{ marginTop: 6 }}>
@@ -373,7 +387,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                       className="corr-suggest-btn"
                       onClick={() => onCorrelate(item)}
                     >
-                      Suggest correlations →
+                      Suggest correlations <ArrowRight size={12} style={{ verticalAlign: 'middle' }} />
                     </button>
                   )}
                   {showBuildDetection && (
@@ -585,7 +599,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                       <div className="insight-card-title">{dup.alert_names[0]}</div>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                         <span className="badge badge--indigo">Duplicate</span>
-                        <span className="insight-card-chevron">{isOpen ? '▼' : '▶'}</span>
+                        <span className="insight-card-chevron">{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
                       </div>
                     </div>
                     {isOpen && (
@@ -645,7 +659,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                         <span className="badge badge--green">
                           {groupCount > 1 ? `${groupCount} groups · ` : ''}{totalAlerts} alerts
                         </span>
-                        <span className="insight-card-chevron">{isOpen ? '▼' : '▶'}</span>
+                        <span className="insight-card-chevron">{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
                       </div>
                     </div>
                     {isOpen && (
@@ -795,10 +809,20 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                           <span className={`noise-type-badge noise-type-badge--${noise.noise_type ?? 'structural'}`}>
                             {noiseTypeLabel(noise.noise_type)}
                           </span>
+                          {noise.noise_pattern && (
+                            <span
+                              className={`noise-pattern-badge noise-pattern-badge--${noise.noise_pattern}`}
+                              title={noise.window_counts
+                                ? `7d: ${noise.window_counts[0]} / 14d: ${noise.window_counts[1]} / 21d: ${noise.window_counts[2]} / 30d: ${noise.window_counts[3]}`
+                                : undefined}
+                            >
+                              {noisePatternLabel(noise.noise_pattern)}
+                            </span>
+                          )}
                           {(noise.trigger_count ?? 0) > 0 && (
                             <span className="noise-trigger-count">Fired {noise.trigger_count}×</span>
                           )}
-                          <span className="insight-card-chevron">{isOpen ? '▼' : '▶'}</span>
+                          <span className="insight-card-chevron">{isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
                         </div>
                       </div>
                       {reasonPreview && (
@@ -899,7 +923,7 @@ export default function AlertInsights({ data, report, insightsError = false, cli
               </span>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
                 {correlationDrawer.cached && <span className="corr-cached-badge">Cached</span>}
-                <button type="button" className="corr-close-btn" aria-label="Close" onClick={() => setCorrelationDrawer(null)}>✕</button>
+                <button type="button" className="corr-close-btn" aria-label="Close" onClick={() => setCorrelationDrawer(null)}><X size={14} /></button>
               </div>
             </div>
             <div className="corr-drawer-body">
@@ -956,7 +980,9 @@ export default function AlertInsights({ data, report, insightsError = false, cli
                                 onClick={() => toggleQuery(`corr-${corrKey}`)}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#60a5fa', fontSize: 12, padding: 0, marginTop: 4 }}
                               >
-                                {isOpen ? '▼ Hide query' : '▶ Show query'}
+                                {isOpen
+                                  ? <><ChevronDown size={12} style={{ verticalAlign: 'middle' }} /> Hide query</>
+                                  : <><ChevronRight size={12} style={{ verticalAlign: 'middle' }} /> Show query</>}
                               </button>
                               {isOpen && (
                                 <div style={{ marginTop: 6 }}>
