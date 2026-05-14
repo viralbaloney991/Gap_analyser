@@ -36,14 +36,14 @@ function noiseTypeLabel(noiseType?: string): string {
   }
 }
 
-function noisePatternLabel(pattern: string): string {
+function noisePatternLabel(pattern?: string): string {
   switch (pattern) {
     case 'high_volume':   return 'High Volume';
     case 'burst':         return 'Burst';
     case 'periodic':      return 'Periodic';
     case 'accelerating':  return 'Accelerating';
     case 'persistent':    return 'Persistent';
-    default:              return pattern;
+    default:              return pattern ?? '';
   }
 }
 

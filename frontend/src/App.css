@@ -818,8 +818,8 @@ html, body, #root {
   flex-shrink: 0;
   cursor: default;
 }
-.noise-pattern-badge--high_volume  { background: #7f1d1d; color: #fca5a5; }
-.noise-pattern-badge--burst         { background: #78350f; color: #fcd34d; }
+.noise-pattern-badge--high_volume  { background: #991b1b; color: #fde68a; }
+.noise-pattern-badge--burst         { background: #92400e; color: #fed7aa; }
 .noise-pattern-badge--periodic      { background: #1e3a5f; color: #93c5fd; }
 .noise-pattern-badge--accelerating  { background: #4a1d96; color: #c4b5fd; }
 .noise-pattern-badge--persistent    { background: #14532d; color: #86efac; }
