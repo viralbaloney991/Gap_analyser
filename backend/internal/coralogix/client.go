@@ -195,6 +195,51 @@ func (c *Client) FetchAlertEventCounts(
 	return counts, nil
 }
 
+// FetchAlertEventCountsMultiWindow fetches alert event counts at 4 fixed windows
+// (7d, 14d, 21d, 30d) in parallel. Returns map[alertID][4]int where index
+// 0=7d, 1=14d, 2=21d, 3=30d. On partial failure, the failed window's counts
+// are zero-filled rather than aborting the whole request.
+func (c *Client) FetchAlertEventCountsMultiWindow(ctx context.Context, alertIDs []string) (map[string][4]int, error) {
+	windows := [4]int{7, 14, 21, 30}
+
+	type result struct {
+		idx    int
+		counts map[string]int
+		err    error
+	}
+	ch := make(chan result, 4)
+	for i, days := range windows {
+		i, days := i, days
+		go func() {
+			counts, err := c.FetchAlertEventCounts(ctx, alertIDs, days)
+			ch <- result{idx: i, counts: counts, err: err}
+		}()
+	}
+
+	out := make(map[string][4]int, len(alertIDs))
+	var firstErr error
+	failures := 0
+	for range windows {
+		r := <-ch
+		if r.err != nil {
+			if firstErr == nil {
+				firstErr = r.err
+			}
+			failures++
+			continue
+		}
+		for id, count := range r.counts {
+			arr := out[id]
+			arr[r.idx] = count
+			out[id] = arr
+		}
+	}
+	if failures == len(windows) {
+		return nil, firstErr
+	}
+	return out, nil
+}
+
 // parseAlertEventsResponse counts events per alertId from a ListAlertEvents page.
 // Returns the next page token (empty string when done).
 func parseAlertEventsResponse(raw []byte, counts map[string]int) (string, error) {
