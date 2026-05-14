@@ -86,17 +86,23 @@ func TestBuildOllyReportPrompt(t *testing.T) {
 	prompt := buildOllyReportPrompt()
 	for _, section := range []string{
 		"## 1.", "## 2.", "## 3.", "## 4.", "## 5.",
-		"## 6.", "## 7.", "## 8.", "## 9.", "## 10.", "## 11.", "## 12.",
+		"## 6.", "## 7.", "## 8.", "## 9.", "## 10.", "## 11.",
 	} {
 		if !strings.Contains(prompt, section) {
 			t.Errorf("report prompt missing section %q", section)
 		}
 	}
-	if !strings.Contains(prompt, "Pivot Investigation") {
-		t.Error("report prompt missing §8 pivot instruction")
+	if strings.Contains(prompt, "## 12.") {
+		t.Error("report prompt must not have section 12 (only 11 sections now)")
+	}
+	if !strings.Contains(prompt, "What We Found") {
+		t.Error("report prompt section 1 must be 'What We Found'")
+	}
+	if strings.Contains(prompt, "Hunt Workflow") {
+		t.Error("report prompt must not contain 'Hunt Workflow' section")
 	}
 	if !strings.Contains(prompt, "RUN") {
-		t.Error("report prompt must tell Olly to RUN pivot queries, not just suggest them")
+		t.Error("report prompt must instruct Olly to RUN the confirmed query")
 	}
 }
 
@@ -201,35 +207,37 @@ Sysmon Event ID 13 captures registry value set operations.
 }
 
 func TestParseOllySectionsBoldFormat(t *testing.T) {
-	// Olly actually emits ## **1. Title** (bold) — verify the parser handles it.
-	raw := `## **1. Hunt Summary**
+	raw := `## **1. What We Found**
+Total hits: 42. Top user: alice@corp.com
+
+## **2. Hunt Summary**
 Severity: High
 Confidence: High
 
-## **2. Original Query**
-event_type:"cmd_exec"
-
-## **6. Detection Logic Explained**
+## **7. Detection Logic**
 Detects encoded command execution.
 
-## **12. Alert Definition**
+## **11. Alert Definition**
 Name: Encoded Command Exec
 Type: standard`
 	sections := parseOllySections(raw)
 	if sections["1"] == "" {
 		t.Error("section 1 missing in bold format")
 	}
-	if !strings.Contains(sections["1"], "Severity: High") {
+	if !strings.Contains(sections["1"], "Total hits") {
 		t.Errorf("section 1 content wrong: %q", sections["1"])
 	}
 	if sections["2"] == "" {
 		t.Error("section 2 missing in bold format")
 	}
-	if sections["6"] == "" {
-		t.Error("section 6 missing in bold format")
+	if !strings.Contains(sections["2"], "Severity: High") {
+		t.Errorf("section 2 content wrong: %q", sections["2"])
 	}
-	if sections["12"] == "" {
-		t.Error("section 12 missing in bold format")
+	if sections["7"] == "" {
+		t.Error("section 7 missing in bold format")
+	}
+	if sections["11"] == "" {
+		t.Error("section 11 missing in bold format")
 	}
 }
 
@@ -404,43 +412,41 @@ Sending message...
 [1]{chat_id,interaction_id,status,response,interaction_mode,model_choice}:
   "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","ffffffff-0000-1111-2222-333333333333",completed,"## Summary\n$d.url confirmed, 1 hit",focus,"gpt-5.2"
 `)
-	reportOut := []byte(`## 1. Hunt Summary
+	reportOut := []byte(`## 1. What We Found
+Total hits: 2. Top user: u1@corp.com. Time: clustered within 5 minutes.
+
+## 2. Hunt Summary
 Severity: High
 Confidence: High
+MITRE: Execution / T1059
 
-## 2. Original Query
+## 3. Original Query
 event_type:"cmd_exec"
 
-## 3. Schema Mapping
+## 4. Schema Mapping
 | field | cx | exists |
 |-------|----|--------|
-| url | $d.url | Y |
+| event_type | $d.event_type | Y |
 
-## 4. Translated Query — DataPrime
-source logs | filter $d.url ~ 'webhook.site'
+## 5. Translated Query — DataPrime
+source logs | filter $d.event_type == 'cmd_exec'
 
-## 5. Translated Query — Lucene
-$d.url:*webhook.site*
+## 6. Translated Query — Lucene
+$d.event_type:"cmd_exec"
 
-## 6. Detection Logic Explained
-detects webhook exfil
+## 7. Detection Logic
+Detects encoded command execution which is a common indicator of attacker tradecraft.
 
-## 7. Hunt Workflow
-check hits
-
-## 8. Pivot Investigation
-webhook.site: 1 hit
-
-## 9. False Positive Considerations
+## 8. False Positive Sources
 none
 
-## 10. Visibility Gaps
+## 9. Visibility Gaps
 none
 
-## 11. Follow-up Hunts
-hunt 1: cloud storage
+## 10. Follow-up Hunts
+hunt 1: PowerShell download cradle
 
-## 12. Alert Definition
+## 11. Alert Definition
 Name: test-alert
 Type: standard
 Condition: count > 0

@@ -155,54 +155,54 @@ func buildOllySchemaPrompt(luceneQuery string, sampleCount int, sampleEvents, wi
 	return buf.String(), nil
 }
 
-// ollyReportPrompt is a static string sent as the pass-2 message in the same
-// chat session (--chat-id). Olly already knows the schema from pass 1 and
-// uses confirmed field names to run live pivot queries for section 8.
+// ollyReportPrompt is the pass-2 message continuing the pass-1 chat (--chat-id).
+// Olly already has confirmed field names from pass 1 and uses them for live pivots.
+// 11 sections: findings lead, analyst workflow dropped.
 const ollyReportPrompt = `Using what you found above, write the complete threat hunt report.
-For section 8 Pivot Investigation, RUN actual queries and report real findings — do not just suggest them.
+For section 1, RUN the confirmed DataPrime query and report actual results — do not just describe them.
 
-## 1. Hunt Summary
-Severity (Critical/High/Medium/Low), Confidence (High/Medium/Low), MITRE ATT&CK Tactic/Technique
+## 1. What We Found
+RUN the confirmed DataPrime query. Report actual results:
+- Total hits (use the count from schema discovery)
+- Top 5 users / actors involved
+- Top 5 source IPs
+- Time distribution: clustered within minutes (automated/tool) or spread over hours/days (human)?
+- Any standout anomalies in the data
 
-## 2. Original Query
-Echo the Lucene query
+## 2. Hunt Summary
+Severity (Critical/High/Medium/Low), Confidence (High/Medium/Low), MITRE ATT&CK tactic/technique.
+2-3 sentences on what this query detects and why it matters.
 
-## 3. Schema Mapping
-Table: Original Field | Confirmed CX Field | Exists (Y/N)
+## 3. Original Query
+Echo the Lucene query verbatim.
 
-## 4. Translated Query — DataPrime
-Using ONLY confirmed fields from section 3
+## 4. Schema Mapping
+Table: Lucene field | Confirmed $d path | Has data (Y/N)
 
-## 5. Translated Query — Lucene
-Optimised Lucene with confirmed fields
+## 5. Translated Query — DataPrime
+Using ONLY confirmed fields from section 4.
 
-## 6. Detection Logic Explained
-Plain English explanation of what this detects and why
+## 6. Translated Query — Lucene
+Optimised Lucene with confirmed field paths.
 
-## 7. Hunt Workflow
-Step-by-step for a tier-2 analyst investigating a hit
+## 7. Detection Logic
+Plain English: what does this detect, what attacker behaviour does it expose, why it matters.
 
-## 8. Pivot Investigation
-RUN these now and report actual findings:
-- Top domains/URLs in the confirmed URL fields
-- Top users or source IPs generating these events
-- Are hits time-clustered (automated) or spread (manual)?
+## 8. False Positive Sources
+Likely benign causes with suppression suggestions.
 
-## 9. False Positive Considerations
-Likely FP sources with suppression suggestions
+## 9. Visibility Gaps
+Missing log sources or fields that limit confidence in this hunt.
 
-## 10. Visibility Gaps
-Missing log sources or fields that limit this hunt
+## 10. Follow-up Hunts
+3 related hunts with DataPrime query sketches.
 
-## 11. Follow-up Hunts
-3 related hunts with DataPrime query sketches
-
-## 12. Alert Definition
-Name: <descriptive name>
+## 11. Alert Definition
+Name: <descriptive>
 Type: standard
 Condition: count > 0
 Severity: <Critical/High/Medium/Low>
-Group-By: <most relevant field>`
+Group-By: <most relevant confirmed field>`
 
 // buildOllyReportPrompt returns the pass-2 report prompt. The wrapper exists as
 // a seam for future per-client or per-technique parameterisation without
@@ -589,20 +589,20 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	sendSSE(w, flusher, "olly_done", ollyDoneData{Sections: sections})
 
 	// Step 3: Build report
-	verdict, confidence := deriveVerdict(qd.Hits, sections["1"])
+	verdict, confidence := deriveVerdict(qd.Hits, sections["2"])
 	report := huntReport{
 		Verdict:    verdict,
 		Confidence: confidence,
 		Title:      deriveThreatTitle(verdict, qd.Hits, name),
-		Subtitle:   sections["1"],
+		Subtitle:   sections["2"],
 		Stats: huntStats{
 			Hits:         fmt.Sprintf("%d", qd.Hits),
 			Hosts:        fmt.Sprintf("%d", qd.Hosts),
 			AttackWindow: window,
 		},
 		Findings:      extractFindings(sections, severity),
-		Actions:       extractActions(sections["11"]),
-		AlertDef:      parseAlertDef(sections["12"], name, techniqueId),
+		Actions:       extractActions(sections["10"]),
+		AlertDef:      parseAlertDef(sections["11"], name, techniqueId),
 		RunDurationMs: time.Since(start).Milliseconds(),
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
 	}
@@ -688,7 +688,7 @@ func deriveThreatTitle(verdict string, hits int, name string) string {
 
 func extractFindings(sections map[string]string, severity string) []huntFinding {
 	var findings []huntFinding
-	for _, src := range []string{"1", "6", "10"} {
+	for _, src := range []string{"1", "7", "9"} {
 		text := sections[src]
 		if text == "" {
 			continue

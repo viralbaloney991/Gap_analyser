@@ -17,18 +17,17 @@ interface Props {
 type Step = 'query' | 'olly' | 'report';
 
 const OLLY_LABELS: Record<string, string> = {
-  '1': 'Hunt Summary',
-  '2': 'Original Query',
-  '3': 'Schema Mapping',
-  '4': 'Translated Query — DataPrime',
-  '5': 'Translated Query — Lucene',
-  '6': 'Detection Logic Explained',
-  '7': 'Hunt Workflow',
-  '8': 'Suggested Aggregation / Pivot Query',
-  '9': 'False Positive Considerations',
-  '10': 'Visibility Gaps & Assumptions',
-  '11': 'Recommended Follow-up Hunts',
-  '12': 'Alert Definition Skeleton',
+  '1': 'What We Found',
+  '2': 'Hunt Summary',
+  '3': 'Original Query',
+  '4': 'Schema Mapping',
+  '5': 'Translated Query — DataPrime',
+  '6': 'Translated Query — Lucene',
+  '7': 'Detection Logic',
+  '8': 'False Positive Sources',
+  '9': 'Visibility Gaps',
+  '10': 'Follow-up Hunts',
+  '11': 'Alert Definition',
 };
 
 // Renders inline markdown: **bold**, `code`, and [text](url) links.
@@ -282,7 +281,7 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
                   </div>
                   {isExpanded && (
                     <div className="olly-acc-body olly-md">
-                      {key === '10' && content && (
+                      {key === '9' && content && (
                         <div className="olly-gap-alert">Visibility gaps detected — review before deploying this detection.</div>
                       )}
                       {content
