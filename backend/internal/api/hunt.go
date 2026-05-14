@@ -194,11 +194,16 @@ Condition: count > 0
 Severity: <Critical/High/Medium/Low>
 Group-By: <most relevant field>`
 
+// buildOllyReportPrompt returns the pass-2 report prompt. The wrapper exists as
+// a seam for future per-client or per-technique parameterisation without
+// changing call sites.
 func buildOllyReportPrompt() string {
 	return ollyReportPrompt
 }
 
-// buildOllyPrompt is kept for backward compatibility with existing tests.
+// Deprecated: buildOllyPrompt delegates to buildOllySchemaPrompt for backward
+// compatibility with existing tests. New call sites should use
+// buildOllySchemaPrompt (pass 1) and buildOllyReportPrompt (pass 2) directly.
 func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (string, error) {
 	return buildOllySchemaPrompt(luceneQuery, hitCount, sampleEvents)
 }
