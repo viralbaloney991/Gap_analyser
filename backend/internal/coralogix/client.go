@@ -200,6 +200,9 @@ func (c *Client) FetchAlertEventCounts(
 // 0=7d, 1=14d, 2=21d, 3=30d. On partial failure, the failed window's counts
 // are zero-filled rather than aborting the whole request.
 func (c *Client) FetchAlertEventCountsMultiWindow(ctx context.Context, alertIDs []string) (map[string][4]int, error) {
+	if len(alertIDs) == 0 {
+		return map[string][4]int{}, nil
+	}
 	windows := [4]int{7, 14, 21, 30}
 
 	type result struct {
