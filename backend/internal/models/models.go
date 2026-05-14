@@ -127,6 +127,9 @@ type NoiseAlert struct {
 	Reason          string   `json:"reason,omitempty"`
 	TriggerCount    int      `json:"trigger_count,omitempty"`
 	NoiseType       string   `json:"noise_type,omitempty"`
+	NoisePattern    string   `json:"noise_pattern,omitempty"`  // high_volume|burst|periodic|accelerating|persistent
+	WindowCounts    [4]int   `json:"window_counts,omitempty"`  // [7d, 14d, 21d, 30d]
+	BurstScore      float64  `json:"burst_score,omitempty"`
 }
 
 // NoiseRequest is the request body for POST /api/noise.
