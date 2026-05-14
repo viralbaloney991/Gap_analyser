@@ -257,12 +257,13 @@ func TestDeriveVerdict(t *testing.T) {
 }
 
 type mockCxExecutor struct {
-	logsOutput   []byte
-	logsErr      error
-	schemaOutput []byte
-	schemaErr    error
-	reportOutput []byte
-	reportErr    error
+	logsOutput      []byte
+	logsErr         error
+	schemaOutput    []byte
+	schemaErr       error
+	reportOutput    []byte
+	reportErr       error
+	capturedChatID  string // records chatID passed to runOllyReport
 }
 
 func (m *mockCxExecutor) runLogs(ctx context.Context, query, window string) ([]byte, error) {
@@ -274,6 +275,7 @@ func (m *mockCxExecutor) runOllySchema(ctx context.Context, prompt string) ([]by
 }
 
 func (m *mockCxExecutor) runOllyReport(ctx context.Context, chatID, prompt string) ([]byte, error) {
+	m.capturedChatID = chatID
 	return m.reportOutput, m.reportErr
 }
 
@@ -375,6 +377,11 @@ Group-By: $d.suser`)
 	}
 	if !strings.Contains(body, "event: report_ready") {
 		t.Errorf("missing report_ready: %s", body)
+	}
+	// Verify pass-1 chat_id was extracted and forwarded to pass-2 runOllyReport.
+	const wantChatID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+	if mock.capturedChatID != wantChatID {
+		t.Errorf("runOllyReport chatID = %q, want %q", mock.capturedChatID, wantChatID)
 	}
 }
 
