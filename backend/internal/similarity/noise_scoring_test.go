@@ -69,3 +69,20 @@ func TestClassifyNoisePattern(t *testing.T) {
 		}
 	}
 }
+
+func TestAccelerationScore(t *testing.T) {
+	cases := []struct {
+		name   string
+		counts [4]int
+		want   float64
+	}{
+		{"all zeros", [4]int{0, 0, 0, 0}, 0},
+		{"gradual ramp", [4]int{4, 2, 2, 7}, 2.286},
+	}
+	for _, tc := range cases {
+		got := accelerationScore(tc.counts)
+		if math.Abs(got-tc.want) > 0.01 {
+			t.Errorf("accelerationScore %s (%v) = %.3f, want %.3f", tc.name, tc.counts, got, tc.want)
+		}
+	}
+}

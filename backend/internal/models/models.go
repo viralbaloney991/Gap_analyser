@@ -128,7 +128,7 @@ type NoiseAlert struct {
 	TriggerCount    int      `json:"trigger_count,omitempty"`
 	NoiseType       string   `json:"noise_type,omitempty"`
 	NoisePattern    string   `json:"noise_pattern,omitempty"`  // high_volume|burst|periodic|accelerating|persistent
-	WindowCounts    [4]int   `json:"window_counts,omitempty"`  // [7d, 14d, 21d, 30d]
+	WindowCounts    *[4]int  `json:"window_counts,omitempty"`  // [7d, 14d, 21d, 30d]; nil when no multi-window data
 	BurstScore      float64  `json:"burst_score,omitempty"`
 }
 
