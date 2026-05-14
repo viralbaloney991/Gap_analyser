@@ -211,8 +211,8 @@ func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (str
 // ── Section parser ────────────────────────────────────────────────────────────
 
 var sectionHeaderRe = regexp.MustCompile(`(?m)^##\s+§(\d+)\s+`)
-// numberedHeaderRe matches "## 1. Title" or "## 12. Title" (Olly structured output).
-var numberedHeaderRe = regexp.MustCompile(`(?m)^##\s+(\d+)\.\s+`)
+// numberedHeaderRe matches "## 1. Title", "## **1. Title**", or "## 12. Title" (Olly structured output).
+var numberedHeaderRe = regexp.MustCompile(`(?m)^##\s+\**(\d+)\.\**\s+`)
 var genericHeaderRe = regexp.MustCompile(`(?m)^##\s+(.+?)\s*$`)
 
 // genericSectionMap maps Olly's native free-form header names to §N slot numbers.
@@ -350,10 +350,10 @@ func deriveVerdict(hits int, section1 string) (verdict, confidence string) {
 
 // ── cx executor ────────────────────────────────────────────────────────────────
 
-// ollyReportModel is the cx model used for pass 2 (full 12-section report).
-// Pinned to claude-sonnet-4-5 for its DataPrime skill and reasoning depth.
-// Update here when the model is retired.
-const ollyReportModel = "claude-sonnet-4-5"
+// ollyModel is the cx model used for both passes.
+// claude-sonnet-4-5 is the only model that supports --mode skill and has
+// DataPrime expertise. GPT focus mode reliably 524s on the Coralogix backend.
+const ollyModel = "claude-sonnet-4-5"
 
 type cxExecutor interface {
 	runLogs(ctx context.Context, query, window string) ([]byte, error)
@@ -388,12 +388,13 @@ func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, e
 }
 
 func (r *cxRunner) runOllySchema(ctx context.Context, prompt string) ([]byte, error) {
-	// Pass 1: no --model → cx uses its built-in default (gpt-5.2 as of May 2026),
-	// which is faster for the focused 3-question schema discovery.
+	// Pass 1: claude-sonnet-4-5 in skill mode — same model as pass 2 because
+	// GPT focus mode reliably 524s on the Coralogix backend. The focused 3-question
+	// prompt completes quickly; --chat-id in pass 2 continues this session.
 	// --output agents returns structured CSV: "chat_id","interaction_id",status,"response",mode,"model"
 	// The first UUID in the output is the chat_id used to continue in pass 2.
 	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask",
-		"--output", "agents", "--mode", "focus", "--timeout", "300", prompt)
+		"--output", "agents", "--mode", "skill", "--model", ollyModel, "--timeout", "300", prompt)
 	cmd.Env = r.env()
 	return readCapped(cmd, maxOutputBytes)
 }
@@ -401,7 +402,7 @@ func (r *cxRunner) runOllySchema(ctx context.Context, prompt string) ([]byte, er
 func (r *cxRunner) runOllyReport(ctx context.Context, chatID, prompt string) ([]byte, error) {
 	// Pass 2: continues the pass-1 chat (via --chat-id) so Olly uses confirmed
 	// field names from schema discovery to run live pivot queries in section 8.
-	args := []string{"olly", "ask", "--mode", "skill", "--model", ollyReportModel, "--timeout", "600"}
+	args := []string{"olly", "ask", "--mode", "skill", "--model", ollyModel, "--timeout", "600"}
 	if chatID != "" {
 		args = append(args, "--chat-id", chatID)
 	}

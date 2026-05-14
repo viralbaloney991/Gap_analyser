@@ -161,6 +161,39 @@ Sysmon Event ID 13 captures registry value set operations.
 	}
 }
 
+func TestParseOllySectionsBoldFormat(t *testing.T) {
+	// Olly actually emits ## **1. Title** (bold) — verify the parser handles it.
+	raw := `## **1. Hunt Summary**
+Severity: High
+Confidence: High
+
+## **2. Original Query**
+event_type:"cmd_exec"
+
+## **6. Detection Logic Explained**
+Detects encoded command execution.
+
+## **12. Alert Definition**
+Name: Encoded Command Exec
+Type: standard`
+	sections := parseOllySections(raw)
+	if sections["1"] == "" {
+		t.Error("section 1 missing in bold format")
+	}
+	if !strings.Contains(sections["1"], "Severity: High") {
+		t.Errorf("section 1 content wrong: %q", sections["1"])
+	}
+	if sections["2"] == "" {
+		t.Error("section 2 missing in bold format")
+	}
+	if sections["6"] == "" {
+		t.Error("section 6 missing in bold format")
+	}
+	if sections["12"] == "" {
+		t.Error("section 12 missing in bold format")
+	}
+}
+
 func TestParseAgentsOutput_ExtractsChatID(t *testing.T) {
 	input := []byte(`Creating new chat...
 Sending message...
