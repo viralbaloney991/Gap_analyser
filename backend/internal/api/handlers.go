@@ -523,7 +523,7 @@ func (h *Handler) HandleInsights(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ir)
 }
 
-// HandleNoise re-runs only the noise detection step for a different lookback window.
+// HandleNoise re-runs the noise detection step. The lookback_days field controls which NoisePill is highlighted in the frontend; the actual fetch always uses fixed 7/14/21/30d windows for multi-window pattern detection.
 // POST /api/noise { "client": "X", "lookback_days": 7 }
 // Response: { "noise_alerts": [...], "lookback_days": 7 }
 func (h *Handler) HandleNoise(w http.ResponseWriter, r *http.Request) {
@@ -577,7 +577,7 @@ func (h *Handler) HandleNoise(w http.ResponseWriter, r *http.Request) {
 	if multiCounts == nil {
 		log.Printf("WARN [noise] multi-window event counts unavailable client=%s — structural-only", req.Client)
 	} else {
-		log.Printf("INFO [noise] multi-window event counts: requested=%d fetched=%d client=%s", len(alertIDs), len(multiCounts), req.Client)
+		log.Printf("INFO [noise] multi-window event counts: requested=%d matched=%d client=%s", len(alertIDs), len(multiCounts), req.Client)
 	}
 
 	coralogix.ExtractFeatures(alerts, nil)
@@ -591,7 +591,7 @@ func (h *Handler) HandleNoise(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, models.NoiseResponse{
 		NoiseAlerts:  noiseAlerts,
-		LookbackDays: lookback,
+		LookbackDays: lookback, // echoed for frontend pill selection; does not control fetch windows
 	})
 }
 
@@ -1092,6 +1092,7 @@ func fetchEventCounts(ctx context.Context, region, apiKey string, alertIDs []str
 func fetchEventCountsMultiWindow(ctx context.Context, region, apiKey string, alertIDs []string) map[string][4]int {
 	client, err := coralogix.NewClient(region, apiKey)
 	if err != nil {
+		log.Printf("WARN [noise] multi-window: failed to create coralogix client: %v", err)
 		return nil
 	}
 	defer client.Close()
@@ -1100,7 +1101,7 @@ func fetchEventCountsMultiWindow(ctx context.Context, region, apiKey string, ale
 		if ctx.Err() != nil {
 			log.Printf("DEBUG [noise] multi-window event count fetch cancelled: %v", ctx.Err())
 		} else {
-			log.Printf("DEBUG [noise] multi-window event count fetch failed: %v", err)
+			log.Printf("WARN [noise] multi-window event count fetch failed: %v", err)
 		}
 		return nil
 	}
