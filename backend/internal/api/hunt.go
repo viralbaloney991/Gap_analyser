@@ -456,7 +456,7 @@ func sendSSE(w http.ResponseWriter, f http.Flusher, event string, data any) {
 
 // ── HandleHuntStream ──────────────────────────────────────────────────────────
 
-const huntTimeout = 6 * time.Minute
+const huntTimeout = 10 * time.Minute
 
 func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	var flusher http.Flusher

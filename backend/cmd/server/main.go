@@ -145,7 +145,7 @@ func main() {
 		Addr:         ":" + port,
 		Handler:      wrapped,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 8 * time.Minute,
+		WriteTimeout: 12 * time.Minute,
 		IdleTimeout:  60 * time.Second,
 	}
 
