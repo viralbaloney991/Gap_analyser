@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -112,33 +113,41 @@ func sanitizeQuery(q string) error {
 // 12-section report with live pivot findings.
 // All analysis stays inside Coralogix infrastructure.
 
-const ollySchemaPromptTemplate = `Schema discovery for threat hunt. Answer ONLY these 3 questions:
+const ollySchemaPromptTemplate = `Schema discovery for threat hunt. Answer ONLY these 4 questions:
 
 Query: {{.LuceneQuery}}
-Hits: {{.HitCount}}
-{{if .SampleEvents}}Sample events:
+Sample events ({{.SampleCount}} retrieved from last {{.Window}}):
 {{.SampleEvents}}
-{{end}}
-1. What URL/URI/path/link fields exist in these logs? Check: $d.url, $d.uri, $d.cx_security.uri, $d.Island.details.file_processing_details.urls, $d.Url, $d.MessageURLs, $d.page — which ones have data?
-2. Do webhook.site, discord.com/api/webhooks, hooks.slack.com, or zapier.com/hooks appear in any URL field? How many hits each?
-3. Top 5 non-null event types: source logs | filter $d.event_type != null | groupby $d.event_type aggregate count() as hits | orderby hits desc | limit 5
+1. Field mapping: for each key term in the Lucene query, find the matching DataPrime $d path
+   in the sample events. Which confirmed paths have data?
+
+2. Pattern match: translate the Lucene query to DataPrime using the confirmed fields from
+   question 1. Run it. Do the specific IOCs/patterns actually appear? How many events match?
+
+3. True total: run source logs | filter <your DataPrime translation> | count() as total
+   Report the exact number on its own line as: "Total: N"
+
+4. Top patterns: source logs | filter <condition> | groupby <most relevant field> aggregate
+   count() as hits | orderby hits desc | limit 5
 
 Facts only. No preamble.`
 
 type ollySchemaPromptData struct {
 	LuceneQuery  string
-	HitCount     int
+	SampleCount  int
 	SampleEvents string
+	Window       string
 }
 
 var ollySchemaTmpl = template.Must(template.New("ollySchema").Parse(ollySchemaPromptTemplate))
 
-func buildOllySchemaPrompt(luceneQuery string, hitCount int, sampleEvents string) (string, error) {
+func buildOllySchemaPrompt(luceneQuery string, sampleCount int, sampleEvents, window string) (string, error) {
 	var buf bytes.Buffer
 	err := ollySchemaTmpl.Execute(&buf, ollySchemaPromptData{
 		LuceneQuery:  luceneQuery,
-		HitCount:     hitCount,
+		SampleCount:  sampleCount,
 		SampleEvents: sampleEvents,
+		Window:       window,
 	})
 	if err != nil {
 		return "", fmt.Errorf("render olly schema prompt: %w", err)
@@ -203,10 +212,23 @@ func buildOllyReportPrompt() string {
 }
 
 // Deprecated: buildOllyPrompt delegates to buildOllySchemaPrompt for backward
-// compatibility with existing tests. New call sites should use
-// buildOllySchemaPrompt (pass 1) and buildOllyReportPrompt (pass 2) directly.
+// compatibility with existing tests. New call sites use buildOllySchemaPrompt directly.
 func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (string, error) {
-	return buildOllySchemaPrompt(luceneQuery, hitCount, sampleEvents)
+	return buildOllySchemaPrompt(luceneQuery, hitCount, sampleEvents, "30d")
+}
+
+var totalCountRe = regexp.MustCompile(`(?i)Total:\s*(\d+)`)
+
+// extractTotalFromPass1 parses the "Total: N" line that the pass-1 prompt
+// instructs Olly to emit, returning the event count or 0 if not found.
+func extractTotalFromPass1(text string) int {
+	if m := totalCountRe.FindStringSubmatch(text); len(m) > 1 {
+		n, err := strconv.Atoi(m[1])
+		if err == nil {
+			return n
+		}
+	}
+	return 0
 }
 
 // ── Section parser ────────────────────────────────────────────────────────────
@@ -536,7 +558,7 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	// Step 2a: Pass 1 — schema discovery (gpt-5.2, focus, ~72s)
 	// Uses --output agents to get structured output with chat_id.
 	sampleText := formatSampleEvents(qd.rawEvents)
-	schemaPrompt, err := buildOllySchemaPrompt(lucene, qd.Hits, sampleText)
+	schemaPrompt, err := buildOllySchemaPrompt(lucene, qd.Hits, sampleText, window)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "prompt_build_failed", Message: err.Error()})
 		return
@@ -548,7 +570,10 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chatID, _ := parseAgentsOutput(schemaOut)
+	chatID, schemaText := parseAgentsOutput(schemaOut)
+	if total := extractTotalFromPass1(schemaText); total > 0 {
+		qd.Hits = total
+	}
 
 	// Step 2b: Pass 2 — full 12-section report (claude-sonnet-4-5, skill, ~216s)
 	// Continues the same chat so Olly has confirmed field names for live pivots.

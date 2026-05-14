@@ -24,22 +24,45 @@ func TestBuildOllyPrompt(t *testing.T) {
 	}
 }
 
+func TestExtractTotalFromPass1(t *testing.T) {
+	tests := []struct {
+		input string
+		want  int
+	}{
+		{"Total: 47", 47},
+		{"some text\nTotal: 1234\nmore text", 1234},
+		{"total: 99", 99},
+		{"Total: 0", 0},
+		{"no total here", 0},
+		{"Total:", 0},
+	}
+	for _, tc := range tests {
+		got := extractTotalFromPass1(tc.input)
+		if got != tc.want {
+			t.Errorf("extractTotalFromPass1(%q) = %d, want %d", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestBuildOllySchemaPrompt(t *testing.T) {
-	prompt, err := buildOllySchemaPrompt(`url:(*webhook.site*)`, 3, "host1 user1 2024-01-01 GET webhook.site/abc")
+	prompt, err := buildOllySchemaPrompt(`EventID:13 AND TargetObject:*IFEO*`, 3, "event1\nevent2", "7d")
 	if err != nil {
 		t.Fatalf("buildOllySchemaPrompt: %v", err)
 	}
-	if !strings.Contains(prompt, `url:(*webhook.site*)`) {
+	if !strings.Contains(prompt, `EventID:13 AND TargetObject:*IFEO*`) {
 		t.Error("prompt missing lucene query")
 	}
 	if !strings.Contains(prompt, "3") {
-		t.Error("prompt missing hit count")
+		t.Error("prompt missing sample count")
 	}
-	if !strings.Contains(prompt, "webhook.site") {
-		t.Error("prompt missing sample events")
+	if !strings.Contains(prompt, "7d") {
+		t.Error("prompt missing window")
 	}
-	if !strings.Contains(prompt, "$d.url") {
-		t.Error("prompt missing field check list")
+	if !strings.Contains(prompt, `"Total: N"`) {
+		t.Error(`prompt missing "Total: N" format instruction`)
+	}
+	if strings.Contains(prompt, "webhook.site") {
+		t.Error("prompt must not be webhook-specific")
 	}
 }
 
