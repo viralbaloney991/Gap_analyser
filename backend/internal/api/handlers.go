@@ -573,18 +573,18 @@ func (h *Handler) HandleNoise(w http.ResponseWriter, r *http.Request) {
 	for i, a := range alerts {
 		alertIDs[i] = a.ID
 	}
-	eventCounts := fetchEventCounts(ctx, clientCfg.Region, clientCfg.APIKey, alertIDs, lookback)
-	if eventCounts == nil {
-		log.Printf("WARN [noise] event counts unavailable client=%s lookback=%d — structural-only", req.Client, lookback)
+	multiCounts := fetchEventCountsMultiWindow(ctx, clientCfg.Region, clientCfg.APIKey, alertIDs)
+	if multiCounts == nil {
+		log.Printf("WARN [noise] multi-window event counts unavailable client=%s — structural-only", req.Client)
 	} else {
-		log.Printf("INFO [noise] event counts: requested=%d matched=%d client=%s lookback=%d", len(alertIDs), len(eventCounts), req.Client, lookback)
+		log.Printf("INFO [noise] multi-window event counts: requested=%d fetched=%d client=%s", len(alertIDs), len(multiCounts), req.Client)
 	}
 
 	coralogix.ExtractFeatures(alerts, nil)
 
 	// Pass 0 for integrationCount — Monday not fetched in this path; structural
 	// reason text won't include org integration count but all noise signals are accurate.
-	noiseAlerts := similarity.AnalyzeNoise(alerts, eventCounts, 0)
+	noiseAlerts := similarity.AnalyzeNoiseMultiWindow(alerts, multiCounts, 0)
 	if noiseAlerts == nil {
 		noiseAlerts = []models.NoiseAlert{}
 	}
@@ -1082,6 +1082,26 @@ func fetchEventCounts(ctx context.Context, region, apiKey string, alertIDs []str
 	counts, err := client.FetchAlertEventCounts(ctx, alertIDs, days)
 	if err != nil {
 		log.Printf("DEBUG [noise] event count fetch failed: %v", err)
+		return nil
+	}
+	return counts
+}
+
+// fetchEventCountsMultiWindow fetches alert event counts at 4 fixed windows
+// (7d/14d/21d/30d) in parallel. Returns nil on complete failure.
+func fetchEventCountsMultiWindow(ctx context.Context, region, apiKey string, alertIDs []string) map[string][4]int {
+	client, err := coralogix.NewClient(region, apiKey)
+	if err != nil {
+		return nil
+	}
+	defer client.Close()
+	counts, err := client.FetchAlertEventCountsMultiWindow(ctx, alertIDs)
+	if err != nil {
+		if ctx.Err() != nil {
+			log.Printf("DEBUG [noise] multi-window event count fetch cancelled: %v", ctx.Err())
+		} else {
+			log.Printf("DEBUG [noise] multi-window event count fetch failed: %v", err)
+		}
 		return nil
 	}
 	return counts
