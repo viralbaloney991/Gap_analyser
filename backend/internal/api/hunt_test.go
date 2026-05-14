@@ -33,9 +33,10 @@ func TestExtractTotalFromPass1(t *testing.T) {
 		{"Total: 47", 47, true},
 		{"some text\nTotal: 1234\nmore text", 1234, true},
 		{"total: 99", 99, true},
-		{"Total: 0", 0, true},   // zero is a valid found result
+		{"Total: 0", 0, true},     // zero is a valid found result
 		{"no total here", 0, false},
 		{"Total:", 0, false},
+		{"| Total: 5 |", 0, false}, // must not match inside a table cell
 	}
 	for _, tc := range tests {
 		gotN, gotOK := extractTotalFromPass1(tc.input)
@@ -155,8 +156,8 @@ Analysis of geo-anomaly query. 29 events matched from RU/CN.
 	if !strings.Contains(sections["1"], "29 events") {
 		t.Errorf("section 1 content wrong: %q", sections["1"])
 	}
-	if !strings.Contains(sections["6"], "Salesforce") {
-		t.Errorf("section 6 (Findings) wrong: %q", sections["6"])
+	if !strings.Contains(sections["7"], "Salesforce") {
+		t.Errorf("section 7 (Findings) wrong: %q", sections["7"])
 	}
 	if !strings.Contains(sections["11"], "Pivot") {
 		t.Errorf("section 11 (Next Steps) wrong: %q", sections["11"])

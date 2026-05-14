@@ -217,7 +217,7 @@ func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (str
 	return buildOllySchemaPrompt(luceneQuery, hitCount, sampleEvents, "30d")
 }
 
-var totalCountRe = regexp.MustCompile(`(?i)Total:\s*(\d+)`)
+var totalCountRe = regexp.MustCompile(`(?im)^Total:\s*(\d+)`)
 
 // extractTotalFromPass1 parses the "Total: N" line that the pass-1 prompt
 // instructs Olly to emit. Returns (n, true) when the pattern is found (including
@@ -242,7 +242,7 @@ var genericHeaderRe = regexp.MustCompile(`(?m)^##\s+(.+?)\s*$`)
 // genericSectionMap maps Olly's native free-form header names to §N slot numbers.
 var genericSectionMap = map[string]string{
 	"summary":      "1",
-	"findings":     "6",
+	"findings":     "7",
 	"next steps":   "11",
 	"next step":    "11",
 	"action items": "11",
@@ -712,10 +712,10 @@ func extractFindings(sections map[string]string, severity string) []huntFinding 
 	return findings
 }
 
-func extractActions(section11 string) []huntAction {
+func extractActions(section10 string) []huntAction {
 	var actions []huntAction
 	priority := 1
-	for _, line := range strings.Split(section11, "\n") {
+	for _, line := range strings.Split(section10, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -741,10 +741,10 @@ func extractActions(section11 string) []huntAction {
 	return actions
 }
 
-func parseAlertDef(section12, name, techniqueId string) huntAlertDef {
+func parseAlertDef(section11, name, techniqueId string) huntAlertDef {
 	_ = techniqueId // reserved for future tagging; keeps signature stable
 	ad := huntAlertDef{Name: name, Type: "standard", Condition: "count > 0", Severity: "high", GroupBy: "host.name"}
-	for _, line := range strings.Split(section12, "\n") {
+	for _, line := range strings.Split(section11, "\n") {
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) != 2 {
 			continue
