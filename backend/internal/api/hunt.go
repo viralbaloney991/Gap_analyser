@@ -352,7 +352,8 @@ func deriveVerdict(hits int, section1 string) (verdict, confidence string) {
 
 type cxExecutor interface {
 	runLogs(ctx context.Context, query, window string) ([]byte, error)
-	runOllyChat(ctx context.Context, prompt string) ([]byte, error)
+	runOllySchema(ctx context.Context, prompt string) ([]byte, error)
+	runOllyReport(ctx context.Context, chatID, prompt string) ([]byte, error)
 }
 
 type cxRunner struct {
@@ -381,10 +382,24 @@ func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, e
 	return readCapped(cmd, maxOutputBytes)
 }
 
-func (r *cxRunner) runOllyChat(ctx context.Context, prompt string) ([]byte, error) {
-	// claude-sonnet-4-5 gives the best analysis quality. Focus mode (default) runs
-	// thorough live Coralogix queries — typical latency is 3-4 minutes per hunt.
-	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask", "--model", "claude-sonnet-4-5", prompt)
+func (r *cxRunner) runOllySchema(ctx context.Context, prompt string) ([]byte, error) {
+	// Pass 1: gpt-5.2 default, focus mode, agents output for chat_id extraction.
+	// No --model flag → uses cx default (gpt-5.2), faster for schema discovery.
+	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask",
+		"--output", "agents", "--mode", "focus", "--timeout", "300", prompt)
+	cmd.Env = r.env()
+	return readCapped(cmd, maxOutputBytes)
+}
+
+func (r *cxRunner) runOllyReport(ctx context.Context, chatID, prompt string) ([]byte, error) {
+	// Pass 2: claude-sonnet-4-5, skill mode for DataPrime expertise, continues
+	// the pass-1 chat so Olly uses confirmed field names for live pivot queries.
+	args := []string{"olly", "ask", "--mode", "skill", "--model", "claude-sonnet-4-5", "--timeout", "600"}
+	if chatID != "" {
+		args = append(args, "--chat-id", chatID)
+	}
+	args = append(args, prompt)
+	cmd := exec.CommandContext(ctx, r.binPath, args...)
 	cmd.Env = r.env()
 	return readCapped(cmd, maxOutputBytes)
 }
@@ -517,7 +532,8 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ollyOut, err := cx.runOllyChat(ctx, prompt)
+	// TODO(Task 4): replace with two-pass runOllySchema → runOllyReport flow.
+	ollyOut, err := cx.runOllyReport(ctx, "", prompt)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: err.Error()})
 		return

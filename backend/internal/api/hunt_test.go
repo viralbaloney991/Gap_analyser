@@ -257,18 +257,24 @@ func TestDeriveVerdict(t *testing.T) {
 }
 
 type mockCxExecutor struct {
-	logsOutput  []byte
-	logsErr     error
-	ollyOutput  []byte
-	ollyErr     error
+	logsOutput   []byte
+	logsErr      error
+	schemaOutput []byte
+	schemaErr    error
+	reportOutput []byte
+	reportErr    error
 }
 
 func (m *mockCxExecutor) runLogs(ctx context.Context, query, window string) ([]byte, error) {
 	return m.logsOutput, m.logsErr
 }
 
-func (m *mockCxExecutor) runOllyChat(ctx context.Context, prompt string) ([]byte, error) {
-	return m.ollyOutput, m.ollyErr
+func (m *mockCxExecutor) runOllySchema(ctx context.Context, prompt string) ([]byte, error) {
+	return m.schemaOutput, m.schemaErr
+}
+
+func (m *mockCxExecutor) runOllyReport(ctx context.Context, chatID, prompt string) ([]byte, error) {
+	return m.reportOutput, m.reportErr
 }
 
 func TestMockCxExecutorInterface(t *testing.T) {
