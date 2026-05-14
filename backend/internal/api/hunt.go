@@ -110,7 +110,7 @@ func sanitizeQuery(q string) error {
 // Two-pass design: pass 1 (gpt-5.2, focus, ~72s) discovers real field names
 // via 4 targeted questions and returns a chat_id. Pass 2 (claude-sonnet-4-5,
 // skill, --chat-id, ~216s) continues the same chat and produces the full
-// 12-section report with live pivot findings.
+// 11-section report with live pivot findings.
 // All analysis stays inside Coralogix infrastructure.
 
 const ollySchemaPromptTemplate = `Schema discovery for threat hunt. Answer ONLY these 4 questions:
@@ -278,7 +278,7 @@ func parseOllySections(output string) map[string]string {
 		return sections
 	}
 
-	// Try numbered format: "## 1. Title", "## 12. Title" (Olly structured 12-section output).
+	// Try numbered format: "## 1. Title", "## **1. Title**" (Olly structured output).
 	nmatches := numberedHeaderRe.FindAllStringIndex(output, -1)
 	if len(nmatches) > 0 {
 		nnums := numberedHeaderRe.FindAllStringSubmatch(output, -1)
@@ -576,7 +576,7 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 		qd.Hits = total
 	}
 
-	// Step 2b: Pass 2 — full 12-section report (claude-sonnet-4-5, skill, ~216s)
+	// Step 2b: Pass 2 — full 11-section report (claude-sonnet-4-5, skill, ~216s)
 	// Continues the same chat so Olly has confirmed field names for live pivots.
 	// Falls back to a fresh chat if chat_id could not be extracted.
 	reportOut, err := cx.runOllyReport(ctx, chatID, buildOllyReportPrompt())
