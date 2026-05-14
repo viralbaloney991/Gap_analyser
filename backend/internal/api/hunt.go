@@ -601,7 +601,6 @@ func parseLogsOutput(raw []byte, cxCmd string) queryDoneData {
 	qd.rawEvents = events
 
 	seen := make(map[string]bool)
-	users := make(map[string]bool)
 	for _, rawEvent := range events {
 		var e struct {
 			M struct {
@@ -628,7 +627,6 @@ func parseLogsOutput(raw []byte, cxCmd string) queryDoneData {
 		}
 	}
 	qd.Hosts = len(seen)
-	qd.UniqueUsers = len(users)
 	return qd
 }
 
