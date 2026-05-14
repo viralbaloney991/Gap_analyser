@@ -531,22 +531,33 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	qd := parseLogsOutput(logsOut, cxCmd)
 	sendSSE(w, flusher, "query_done", qd)
 
-	// Step 2: Olly analysis — runs inside Coralogix infrastructure, no external LLM
+	// Step 2a: Pass 1 — schema discovery (gpt-5.2, focus, ~72s)
+	// Uses --output agents to get structured output with chat_id.
 	sampleText := formatSampleEvents(qd.SampleEvents)
-	prompt, err := buildOllyPrompt(lucene, qd.Hits, sampleText)
+	schemaPrompt, err := buildOllySchemaPrompt(lucene, qd.Hits, sampleText)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "prompt_build_failed", Message: err.Error()})
 		return
 	}
 
-	// TODO(Task 4): replace with two-pass runOllySchema → runOllyReport flow.
-	ollyOut, err := cx.runOllyReport(ctx, "", prompt)
+	schemaOut, err := cx.runOllySchema(ctx, schemaPrompt)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: err.Error()})
 		return
 	}
 
-	sections := parseOllySections(string(ollyOut))
+	chatID, _ := parseAgentsOutput(schemaOut)
+
+	// Step 2b: Pass 2 — full 12-section report (claude-sonnet-4-5, skill, ~216s)
+	// Continues the same chat so Olly has confirmed field names for live pivots.
+	// Falls back to a fresh chat if chat_id could not be extracted.
+	reportOut, err := cx.runOllyReport(ctx, chatID, buildOllyReportPrompt())
+	if err != nil {
+		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: err.Error()})
+		return
+	}
+
+	sections := parseOllySections(string(reportOut))
 	sendSSE(w, flusher, "olly_done", ollyDoneData{Sections: sections})
 
 	// Step 3: Build report

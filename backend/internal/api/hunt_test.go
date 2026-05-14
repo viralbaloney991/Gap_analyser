@@ -304,13 +304,62 @@ func TestHandleHuntStream_InvalidQuery(t *testing.T) {
 }
 
 func TestHandleHuntStream_MockSuccess(t *testing.T) {
+	schemaAgentsOut := []byte(`Creating new chat...
+Sending message...
+[1]{chat_id,interaction_id,status,response,interaction_mode,model_choice}:
+  "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","ffffffff-0000-1111-2222-333333333333",completed,"## Summary\n$d.url confirmed, 1 hit",focus,"gpt-5.2"
+`)
+	reportOut := []byte(`## 1. Hunt Summary
+Severity: High
+Confidence: High
+
+## 2. Original Query
+event_type:"cmd_exec"
+
+## 3. Schema Mapping
+| field | cx | exists |
+|-------|----|--------|
+| url | $d.url | Y |
+
+## 4. Translated Query — DataPrime
+source logs | filter $d.url ~ 'webhook.site'
+
+## 5. Translated Query — Lucene
+$d.url:*webhook.site*
+
+## 6. Detection Logic Explained
+detects webhook exfil
+
+## 7. Hunt Workflow
+check hits
+
+## 8. Pivot Investigation
+webhook.site: 1 hit
+
+## 9. False Positive Considerations
+none
+
+## 10. Visibility Gaps
+none
+
+## 11. Follow-up Hunts
+hunt 1: cloud storage
+
+## 12. Alert Definition
+Name: test-alert
+Type: standard
+Condition: count > 0
+Severity: High
+Group-By: $d.suser`)
+
 	mock := &mockCxExecutor{
-		logsOutput: []byte(`{"hits":2,"events":[{"timestamp":"2024-01-01","host":"h1","user":"u1","cmd":"enc"}]}`),
-		ollyOutput: []byte("## §1 Hunt Summary\nSeverity: High\nConfidence: High\n\n## §2 Original Query\ntest\n\n## §3 Schema Mapping\nnone\n\n## §4 Translated Query — DataPrime\nsource logs\n\n## §5 Translated Query — Lucene\nevent_type:cmd_exec\n\n## §6 Detection Logic Explained\ndetects\n\n## §7 Hunt Workflow\ncheck\n\n## §8 Suggested Aggregation / Pivot Query\nagg\n\n## §9 False Positive Considerations\nnone\n\n## §10 Visibility Gaps & Assumptions\nnone\n\n## §11 Recommended Follow-up Hunts\nnone\n\n## §12 Alert Definition Skeleton\nName: test"),
+		logsOutput:   []byte(`{"hits":2,"events":[{"timestamp":"2024-01-01","host":"h1","user":"u1","cmd":"enc"}]}`),
+		schemaOutput: schemaAgentsOut,
+		reportOutput: reportOut,
 	}
 	h := &Handler{cxBinPath: "/usr/local/bin/cx", cxExec: mock}
 
-	req := httptest.NewRequest(http.MethodGet, `/api/hunt/stream?lucene=event_type%3Acmd_exec&window=5m&name=Test+Hunt&severity=high&techniqueId=T1059&tacticId=execution&source=syslog`, nil)
+	req := httptest.NewRequest(http.MethodGet, `/api/hunt/stream?lucene=event_type%3Acmd_exec&window=5m&name=Test+Hunt&severity=high&techniqueId=T1059`, nil)
 	w := httptest.NewRecorder()
 	h.HandleHuntStream(w, req)
 
