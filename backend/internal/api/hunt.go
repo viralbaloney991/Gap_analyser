@@ -103,46 +103,104 @@ func sanitizeQuery(q string) error {
 	return nil
 }
 
-// ── Olly prompt ───────────────────────────────────────────────────────────────
+// ── Olly prompts ──────────────────────────────────────────────────────────────
 //
-// Intentionally focused — Olly runs live Coralogix queries as part of its
-// response; long prompts trigger too many sub-queries and cause Cloudflare 524
-// timeouts (>5 min). All analysis stays inside Coralogix infrastructure;
-// customer log data never leaves to an external LLM provider.
+// Two-pass design: pass 1 (gpt-5.2, focus, ~72s) discovers real field names
+// via 3 targeted questions and returns a chat_id. Pass 2 (claude-sonnet-4-5,
+// skill, --chat-id, ~216s) continues the same chat and produces the full
+// 12-section report with live pivot findings.
+// All analysis stays inside Coralogix infrastructure.
 
-const ollyPromptTemplate = `Threat hunt analysis. Be concise.
+const ollySchemaPromptTemplate = `Schema discovery for threat hunt. Answer ONLY these 3 questions:
 
 Query: {{.LuceneQuery}}
 Hits: {{.HitCount}}
 {{if .SampleEvents}}Sample events:
 {{.SampleEvents}}
 {{end}}
-Please:
-1. Validate this query against actual log fields in this environment — report which fields exist and any corrections needed.
-2. Summarise the threat behaviour detected and risk level (Critical/High/Medium/Low). Include Severity and Confidence labels.
-3. List key findings from the data (bullet points).
-4. Provide 2-3 DataPrime pivot queries for deeper investigation.
-5. List 3 immediate recommended actions (numbered, with urgency).`
+1. What URL/URI/path/link fields exist in these logs? Check: $d.url, $d.uri, $d.cx_security.uri, $d.Island.details.file_processing_details.urls, $d.Url, $d.MessageURLs, $d.page — which ones have data?
+2. Do webhook.site, discord.com/api/webhooks, hooks.slack.com, or zapier.com/hooks appear in any URL field? How many hits each?
+3. Top 5 non-null event types: source logs | filter $d.event_type != null | groupby $d.event_type aggregate count() as hits | orderby hits desc | limit 5
 
-type ollyPromptData struct {
+Facts only. No preamble.`
+
+type ollySchemaPromptData struct {
 	LuceneQuery  string
 	HitCount     int
 	SampleEvents string
 }
 
-var ollyTmpl = template.Must(template.New("olly").Parse(ollyPromptTemplate))
+var ollySchemaTmpl = template.Must(template.New("ollySchema").Parse(ollySchemaPromptTemplate))
 
-func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (string, error) {
+func buildOllySchemaPrompt(luceneQuery string, hitCount int, sampleEvents string) (string, error) {
 	var buf bytes.Buffer
-	err := ollyTmpl.Execute(&buf, ollyPromptData{
+	err := ollySchemaTmpl.Execute(&buf, ollySchemaPromptData{
 		LuceneQuery:  luceneQuery,
 		HitCount:     hitCount,
 		SampleEvents: sampleEvents,
 	})
 	if err != nil {
-		return "", fmt.Errorf("render olly prompt: %w", err)
+		return "", fmt.Errorf("render olly schema prompt: %w", err)
 	}
 	return buf.String(), nil
+}
+
+// ollyReportPrompt is a static string sent as the pass-2 message in the same
+// chat session (--chat-id). Olly already knows the schema from pass 1 and
+// uses confirmed field names to run live pivot queries for section 8.
+const ollyReportPrompt = `Using what you found above, write the complete threat hunt report.
+For section 8 Pivot Investigation, RUN actual queries and report real findings — do not just suggest them.
+
+## 1. Hunt Summary
+Severity (Critical/High/Medium/Low), Confidence (High/Medium/Low), MITRE ATT&CK Tactic/Technique
+
+## 2. Original Query
+Echo the Lucene query
+
+## 3. Schema Mapping
+Table: Original Field | Confirmed CX Field | Exists (Y/N)
+
+## 4. Translated Query — DataPrime
+Using ONLY confirmed fields from section 3
+
+## 5. Translated Query — Lucene
+Optimised Lucene with confirmed fields
+
+## 6. Detection Logic Explained
+Plain English explanation of what this detects and why
+
+## 7. Hunt Workflow
+Step-by-step for a tier-2 analyst investigating a hit
+
+## 8. Pivot Investigation
+RUN these now and report actual findings:
+- Top domains/URLs in the confirmed URL fields
+- Top users or source IPs generating these events
+- Are hits time-clustered (automated) or spread (manual)?
+
+## 9. False Positive Considerations
+Likely FP sources with suppression suggestions
+
+## 10. Visibility Gaps
+Missing log sources or fields that limit this hunt
+
+## 11. Follow-up Hunts
+3 related hunts with DataPrime query sketches
+
+## 12. Alert Definition
+Name: <descriptive name>
+Type: standard
+Condition: count > 0
+Severity: <Critical/High/Medium/Low>
+Group-By: <most relevant field>`
+
+func buildOllyReportPrompt() string {
+	return ollyReportPrompt
+}
+
+// buildOllyPrompt is kept for backward compatibility with existing tests.
+func buildOllyPrompt(luceneQuery string, hitCount int, sampleEvents string) (string, error) {
+	return buildOllySchemaPrompt(luceneQuery, hitCount, sampleEvents)
 }
 
 // ── Section parser ────────────────────────────────────────────────────────────

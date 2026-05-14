@@ -24,6 +24,43 @@ func TestBuildOllyPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildOllySchemaPrompt(t *testing.T) {
+	prompt, err := buildOllySchemaPrompt(`url:(*webhook.site*)`, 3, "host1 user1 2024-01-01 GET webhook.site/abc")
+	if err != nil {
+		t.Fatalf("buildOllySchemaPrompt: %v", err)
+	}
+	if !strings.Contains(prompt, `url:(*webhook.site*)`) {
+		t.Error("prompt missing lucene query")
+	}
+	if !strings.Contains(prompt, "3") {
+		t.Error("prompt missing hit count")
+	}
+	if !strings.Contains(prompt, "webhook.site") {
+		t.Error("prompt missing sample events")
+	}
+	if !strings.Contains(prompt, "$d.url") {
+		t.Error("prompt missing field check list")
+	}
+}
+
+func TestBuildOllyReportPrompt(t *testing.T) {
+	prompt := buildOllyReportPrompt()
+	for _, section := range []string{
+		"## 1.", "## 2.", "## 3.", "## 4.", "## 5.",
+		"## 6.", "## 7.", "## 8.", "## 9.", "## 10.", "## 11.", "## 12.",
+	} {
+		if !strings.Contains(prompt, section) {
+			t.Errorf("report prompt missing section %q", section)
+		}
+	}
+	if !strings.Contains(prompt, "Pivot Investigation") {
+		t.Error("report prompt missing §8 pivot instruction")
+	}
+	if !strings.Contains(prompt, "RUN") {
+		t.Error("report prompt must tell Olly to RUN pivot queries, not just suggest them")
+	}
+}
+
 func TestParseOllySections(t *testing.T) {
 	raw := `## §1 Hunt Summary
 Severity: High
