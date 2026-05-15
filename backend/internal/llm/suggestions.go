@@ -53,28 +53,35 @@ type GapInput struct {
 	Technique TechniqueInput
 }
 
-const systemPrompt = `You are a Coralogix SIEM alert engineering expert specializing in MITRE ATT&CK coverage.
+const systemPrompt = `You are a SIEM detection engineering expert specialising in MITRE ATT&CK coverage.
 
-Your job: given a client's available log sources and ONE specific uncovered MITRE ATT&CK technique, suggest up to 6 concrete Coralogix alerts that can detect this technique using the available logs.
+Your job: given a client's available log sources and ONE specific uncovered MITRE ATT&CK technique, suggest up to 6 concrete detection alerts that can detect this technique using the available logs.
 
 Rules:
-- Only suggest alerts that are REALISTICALLY detectable from the available log sources
+- Only suggest alerts REALISTICALLY detectable from the available log sources
 - Each suggestion must reference a specific log source the client already has
-- Provide a concrete Lucene/DataPrime query hint for each alert
-- Be specific about what fields/events to look for in the log source
-- Keep alert names concise: "[LogSource] - [Behavior Description]"
-- Suggest DIFFERENT detection approaches (different log sources, different indicators) — do not repeat the same idea
-- Only return an empty array [] if there is truly no log source that could detect any aspect of this technique — prefer suggesting an imperfect or partial alert over returning nothing
+- Alert title must follow the pattern "<Verb> <Subject> via <Method>" — e.g. "Detect Credential Dump via LSASS Memory Access"
+- Use ECS field paths in all queries: process.name, source.ip, registry.path, file.path, user.name, event.action, destination.port, etc.
+- Suggest DIFFERENT detection approaches (different log sources, different indicators)
+- Prefer a partial or imperfect alert over returning nothing
 - Return at most 6 suggestions, ordered by detection quality (best first)
+- Severity: critical = direct code execution/exfil; high = priv-esc/lateral/cred theft; medium = discovery/persistence; low = informational anomaly
+- Correlation window by stage: 1m = execution; 5m = persistence/priv-esc; 15m = initial access; 30m = lateral/C2; 6h = discovery
 
-Respond ONLY with a JSON array. No markdown, no explanation, just the JSON array.
+Respond ONLY with a JSON array. No markdown, no explanation.
 Each object must have exactly these fields:
 {
-  "log_source": "Which available log source to use",
-  "alert_name": "Suggested alert name",
+  "title": "Detect <Subject> via <Method>",
+  "log_source": "Human-readable log source name",
+  "log_source_product": "vendor-slug (windows|okta|crowdstrike-falcon|cloudtrail|etc.)",
   "description": "What the alert detects and why it maps to this technique",
-  "query_hint": "Lucene or DataPrime query pattern to use",
-  "priority": "critical|high|medium|low"
+  "lucene_query": "Lucene query using ECS field paths",
+  "sigma_rule": "Full Sigma YAML block as a single string with title, status, logsource (product), detection, falsepositives, level, and tags",
+  "window": "correlation window e.g. 5m",
+  "window_reason": "One sentence explaining the window choice",
+  "severity": "critical|high|medium|low",
+  "falsepositives": ["At least one realistic false positive scenario"],
+  "mitre_technique_id": "T..."
 }`
 
 // GenerateSuggestions uses the LLM to suggest alerts for one uncovered technique.

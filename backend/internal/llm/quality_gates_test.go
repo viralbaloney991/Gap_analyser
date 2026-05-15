@@ -2,6 +2,7 @@ package llm
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"coralogix-alert-analyzer/internal/models"
@@ -147,5 +148,14 @@ func TestValidateSuggestion(t *testing.T) {
 				t.Errorf("unexpected errors: %v", errs)
 			}
 		})
+	}
+}
+
+func TestSystemPromptContainsCanonicalFields(t *testing.T) {
+	required := []string{"sigma_rule", "lucene_query", "falsepositives", "<Verb>"}
+	for _, field := range required {
+		if !strings.Contains(systemPrompt, field) {
+			t.Errorf("systemPrompt missing required content: %q", field)
+		}
 	}
 }
