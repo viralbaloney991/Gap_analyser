@@ -15,11 +15,11 @@ const MaxSuggestions = 6
 // Legacy fields (AlertName, QueryHint, Priority) retain their original JSON tags
 // so old rows cached in the database before the rename still unmarshal correctly.
 type Suggestion struct {
-	Title            string   `json:"title,omitempty"`
+	Title            string   `json:"title"`
 	LogSource        string   `json:"log_source"`
 	Description      string   `json:"description"`
-	LuceneQuery      string   `json:"lucene_query,omitempty"`
-	Severity         string   `json:"severity,omitempty"`
+	LuceneQuery      string   `json:"lucene_query"`
+	Severity         string   `json:"severity"`
 	SigmaRule        string   `json:"sigma_rule,omitempty"`
 	LogSourceProduct string   `json:"log_source_product,omitempty"`
 	Window           string   `json:"window,omitempty"`
