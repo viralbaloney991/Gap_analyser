@@ -14,11 +14,28 @@ backend/bin/
 
 # Debug / scratch
 backend/debug_alerts.json
+api-response.json
+*.log
 
 # Private / tooling
 .claude/
 .superpowers/
 .env
+.env.*
+
+# Client configuration (contains customer names and API key placeholders)
+backend/clients.yaml
+clients.yaml
+
+# Internal planning docs (superpowers AI workflow specs/plans)
+docs/superpowers/
+backend/docs/superpowers/
+
+# Screenshots and test artifacts
+*.png
+.playwright-mcp/
+playwright-report/
+test-results/
 
 # Misc
 *.xlsx
