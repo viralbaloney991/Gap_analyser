@@ -1,73 +1,64 @@
-# React + TypeScript + Vite
+# Frontend — SIEM Alert Analyser
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite single-page application for the SIEM Alert Analyser platform.
 
-Currently, two official plugins are available:
+## Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **React 18** — UI framework
+- **TypeScript** — type safety throughout
+- **Vite** — build tool and dev server
+- **Lucide React** — icon set
 
-## React Compiler
+## Structure
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+src/
+├── components/
+│   ├── ClientSelector.tsx     # Tenant/environment picker — first screen
+│   ├── AlertInsights.tsx      # Main results view: insights, noise, suggestions, gaps
+│   ├── MITREHeatmap.tsx       # ATT&CK tactic/technique coverage heatmap
+│   ├── ThreatGraph.tsx        # Force-directed alert relationship graph
+│   ├── DetectionBuilder.tsx   # Detection rule wizard (MITRE technique → query)
+│   ├── HuntView.tsx           # AI threat hunt — streaming SSE results
+│   ├── IntegrationSummary.tsx # Integration ↔ alert coverage table
+│   └── NoisePills.tsx         # Lookback window selector (7d / 14d / 30d / 90d)
+├── services/
+│   └── api.ts                 # API client — REST calls + SSE streaming
+├── types/
+│   └── index.ts               # Shared TypeScript interfaces
+├── data/
+│   └── mitre-catalog.ts       # Local MITRE ATT&CK technique catalog
+└── utils/
+    └── export.ts              # Report export helpers
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Development
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev        # dev server at http://localhost:5173
+npm run build      # production build → dist/
+npm run preview    # preview production build locally
 ```
+
+## Environment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_API_URL` | `http://localhost:8080` | Backend API base URL |
+
+Set in a `.env.local` file (not committed):
+
+```
+VITE_API_URL=http://localhost:8080
+```
+
+## Key Patterns
+
+**API calls** — all requests go through `src/services/api.ts`. REST endpoints use `fetch` with JSON; the threat hunt uses `EventSource` for server-sent events (SSE).
+
+**State** — component-local `useState`/`useEffect`. No global state library; analysis results are passed down from `App.tsx` as props.
+
+**Types** — all API response shapes are typed in `src/types/index.ts`. Backend JSON field names are snake_case; TypeScript interfaces match them directly (no camelCase conversion).
+
+**Styling** — single `App.css` with CSS custom properties for theming. No CSS-in-JS or utility framework.
