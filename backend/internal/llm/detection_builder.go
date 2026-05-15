@@ -100,6 +100,11 @@ func GenerateDetection(ctx context.Context, provider Provider, techs []BuildTech
 		mock := mockBuildDetection(techs)
 		return mock, nil
 	}
+	for _, a := range result.Alerts {
+		if errs := validateDetectionAlert(a); len(errs) > 0 {
+			log.Printf("WARN [detection_builder] quality gate for alert %q: %v", a.Name, errs)
+		}
+	}
 	return result, nil
 }
 

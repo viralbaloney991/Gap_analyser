@@ -159,3 +159,18 @@ func TestSystemPromptContainsCanonicalFields(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterInvalidSuggestions(t *testing.T) {
+	input := []Suggestion{
+		{Title: "Detect X via Y", SigmaRule: "title: x", LuceneQuery: "x:y", Falsepositives: []string{"FP"}},
+		{Title: "", SigmaRule: "title: x", LuceneQuery: "x:y", Falsepositives: []string{"FP"}},          // invalid: no title
+		{Title: "Detect A via B", SigmaRule: "", LuceneQuery: "x:y", Falsepositives: []string{"FP"}},    // invalid: no sigma
+	}
+	valid := filterValidSuggestions(input)
+	if len(valid) != 1 {
+		t.Errorf("expected 1 valid suggestion, got %d", len(valid))
+	}
+	if valid[0].Title != "Detect X via Y" {
+		t.Errorf("wrong suggestion kept: %q", valid[0].Title)
+	}
+}

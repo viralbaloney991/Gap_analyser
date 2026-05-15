@@ -106,6 +106,8 @@ func GenerateSuggestions(ctx context.Context, provider Provider, input GapInput)
 		return nil, fmt.Errorf("parse suggestions: %w", err)
 	}
 
+	suggestions = filterValidSuggestions(suggestions)
+
 	// Hard cap at MaxSuggestions
 	if len(suggestions) > MaxSuggestions {
 		suggestions = suggestions[:MaxSuggestions]
