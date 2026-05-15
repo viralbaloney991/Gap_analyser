@@ -552,6 +552,7 @@ function SuggestionsPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [provider, setProvider] = useState('');
+  const [showSigma, setShowSigma] = useState(false);
 
   const generate = async (force = false) => {
     setSuggestions(null);
@@ -644,9 +645,24 @@ function SuggestionsPanel({
                 </div>
                 <div className="suggestion-source">Log source: {s.log_source}</div>
                 <div className="suggestion-desc">{s.description}</div>
-                <div className="suggestion-query">
-                  <code>{s.lucene_query}</code>
+                <div className="query-format-toggle">
+                  <button
+                    className={`toggle-btn${!showSigma ? ' active' : ''}`}
+                    onClick={() => setShowSigma(false)}
+                  >
+                    Lucene
+                  </button>
+                  <button
+                    className={`toggle-btn${showSigma ? ' active' : ''}`}
+                    onClick={() => setShowSigma(true)}
+                    disabled={!s.sigma_rule}
+                  >
+                    Sigma
+                  </button>
                 </div>
+                <pre className="query-block">
+                  {showSigma ? (s.sigma_rule || '# No Sigma rule available') : s.lucene_query}
+                </pre>
                 {onHunt && (
                   <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
                     <button
