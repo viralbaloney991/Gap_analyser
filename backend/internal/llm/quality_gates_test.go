@@ -3,6 +3,8 @@ package llm
 import (
 	"encoding/json"
 	"testing"
+
+	"coralogix-alert-analyzer/internal/models"
 )
 
 func TestSuggestionBackwardCompat(t *testing.T) {
@@ -21,5 +23,112 @@ func TestSuggestionBackwardCompat(t *testing.T) {
 	}
 	if sugs[0].QueryHint != "x:y" {
 		t.Errorf("QueryHint compat: got %q", sugs[0].QueryHint)
+	}
+}
+
+func TestValidateDetectionAlert(t *testing.T) {
+	cases := []struct {
+		name    string
+		alert   models.BuildDetectionAlert
+		wantErr bool
+	}{
+		{
+			name: "valid alert",
+			alert: models.BuildDetectionAlert{
+				Name:           "Detect Credential Dump via LSASS",
+				SigmaRule:      "title: test\nlogsource:\n  product: windows",
+				Logic:          "process.name:lsass.exe",
+				Falsepositives: []string{"Security scanners"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "missing sigma_rule",
+			alert: models.BuildDetectionAlert{
+				Name:           "Detect Credential Dump via LSASS",
+				Logic:          "process.name:lsass.exe",
+				Falsepositives: []string{"Security scanners"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing logic",
+			alert: models.BuildDetectionAlert{
+				Name:           "Detect Credential Dump via LSASS",
+				SigmaRule:      "title: test",
+				Falsepositives: []string{"Security scanners"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty falsepositives",
+			alert: models.BuildDetectionAlert{
+				Name:      "Detect Credential Dump via LSASS",
+				SigmaRule: "title: test",
+				Logic:     "process.name:lsass.exe",
+			},
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			errs := validateDetectionAlert(tc.alert)
+			if tc.wantErr && len(errs) == 0 {
+				t.Error("expected validation errors, got none")
+			}
+			if !tc.wantErr && len(errs) > 0 {
+				t.Errorf("unexpected errors: %v", errs)
+			}
+		})
+	}
+}
+
+func TestValidateSuggestion(t *testing.T) {
+	cases := []struct {
+		name    string
+		sug     Suggestion
+		wantErr bool
+	}{
+		{
+			name: "valid",
+			sug: Suggestion{
+				Title:          "Detect Lateral Movement via Pass-the-Hash",
+				SigmaRule:      "title: test",
+				LuceneQuery:    "event.action:pth",
+				Falsepositives: []string{"Admin tools"},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "empty title",
+			sug:     Suggestion{SigmaRule: "title: test", LuceneQuery: "x:y", Falsepositives: []string{"None"}},
+			wantErr: true,
+		},
+		{
+			name:    "empty sigma_rule",
+			sug:     Suggestion{Title: "Detect X via Y", LuceneQuery: "x:y", Falsepositives: []string{"None"}},
+			wantErr: true,
+		},
+		{
+			name:    "empty lucene_query",
+			sug:     Suggestion{Title: "Detect X via Y", SigmaRule: "title: x", Falsepositives: []string{"None"}},
+			wantErr: true,
+		},
+		{
+			name:    "empty falsepositives",
+			sug:     Suggestion{Title: "Detect X via Y", SigmaRule: "title: x", LuceneQuery: "x:y"},
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			errs := validateSuggestion(tc.sug)
+			if tc.wantErr && len(errs) == 0 {
+				t.Error("expected errors, got none")
+			}
+			if !tc.wantErr && len(errs) > 0 {
+				t.Errorf("unexpected errors: %v", errs)
+			}
+		})
 	}
 }
