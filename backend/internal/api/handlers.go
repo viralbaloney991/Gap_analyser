@@ -910,11 +910,17 @@ func (h *Handler) HandleSuggestions(w http.ResponseWriter, r *http.Request) {
 		finalSuggestions = make([]models.AlertSuggestion, len(result.Suggestions))
 		for i, s := range result.Suggestions {
 			finalSuggestions[i] = models.AlertSuggestion{
-				LogSource:   s.LogSource,
-				AlertName:   s.AlertName,
-				Description: s.Description,
-				QueryHint:   s.QueryHint,
-				Priority:    s.Priority,
+				Title:            s.Title,
+				LogSource:        s.LogSource,
+				Description:      s.Description,
+				LuceneQuery:      s.LuceneQuery,
+				Severity:         s.Severity,
+				SigmaRule:        s.SigmaRule,
+				LogSourceProduct: s.LogSourceProduct,
+				Window:           s.Window,
+				WindowReason:     s.WindowReason,
+				Falsepositives:   s.Falsepositives,
+				MitreTechniqueID: s.MitreTechniqueID,
 			}
 		}
 	}
@@ -961,16 +967,26 @@ func mergeCachedSuggestions(rows []store.SuggestionRow) ([]models.AlertSuggestio
 		}
 		latestProvider = row.Provider
 		for _, s := range llmSugs {
-			key := strings.ToLower(s.AlertName)
+			name := s.Title
+			if name == "" {
+				name = s.AlertName // backward compat: old cached rows use alert_name
+			}
+			key := strings.ToLower(name)
 			existing, exists := seen[key]
 			if !exists || row.GeneratedAt.After(existing.genAt) {
 				seen[key] = entry{
 					sug: models.AlertSuggestion{
-						LogSource:   s.LogSource,
-						AlertName:   s.AlertName,
-						Description: s.Description,
-						QueryHint:   s.QueryHint,
-						Priority:    s.Priority,
+						Title:            name,
+						LogSource:        s.LogSource,
+						Description:      s.Description,
+						LuceneQuery:      s.LuceneQuery,
+						Severity:         s.Severity,
+						SigmaRule:        s.SigmaRule,
+						LogSourceProduct: s.LogSourceProduct,
+						Window:           s.Window,
+						WindowReason:     s.WindowReason,
+						Falsepositives:   s.Falsepositives,
+						MitreTechniqueID: s.MitreTechniqueID,
 					},
 					genAt: row.GeneratedAt,
 				}
@@ -983,12 +999,12 @@ func mergeCachedSuggestions(rows []store.SuggestionRow) ([]models.AlertSuggestio
 		merged = append(merged, e.sug)
 	}
 	sort.Slice(merged, func(i, j int) bool {
-		pi := priorityOrder[strings.ToLower(merged[i].Priority)]
-		pj := priorityOrder[strings.ToLower(merged[j].Priority)]
+		pi := priorityOrder[strings.ToLower(merged[i].Severity)]
+		pj := priorityOrder[strings.ToLower(merged[j].Severity)]
 		if pi != pj {
 			return pi < pj
 		}
-		return strings.ToLower(merged[i].AlertName) < strings.ToLower(merged[j].AlertName)
+		return strings.ToLower(merged[i].Title) < strings.ToLower(merged[j].Title)
 	})
 	return merged, latestProvider
 }
