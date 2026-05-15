@@ -9,10 +9,10 @@ import (
 
 func TestResolveGroupIDs(t *testing.T) {
 	groups := []monday.Group{
-		{ID: "group_abc", Title: "JioStar"},
-		{ID: "group_def", Title: "Deel"},
-		{ID: "group_ghi", Title: "Sinarmas - ASM"},
-		{ID: "group_jkl", Title: "Sinarmas - Mining"},
+		{ID: "group_abc", Title: "Acme Corp"},
+		{ID: "group_def", Title: "Globex"},
+		{ID: "group_ghi", Title: "Initech - Division A"},
+		{ID: "group_jkl", Title: "Initech - Division B"},
 	}
 
 	tests := []struct {
@@ -23,17 +23,17 @@ func TestResolveGroupIDs(t *testing.T) {
 	}{
 		{
 			name:       "exact match",
-			clientName: "JioStar",
+			clientName: "Acme Corp",
 			expectedID: "group_abc",
 		},
 		{
 			name:       "case-insensitive match",
-			clientName: "jiostar",
+			clientName: "acme corp",
 			expectedID: "group_abc",
 		},
 		{
 			name:       "client name contained in group title",
-			clientName: "Deel",
+			clientName: "Globex",
 			expectedID: "group_def",
 		},
 		{
@@ -43,13 +43,13 @@ func TestResolveGroupIDs(t *testing.T) {
 		},
 		{
 			name:       "already set - not overwritten",
-			clientName: "JioStar",
+			clientName: "Acme Corp",
 			existingID: "existing_id",
 			expectedID: "existing_id",
 		},
 		{
 			name:       "multiple matches - uses first",
-			clientName: "Sinarmas",
+			clientName: "Initech",
 			expectedID: "group_ghi",
 		},
 	}

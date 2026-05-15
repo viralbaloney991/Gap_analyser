@@ -11,7 +11,7 @@ import (
 func TestFetchGroups(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `{"data":{"boards":[{"groups":[{"id":"group_abc","title":"JioStar"},{"id":"group_def","title":"Deel"}]}]}}`)
+		fmt.Fprintln(w, `{"data":{"boards":[{"groups":[{"id":"group_abc","title":"Acme Corp"},{"id":"group_def","title":"Globex"}]}]}}`)
 	}))
 	defer srv.Close()
 
@@ -23,10 +23,10 @@ func TestFetchGroups(t *testing.T) {
 	if len(groups) != 2 {
 		t.Fatalf("expected 2 groups, got %d", len(groups))
 	}
-	if groups[0].ID != "group_abc" || groups[0].Title != "JioStar" {
+	if groups[0].ID != "group_abc" || groups[0].Title != "Acme Corp" {
 		t.Errorf("unexpected group[0]: %+v", groups[0])
 	}
-	if groups[1].ID != "group_def" || groups[1].Title != "Deel" {
+	if groups[1].ID != "group_def" || groups[1].Title != "Globex" {
 		t.Errorf("unexpected group[1]: %+v", groups[1])
 	}
 }
