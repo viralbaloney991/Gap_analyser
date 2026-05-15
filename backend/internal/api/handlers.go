@@ -971,6 +971,14 @@ func mergeCachedSuggestions(rows []store.SuggestionRow) ([]models.AlertSuggestio
 			if name == "" {
 				name = s.AlertName // backward compat: old cached rows use alert_name
 			}
+			luceneQuery := s.LuceneQuery
+			if luceneQuery == "" {
+				luceneQuery = s.QueryHint // backward compat: old cached rows use query_hint
+			}
+			severity := s.Severity
+			if severity == "" {
+				severity = s.Priority // backward compat: old cached rows use priority
+			}
 			key := strings.ToLower(name)
 			existing, exists := seen[key]
 			if !exists || row.GeneratedAt.After(existing.genAt) {
@@ -979,8 +987,8 @@ func mergeCachedSuggestions(rows []store.SuggestionRow) ([]models.AlertSuggestio
 						Title:            name,
 						LogSource:        s.LogSource,
 						Description:      s.Description,
-						LuceneQuery:      s.LuceneQuery,
-						Severity:         s.Severity,
+						LuceneQuery:      luceneQuery,
+						Severity:         severity,
 						SigmaRule:        s.SigmaRule,
 						LogSourceProduct: s.LogSourceProduct,
 						Window:           s.Window,
