@@ -1,0 +1,44 @@
+neon_dsn: ""           # set via NEON_DSN env var
+monday_api_token: ""   # set via MONDAY_API_TOKEN env var
+monday_board_id: 0     # set via MONDAY_BOARD_ID env var
+
+llm:
+  default_provider: "claude"   # claude | nvidia | gemini
+
+  # Claude (Anthropic)
+  # API key set via ANTHROPIC_API_KEY env var
+  claude_model: "claude-opus-4-7"
+
+  # NVIDIA NIM
+  nvidia_api_key: ""             # set via NVIDIA_API_KEY env var
+  nvidia_model: "nvidia/nemotron-3-super-120b-a12b"
+  nvidia_endpoint: "https://integrate.api.nvidia.com/v1/chat/completions"
+
+  # Google Gemini
+  gemini_api_key: ""             # set via GEMINI_API_KEY env var
+  gemini_model: "gemini-2.0-flash"
+
+  # Per-task provider overrides (optional — falls back to default_provider)
+  classifier_provider: "claude"
+  classifier_model: "claude-haiku-4-5-20251001"
+
+  suggestion_provider: "claude"
+  suggestion_model: "claude-opus-4-7"
+  nvidia_suggestion_api_key: "" # set via NVIDIA_SUGGESTION_API_KEY env var
+
+  insights_provider: "claude"
+  insights_model: "claude-opus-4-7"
+
+  pipeline_global_cap: 5        # max concurrent LLM calls across all stages
+  pipeline_batch_size: 10
+
+clients:
+  my-environment:
+    api_key: ""                  # set via CLIENT_MY-ENVIRONMENT_API_KEY env var
+    region: eu1                  # eu1 | eu2 | ap1 | ap2 | us1 | us2
+    monday_group_id: ""          # issue tracker group ID for this tenant (optional)
+
+  another-environment:
+    api_key: ""                  # set via CLIENT_ANOTHER-ENVIRONMENT_API_KEY env var
+    region: us1
+    monday_group_id: ""
