@@ -1294,7 +1294,11 @@ func findNoiseAlertsMultiWindow(
 			continue
 		}
 
-		wc := windowCounts
+		var wcPtr *[4]int
+		if pattern != "" {
+			wc := windowCounts
+			wcPtr = &wc
+		}
 		noisy = append(noisy, models.NoiseAlert{
 			Name:            v.alertName,
 			MissingFeatures: buildMissingFeatures(v),
@@ -1302,7 +1306,7 @@ func findNoiseAlertsMultiWindow(
 			TriggerCount:    triggerCount,
 			NoiseType:       noiseTypeString(isBehavioral, isStructural),
 			NoisePattern:    pattern,
-			WindowCounts:    &wc,
+			WindowCounts:    wcPtr,
 			BurstScore:      burstScore(windowCounts),
 		})
 	}
