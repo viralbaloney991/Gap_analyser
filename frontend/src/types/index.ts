@@ -175,11 +175,17 @@ export interface AnalyzeResponse {
 }
 
 export interface AlertSuggestion {
+  title: string;
   log_source: string;
-  alert_name: string;
   description: string;
-  query_hint: string;
-  priority: string;
+  lucene_query: string;
+  severity: string;
+  sigma_rule?: string;
+  log_source_product?: string;
+  window?: string;
+  window_reason?: string;
+  falsepositives?: string[];
+  mitre_technique_id?: string;
 }
 
 export interface SuggestionsResponse {
@@ -226,6 +232,8 @@ export interface FlowAlert {
   windowReason: string;
   source: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
+  sigma_rule?: string;
+  falsepositives?: string[];
 }
 
 export interface CorrelationRule {

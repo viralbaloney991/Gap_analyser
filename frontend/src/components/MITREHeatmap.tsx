@@ -634,18 +634,18 @@ function SuggestionsPanel({
             suggestions.suggestions.map((s, i) => (
               <div key={i} className="suggestion-card">
                 <div className="suggestion-header">
-                  <span className="suggestion-name">{s.alert_name}</span>
+                  <span className="suggestion-name">{s.title}</span>
                   <span
                     className="suggestion-priority"
-                    style={{ color: priorityColor(s.priority) }}
+                    style={{ color: priorityColor(s.severity) }}
                   >
-                    {s.priority}
+                    {s.severity}
                   </span>
                 </div>
                 <div className="suggestion-source">Log source: {s.log_source}</div>
                 <div className="suggestion-desc">{s.description}</div>
                 <div className="suggestion-query">
-                  <code>{s.query_hint}</code>
+                  <code>{s.lucene_query}</code>
                 </div>
                 {onHunt && (
                   <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
@@ -653,13 +653,13 @@ function SuggestionsPanel({
                       className="hunt-trigger-btn"
                       onClick={() => onHunt({
                         detectionId: `${technique.techniqueID}-${i}-${Date.now()}`,
-                        name: s.alert_name,
-                        logic: s.query_hint,
+                        name: s.title,
+                        logic: s.lucene_query,
                         techniqueId: technique.techniqueID,
                         tacticId: technique.tactic,
-                        window: '30d',
+                        window: s.window ?? '30d',
                         source: s.log_source,
-                        severity: s.priority.toLowerCase(),
+                        severity: s.severity.toLowerCase(),
                         client: clientName,
                       })}
                     >
