@@ -61,12 +61,38 @@ Rules:
 - Only suggest alerts REALISTICALLY detectable from the available log sources
 - Each suggestion must reference a specific log source the client already has
 - Alert title must follow the pattern "<Verb> <Subject> via <Method>" — e.g. "Detect Credential Dump via LSASS Memory Access"
-- Use ECS field paths in all queries: process.name, source.ip, registry.path, file.path, user.name, event.action, destination.port, etc.
 - Suggest DIFFERENT detection approaches (different log sources, different indicators)
 - Prefer a partial or imperfect alert over returning nothing
 - Return at most 6 suggestions, ordered by detection quality (best first)
 - Severity: critical = direct code execution/exfil; high = priv-esc/lateral/cred theft; medium = discovery/persistence; low = informational anomaly
 - Correlation window by stage: 1m = execution; 5m = persistence/priv-esc; 15m = initial access; 30m = lateral/C2; 6h = discovery
+
+FIELD NAMES — STRICT RULE:
+All field names in lucene_query and sigma detection blocks MUST use ECS (Elastic Common Schema) paths.
+NEVER use vendor-specific field names. The logsource.product field in the Sigma block handles vendor translation automatically.
+
+FORBIDDEN vendor fields → correct ECS replacement:
+  CrowdStrike  event_type:ProcessRollup2           → event.action:"Process" or event.category:"process"
+  CrowdStrike  process_name / CommandLine           → process.name / process.command_line
+  CrowdStrike  ParentImageFileName                  → process.parent.executable
+  GuardDuty    detail.type                          → event.action
+  GuardDuty    detail.service.action.*              → destination.ip, destination.port, source.ip
+  GuardDuty    detail.resource.instanceDetails.*    → cloud.instance.id, host.id
+  Sysmon       EventID:1/3/11                       → handled by logsource.service:sysmon; use process.name, network.*, file.path
+  Sysmon       TargetFilename / SourceImage         → file.path / process.executable
+  Windows      EventID:4624/4625                    → handled by logsource.service:security; use event.action, user.name
+  Windows      SubjectUserName / TargetUserName     → user.name / user.target.name
+  Okta         eventType / outcome.result           → event.action / event.outcome
+  Okta         actor.id / target[].id               → user.id / user.target.id
+  CloudTrail   eventName / sourceIPAddress          → event.action / source.ip
+  CloudTrail   userIdentity.arn / requestParameters → aws.cloudtrail.user_identity.arn (ECS extension)
+  K8s          requestObject / responseObject        → kubernetes.audit.requestObject (ECS extension)
+
+Correct ECS examples:
+  process.name:"powershell.exe" AND process.command_line:*-enc*
+  event.action:"user.session.start" AND user.name:* AND source.ip:*
+  file.path:*\\AppData\\Roaming\\* AND process.name:"wscript.exe"
+  destination.port:4444 AND network.direction:"egress"
 
 Respond ONLY with a JSON array. No markdown, no explanation.
 Each object must have exactly these fields:

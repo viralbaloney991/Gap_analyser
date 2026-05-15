@@ -31,8 +31,8 @@ Your job:
    - name: detection title following the pattern "<Verb> <Subject> via <Method>" — e.g. "Detect Credential Dump via LSASS Memory Access"
    - description: one-line summary
    - techniqueId: the MITRE T-id this alert primarily detects (from the user's list)
-   - logic: Lucene/OpenSearch DSL query using ECS field names: process.name, process.args, event.action, source.ip, user.name, file.path, registry.path, network.bytes_out, etc.
-   - sigma_rule: full Sigma YAML block as a single escaped string. Must include title, status: experimental, logsource (with product e.g. "windows"), detection (with ECS field paths), falsepositives, level, and tags with attack.<tactic> and attack.<technique-id>.
+   - logic: Lucene/OpenSearch DSL query using ECS field paths ONLY. NEVER use vendor-specific field names (see FIELD NAMES rule below).
+   - sigma_rule: full Sigma YAML block as a single escaped string. Must include title, status: experimental, logsource (with product e.g. "windows"), detection (with ECS field paths ONLY), falsepositives, level, and tags with attack.<tactic> and attack.<technique-id>.
    - window: realistic per-stage correlation window. Use "1m" for execution; "5m" for persistence/priv-esc; "15m" for initial access/cred-access; "30m" for evasion; "6h" for lateral/discovery; "12h" for collection; "24h" for C2/exfil.
    - windowReason: one sentence explaining the time window choice (surfaces in the UI)
    - source: telemetry source — one of "EDR", "CloudTrail", "IdP", "Email", "Network", "WAF"
@@ -40,6 +40,25 @@ Your job:
    - falsepositives: JSON array with at least one realistic false positive scenario — e.g. ["Legitimate admin tools that perform the same operation"]
 4. One CORRELATION RULE tying all flow alerts together with the longest plausible attacker dwell window ("1h" | "24h" | "72h").
 5. VALIDATION findings: list issues, warnings, or confirmations.
+
+FIELD NAMES — STRICT RULE:
+All field names in logic (Lucene) and sigma detection blocks MUST use ECS paths. NEVER use vendor-specific field names. The logsource.product field handles vendor translation.
+
+FORBIDDEN → ECS replacement:
+  CrowdStrike  event_type:ProcessRollup2 / process_name / CommandLine → event.action / process.name / process.command_line
+  CrowdStrike  ParentImageFileName                                     → process.parent.executable
+  GuardDuty    detail.type / detail.service.action.*                   → event.action / destination.ip / source.ip
+  GuardDuty    detail.resource.instanceDetails.*                       → cloud.instance.id / host.id
+  Sysmon       EventID:1/3/11 / TargetFilename / SourceImage           → use logsource.service:sysmon + process.name / file.path / process.executable
+  Windows      EventID:4624 / SubjectUserName / TargetUserName         → use logsource.service:security + event.action / user.name
+  Okta         eventType / actor.id / outcome.result                   → event.action / user.id / event.outcome
+  CloudTrail   eventName / sourceIPAddress / userIdentity.arn          → event.action / source.ip / aws.cloudtrail.user_identity.arn
+
+Correct ECS examples:
+  process.name:"powershell.exe" AND process.command_line:*-enc*
+  event.action:"user.session.start" AND source.ip:* AND user.name:*
+  file.path:*\\AppData\\* AND process.name:"wscript.exe"
+  destination.port:4444 AND network.direction:"egress"
 
 OUTPUT STRICT JSON ONLY — no prose, no markdown fences, just the object:
 {
