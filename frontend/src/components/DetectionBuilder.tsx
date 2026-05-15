@@ -595,6 +595,7 @@ interface GeneratedPanelProps {
 
 function GeneratedPanel({ result, generating, onClose, onRegenerate, onHunt }: GeneratedPanelProps) {
   const [saved, setSaved] = useState(false);
+  const [showSigma, setShowSigma] = useState(false);
 
   const handleSave = () => {
     if (!result) return;
@@ -665,7 +666,24 @@ function GeneratedPanel({ result, generating, onClose, onRegenerate, onHunt }: G
                     </div>
                     <div className={`ac-sev ac-sev-${a.severity}`}>{a.severity}</div>
                   </div>
-                  <div className="ac-logic">{a.logic}</div>
+                  <div className="query-format-toggle">
+                    <button
+                      className={`toggle-btn${!showSigma ? ' active' : ''}`}
+                      onClick={() => setShowSigma(false)}
+                    >
+                      Lucene
+                    </button>
+                    <button
+                      className={`toggle-btn${showSigma ? ' active' : ''}`}
+                      onClick={() => setShowSigma(true)}
+                      disabled={!a.sigma_rule}
+                    >
+                      Sigma
+                    </button>
+                  </div>
+                  <pre className="query-block">
+                    {showSigma ? (a.sigma_rule || '# No Sigma rule available') : a.logic}
+                  </pre>
                   <div className="ac-meta">
                     <span className="ac-meta-item">
                       <span className="ac-meta-k">Technique</span>
