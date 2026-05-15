@@ -313,14 +313,16 @@ type BuildDetectionFinding struct {
 }
 
 type BuildDetectionAlert struct {
-	Name         string `json:"name"`
-	Description  string `json:"description"`
-	TechniqueID  string `json:"techniqueId"`
-	Logic        string `json:"logic"`
-	Window       string `json:"window"`
-	WindowReason string `json:"windowReason"`
-	Source       string `json:"source"`
-	Severity     string `json:"severity"`
+	Name           string   `json:"name"`
+	Description    string   `json:"description"`
+	TechniqueID    string   `json:"techniqueId"`
+	Logic          string   `json:"logic"`
+	Window         string   `json:"window"`
+	WindowReason   string   `json:"windowReason"`
+	Source         string   `json:"source"`
+	Severity       string   `json:"severity"`
+	SigmaRule      string   `json:"sigma_rule,omitempty"`
+	Falsepositives []string `json:"falsepositives,omitempty"`
 }
 
 type BuildDetectionCorrelation struct {
