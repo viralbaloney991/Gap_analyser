@@ -246,13 +246,19 @@ type SuggestionsResponse struct {
 	LogSources    []string          `json:"log_sources"`
 }
 
-// AlertSuggestion is a single LLM-generated alert recommendation.
+// AlertSuggestion is a single LLM-generated alert recommendation returned in the API response.
 type AlertSuggestion struct {
-	LogSource   string `json:"log_source"`
-	AlertName   string `json:"alert_name"`
-	Description string `json:"description"`
-	QueryHint   string `json:"query_hint"`
-	Priority    string `json:"priority"`
+	Title            string   `json:"title"`
+	LogSource        string   `json:"log_source"`
+	Description      string   `json:"description"`
+	LuceneQuery      string   `json:"lucene_query"`
+	Severity         string   `json:"severity"`
+	SigmaRule        string   `json:"sigma_rule,omitempty"`
+	LogSourceProduct string   `json:"log_source_product,omitempty"`
+	Window           string   `json:"window,omitempty"`
+	WindowReason     string   `json:"window_reason,omitempty"`
+	Falsepositives   []string `json:"falsepositives,omitempty"`
+	MitreTechniqueID string   `json:"mitre_technique_id,omitempty"`
 }
 
 type ErrorResponse struct {

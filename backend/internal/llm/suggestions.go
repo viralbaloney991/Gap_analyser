@@ -11,13 +11,25 @@ import (
 // MaxSuggestions is the hard cap on suggestions returned per technique.
 const MaxSuggestions = 6
 
-// Suggestion is a single alert recommendation.
+// Suggestion is a single alert recommendation returned by the LLM.
+// Legacy fields (AlertName, QueryHint, Priority) retain their original JSON tags
+// so old rows cached in the database before the rename still unmarshal correctly.
 type Suggestion struct {
-	LogSource   string `json:"log_source"`
-	AlertName   string `json:"alert_name"`
-	Description string `json:"description"`
-	QueryHint   string `json:"query_hint"`
-	Priority    string `json:"priority"`
+	Title            string   `json:"title,omitempty"`
+	LogSource        string   `json:"log_source"`
+	Description      string   `json:"description"`
+	LuceneQuery      string   `json:"lucene_query,omitempty"`
+	Severity         string   `json:"severity,omitempty"`
+	SigmaRule        string   `json:"sigma_rule,omitempty"`
+	LogSourceProduct string   `json:"log_source_product,omitempty"`
+	Window           string   `json:"window,omitempty"`
+	WindowReason     string   `json:"window_reason,omitempty"`
+	Falsepositives   []string `json:"falsepositives,omitempty"`
+	MitreTechniqueID string   `json:"mitre_technique_id,omitempty"`
+	// Legacy read-only — populated only when reading pre-rename cached rows.
+	AlertName string `json:"alert_name,omitempty"`
+	QueryHint string `json:"query_hint,omitempty"`
+	Priority  string `json:"priority,omitempty"`
 }
 
 // SuggestionsResult is the response from the suggestion engine.
