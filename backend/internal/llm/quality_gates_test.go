@@ -83,6 +83,23 @@ func TestValidateDetectionAlert(t *testing.T) {
 	}
 }
 
+func TestMockBuildDetectionHasSigmaAndFP(t *testing.T) {
+	techs := []BuildTechnique{
+		{ID: "T1003", Name: "OS Credential Dumping", TacticID: "TA0006", TacticName: "Credential Access", TacticOrder: 7, Source: "EDR"},
+	}
+	result := mockBuildDetection(techs)
+	if len(result.Alerts) == 0 {
+		t.Fatal("expected at least one alert")
+	}
+	a := result.Alerts[0]
+	if a.SigmaRule == "" {
+		t.Error("mock alert SigmaRule should not be empty")
+	}
+	if len(a.Falsepositives) == 0 {
+		t.Error("mock alert Falsepositives should not be empty")
+	}
+}
+
 func TestValidateSuggestion(t *testing.T) {
 	cases := []struct {
 		name    string

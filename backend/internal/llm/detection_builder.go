@@ -22,20 +22,22 @@ type BuildTechnique struct {
 	Source      string
 }
 
-const buildDetectionSystemPrompt = `You are a senior detection engineer at a SOC. A user has selected MITRE ATT\&CK techniques to build a multi-stage detection chain.
+const buildDetectionSystemPrompt = `You are a senior detection engineer at a SOC. A user has selected MITRE ATT&CK techniques to build a multi-stage detection chain.
 
 Your job:
 1. VALIDATE the chain represents a coherent attacker kill-chain (Recon < Initial Access < Execution < Persistence < Priv Esc < Evasion < Cred Access < Discovery < Lateral < Collection < C2 < Exfiltration < Impact). Flag missing steps or implausible sequences.
 2. PROPOSE 3–4 flow alerts that together would catch this attacker behaviour.
 3. For each alert provide:
-   - name: short stage label e.g. "Stage 1: Valid Account Login"
+   - name: detection title following the pattern "<Verb> <Subject> via <Method>" — e.g. "Detect Credential Dump via LSASS Memory Access"
    - description: one-line summary
    - techniqueId: the MITRE T-id this alert primarily detects (from the user's list)
-   - logic: Lucene/OpenSearch DSL query string that detects this behavior (used verbatim in Coralogix). Use real field names: process.name, process.args, event.action, source.ip, user.name, file.path, network.bytes_out, http.request.uri, registry.path, etc. Example for T1059: process.name:("powershell.exe" OR "cmd.exe") AND process.args:(*-enc* OR *-nop* OR *IEX*)
-   - window: realistic per-stage correlation window. Use "5m" for execution/cred-access; "15m" for initial access; "30m" for evasion; "1h" for persistence; "6h" for lateral/discovery; "12h" for collection; "24h" for C2/exfil.
-   - windowReason: one sentence explaining the time window choice (this surfaces in the UI)
+   - logic: Lucene/OpenSearch DSL query using ECS field names: process.name, process.args, event.action, source.ip, user.name, file.path, registry.path, network.bytes_out, etc.
+   - sigma_rule: full Sigma YAML block as a single escaped string. Must include title, status: experimental, logsource (with product e.g. "windows"), detection (with ECS field paths), falsepositives, level, and tags with attack.<tactic> and attack.<technique-id>.
+   - window: realistic per-stage correlation window. Use "1m" for execution; "5m" for persistence/priv-esc; "15m" for initial access/cred-access; "30m" for evasion; "6h" for lateral/discovery; "12h" for collection; "24h" for C2/exfil.
+   - windowReason: one sentence explaining the time window choice (surfaces in the UI)
    - source: telemetry source — one of "EDR", "CloudTrail", "IdP", "Email", "Network", "WAF"
-   - severity: "critical" | "high" | "medium" | "low"
+   - severity: "critical" | "high" | "medium" | "low" (critical = code execution/exfil; high = priv-esc/cred theft/lateral; medium = discovery/persistence; low = informational)
+   - falsepositives: JSON array with at least one realistic false positive scenario — e.g. ["Legitimate admin tools that perform the same operation"]
 4. One CORRELATION RULE tying all flow alerts together with the longest plausible attacker dwell window ("1h" | "24h" | "72h").
 5. VALIDATION findings: list issues, warnings, or confirmations.
 
@@ -48,8 +50,8 @@ OUTPUT STRICT JSON ONLY — no prose, no markdown fences, just the object:
   "alerts": [
     {
       "name": "...", "description": "...", "techniqueId": "T...",
-      "logic": "...", "window": "...", "windowReason": "...",
-      "source": "...", "severity": "..."
+      "logic": "...", "sigma_rule": "...", "window": "...", "windowReason": "...",
+      "source": "...", "severity": "...", "falsepositives": ["..."]
     }
   ],
   "correlation": {
@@ -214,18 +216,26 @@ func mockBuildDetection(techs []BuildTechnique) *models.BuildDetectionResponse {
 		if !ok {
 			lucene = fmt.Sprintf(`event.category:"%s" AND technique.id:"%s"`, strings.ToLower(t.TacticName), t.ID)
 		}
-		alerts[i] = models.BuildDetectionAlert{
-			Name:         fmt.Sprintf("Stage %d: %s", i+1, t.Name),
-			Description:  fmt.Sprintf("Detect %s activity (%s).", strings.ToLower(t.Name), t.TacticName),
-			TechniqueID:  t.ID,
-			Logic:        lucene,
-			Window:       wt.w,
-			WindowReason: wt.why,
-			Source:       strings.TrimSpace(src),
-			Severity:     sevByTactic[t.TacticID],
+		sev := sevByTactic[t.TacticID]
+		if sev == "" {
+			sev = "medium"
 		}
-		if alerts[i].Severity == "" {
-			alerts[i].Severity = "medium"
+		tacticSlug := strings.ToLower(strings.ReplaceAll(t.TacticName, " ", "_"))
+		sigmaRule := fmt.Sprintf(
+			"title: Detect %s via %s\nstatus: experimental\nlogsource:\n  product: windows\n  service: security\ndetection:\n  selection:\n    technique.id: '%s'\n  condition: selection\nfalsepositives:\n  - Authorized administrative activity\nlevel: %s\ntags:\n  - attack.%s\n  - attack.%s",
+			t.Name, t.TacticName, t.ID, sev, tacticSlug, strings.ToLower(t.ID),
+		)
+		alerts[i] = models.BuildDetectionAlert{
+			Name:           fmt.Sprintf("Detect %s via %s", t.Name, t.TacticName),
+			Description:    fmt.Sprintf("Detect %s activity (%s).", strings.ToLower(t.Name), t.TacticName),
+			TechniqueID:    t.ID,
+			Logic:          lucene,
+			Window:         wt.w,
+			WindowReason:   wt.why,
+			Source:         strings.TrimSpace(src),
+			Severity:       sev,
+			SigmaRule:      sigmaRule,
+			Falsepositives: []string{"Authorized administrative activity using the same tools or commands."},
 		}
 	}
 
