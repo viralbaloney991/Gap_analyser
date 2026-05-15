@@ -19,6 +19,9 @@ api-response.json
 
 # Private / tooling
 .claude/
+!.claude/
+!.claude/skills/
+!.claude/skills/**
 .superpowers/
 .env
 .env.*
