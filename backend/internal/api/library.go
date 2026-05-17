@@ -1,10 +1,15 @@
 package api
 
 import (
+	"archive/zip"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
 
 	"coralogix-alert-analyzer/internal/models"
 	"coralogix-alert-analyzer/internal/store"
@@ -150,6 +155,177 @@ func (h *Handler) HandleLibraryDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleLibraryExport handles GET /api/library/export.
+// Streams a zip of Sigma .yml files filtered by ?client=.
+func (h *Handler) HandleLibraryExport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.alertStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "library unavailable")
+		return
+	}
+
+	client := r.URL.Query().Get("client")
+	rows, err := h.alertStore.ListDetections(r.Context(), store.DetectionFilter{Client: client, Limit: 500})
+	if err != nil {
+		log.Printf("ERROR HandleLibraryExport: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to load detections")
+		return
+	}
+
+	date := time.Now().UTC().Format("2006-01-02")
+	clientSlug := "all"
+	if client != "" {
+		clientSlug = slugify(client)
+	}
+	filename := fmt.Sprintf("detections-%s-%s.zip", clientSlug, date)
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	for i, row := range rows {
+		name := fmt.Sprintf("%s-%s-%03d.yml", row.TechniqueID, slugify(row.Title), i+1)
+		f, err := zw.Create(name)
+		if err != nil {
+			log.Printf("WARN HandleLibraryExport zip entry %s: %v", name, err)
+			continue
+		}
+		fmt.Fprint(f, row.SigmaRule)
+	}
+}
+
+var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)
+
+func slugify(s string) string {
+	s = strings.ToLower(s)
+	s = nonAlphaNum.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if len(s) > 40 {
+		s = s[:40]
+	}
+	return s
+}
+
+// HandleLibraryPush handles POST /api/library/{id}/push.
+// Pushes the detection to Coralogix as a live alert via the REST API.
+func (h *Handler) HandleLibraryPush(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.alertStore == nil {
+		writeError(w, http.StatusServiceUnavailable, "library unavailable")
+		return
+	}
+
+	// Path: /api/library/{id}/push
+	path := strings.TrimPrefix(r.URL.Path, "/api/library/")
+	path = strings.TrimSuffix(path, "/push")
+	id := strings.TrimSpace(path)
+	if id == "" || strings.Contains(id, "/") {
+		writeError(w, http.StatusBadRequest, "missing detection id")
+		return
+	}
+
+	det, err := h.alertStore.GetDetection(r.Context(), id)
+	if err != nil {
+		log.Printf("ERROR HandleLibraryPush GetDetection id=%s: %v", id, err)
+		writeError(w, http.StatusInternalServerError, "failed to load detection")
+		return
+	}
+	if det == nil {
+		writeError(w, http.StatusNotFound, "detection not found")
+		return
+	}
+
+	// Look up the client config for API key + region.
+	cc, ok := h.config.Clients[det.Client]
+	if !ok || cc.APIKey == "" {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("no API key configured for client %q", det.Client))
+		return
+	}
+
+	// Map severity to Coralogix enum.
+	sevMap := map[string]string{
+		"critical": "ALERT_SEVERITY_CRITICAL",
+		"high":     "ALERT_SEVERITY_HIGH",
+		"medium":   "ALERT_SEVERITY_MEDIUM",
+		"low":      "ALERT_SEVERITY_LOW",
+	}
+	cxSeverity := sevMap[det.Severity]
+	if cxSeverity == "" {
+		cxSeverity = "ALERT_SEVERITY_MEDIUM"
+	}
+
+	// Build Coralogix alert creation payload.
+	payload := map[string]any{
+		"name":        det.Title,
+		"description": fmt.Sprintf("Auto-generated from CXAlert Detection Library — technique %s", det.TechniqueID),
+		"is_active":   true,
+		"severity":    cxSeverity,
+		"type": map[string]any{
+			"logs_immediate": map[string]any{
+				"lucene_query": det.LuceneQuery,
+			},
+		},
+	}
+
+	body, _ := json.Marshal(payload)
+	baseURL := regionToRESTBase(cc.Region)
+	endpoint := baseURL + "/api/v1/external/alerts"
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, strings.NewReader(string(body)))
+	if err != nil {
+		log.Printf("ERROR HandleLibraryPush build request: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to build push request")
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+cc.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("ERROR HandleLibraryPush coralogix request: %v", err)
+		writeError(w, http.StatusBadGateway, "failed to reach Coralogix API")
+		return
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("ERROR HandleLibraryPush coralogix status=%d body=%s", resp.StatusCode, respBody)
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Coralogix API error: %s", string(respBody)))
+		return
+	}
+
+	// Parse alert ID from Coralogix response.
+	var cxResp struct {
+		Alert struct {
+			ID string `json:"id"`
+		} `json:"alert"`
+		ID string `json:"id"` // some API versions return top-level id
+	}
+	json.Unmarshal(respBody, &cxResp)
+
+	alertID := cxResp.Alert.ID
+	if alertID == "" {
+		alertID = cxResp.ID
+	}
+
+	alertURL := fmt.Sprintf("%s/ui/#/alerts/query?alertId=%s", baseURL, alertID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(models.PushResponse{
+		CoralogixAlertID: alertID,
+		URL:              alertURL,
+	})
 }
 
 // regionToRESTBase maps a Coralogix region ID to its REST API base URL.
