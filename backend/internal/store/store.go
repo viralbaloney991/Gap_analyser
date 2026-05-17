@@ -318,7 +318,7 @@ type SavedDetection struct {
 	SigmaRule      string    `json:"sigma_rule"`
 	Severity       string    `json:"severity"`
 	LogSource      string    `json:"log_source"`
-	Falsepositives []string `json:"falsepositives,omitempty"`
+	Falsepositives []string  `json:"falsepositives,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 

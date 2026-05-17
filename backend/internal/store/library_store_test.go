@@ -101,6 +101,14 @@ func TestGetDetection(t *testing.T) {
 	if len(got.Falsepositives) != 1 || got.Falsepositives[0] != "AV scanning" {
 		t.Errorf("falsepositives mismatch: %v", got.Falsepositives)
 	}
+
+	missing, err := s.GetDetection(ctx, "00000000-0000-0000-0000-000000000000")
+	if err != nil {
+		t.Fatalf("GetDetection not-found: %v", err)
+	}
+	if missing != nil {
+		t.Errorf("want nil for unknown id, got %+v", missing)
+	}
 }
 
 func TestListDetections_FilterBySeverity(t *testing.T) {
