@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -167,5 +166,5 @@ func regionToRESTBase(region string) string {
 	if b, ok := bases[strings.ToLower(region)]; ok {
 		return b
 	}
-	return fmt.Sprintf("https://api.coralogix.com")
+	return "https://api.coralogix.com"
 }
