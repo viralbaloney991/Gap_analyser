@@ -342,3 +342,93 @@ func (s *Store) AppendCachedCorrelations(ctx context.Context, row CorrelationRow
 	}
 	return nil
 }
+
+// SaveDetection inserts a new detection into saved_detections and returns its UUID string.
+func (s *Store) SaveDetection(ctx context.Context, d SavedDetection) (string, error) {
+	var id string
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO saved_detections
+			(client, source, title, technique_id, tactic, lucene_query, sigma_rule, severity, log_source, falsepositives)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING id::text
+	`, d.Client, d.Source, d.Title, d.TechniqueID, d.Tactic,
+		d.LuceneQuery, d.SigmaRule, d.Severity, d.LogSource, d.Falsepositives,
+	).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("insert saved_detections: %w", err)
+	}
+	return id, nil
+}
+
+// ListDetections returns saved detections matching the filter, newest first.
+func (s *Store) ListDetections(ctx context.Context, f DetectionFilter) ([]SavedDetection, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, client, source, title, technique_id, tactic,
+		       lucene_query, sigma_rule, severity, log_source, falsepositives, created_at
+		FROM saved_detections
+		WHERE ($1 = '' OR client = $1)
+		  AND ($2 = '' OR technique_id = $2)
+		  AND ($3 = '' OR severity = $3)
+		ORDER BY created_at DESC
+		LIMIT $4
+	`, f.Client, f.TechniqueID, f.Severity, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query saved_detections: %w", err)
+	}
+	defer rows.Close()
+
+	var result []SavedDetection
+	for rows.Next() {
+		var d SavedDetection
+		if err := rows.Scan(
+			&d.ID, &d.Client, &d.Source, &d.Title, &d.TechniqueID, &d.Tactic,
+			&d.LuceneQuery, &d.SigmaRule, &d.Severity, &d.LogSource,
+			&d.Falsepositives, &d.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan saved_detection: %w", err)
+		}
+		result = append(result, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("saved_detections rows error: %w", err)
+	}
+	if result == nil {
+		result = []SavedDetection{}
+	}
+	return result, nil
+}
+
+// DeleteDetection removes a saved detection by UUID string. Idempotent.
+func (s *Store) DeleteDetection(ctx context.Context, id string) error {
+	_, err := s.pool.Exec(ctx,
+		`DELETE FROM saved_detections WHERE id = $1::uuid`, id)
+	if err != nil {
+		return fmt.Errorf("delete saved_detection %s: %w", id, err)
+	}
+	return nil
+}
+
+// GetDetection fetches a single detection by UUID string. Returns nil, nil when not found.
+func (s *Store) GetDetection(ctx context.Context, id string) (*SavedDetection, error) {
+	var d SavedDetection
+	err := s.pool.QueryRow(ctx, `
+		SELECT id::text, client, source, title, technique_id, tactic,
+		       lucene_query, sigma_rule, severity, log_source, falsepositives, created_at
+		FROM saved_detections WHERE id = $1::uuid
+	`, id).Scan(
+		&d.ID, &d.Client, &d.Source, &d.Title, &d.TechniqueID, &d.Tactic,
+		&d.LuceneQuery, &d.SigmaRule, &d.Severity, &d.LogSource,
+		&d.Falsepositives, &d.CreatedAt,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get saved_detection %s: %w", id, err)
+	}
+	return &d, nil
+}
