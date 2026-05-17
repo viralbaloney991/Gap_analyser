@@ -343,3 +343,41 @@ export interface HuntAlertDef {
   severity: string
   group_by: string
 }
+
+export interface SavedDetection {
+  id: string;
+  client: string;
+  source: 'builder' | 'suggestions';
+  title: string;
+  technique_id: string;
+  tactic: string;
+  lucene_query: string;
+  sigma_rule: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  log_source: string;
+  falsepositives: string[];
+  created_at: string; // ISO 8601
+}
+
+export interface SaveDetectionRequest {
+  client: string;
+  source: 'builder' | 'suggestions';
+  title: string;
+  technique_id: string;
+  tactic: string;
+  lucene_query: string;
+  sigma_rule: string;
+  severity: string;
+  log_source: string;
+  falsepositives: string[];
+}
+
+export interface LibraryResponse {
+  detections: SavedDetection[];
+  total: number;
+}
+
+export interface PushResponse {
+  coralogix_alert_id: string;
+  url: string;
+}

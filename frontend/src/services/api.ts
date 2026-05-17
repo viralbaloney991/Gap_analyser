@@ -1,4 +1,4 @@
-import type { AnalyzeResponse, ClientInfo, CorrelationsResponse, ExportNarrativeReport, GenerationResult, HuntPayload, InsightsReport, MapTacticsResponse, MitreCatalog, NoiseAlert, NoiseResponse, SuggestionsResponse } from '../types';
+import type { AnalyzeResponse, ClientInfo, CorrelationsResponse, ExportNarrativeReport, GenerationResult, HuntPayload, InsightsReport, LibraryResponse, MapTacticsResponse, MitreCatalog, NoiseAlert, NoiseResponse, PushResponse, SaveDetectionRequest, SuggestionsResponse } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 
@@ -187,4 +187,56 @@ export async function exportHuntReport(huntId: string): Promise<void> {
   a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] ?? 'hunt-report.md';
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+export async function saveDetection(payload: SaveDetectionRequest): Promise<{ id: string }> {
+  const res = await fetch(`${API_BASE}/api/library`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Save failed' }));
+    throw new Error(err.error || 'Failed to save detection');
+  }
+  return res.json();
+}
+
+export async function listDetections(filter?: { client?: string; severity?: string }): Promise<LibraryResponse> {
+  const params = new URLSearchParams();
+  if (filter?.client) params.set('client', filter.client);
+  if (filter?.severity) params.set('severity', filter.severity);
+  const res = await fetch(`${API_BASE}/api/library?${params}`);
+  if (!res.ok) throw new Error('Failed to fetch library');
+  return res.json();
+}
+
+export async function deleteDetection(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/library/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to delete detection');
+}
+
+export async function pushDetection(id: string): Promise<PushResponse> {
+  const res = await fetch(`${API_BASE}/api/library/${id}/push`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Push failed' }));
+    throw new Error(err.error || 'Failed to push detection');
+  }
+  return res.json();
+}
+
+export async function exportDetections(client?: string): Promise<void> {
+  const params = new URLSearchParams();
+  if (client) params.set('client', client);
+  const res = await fetch(`${API_BASE}/api/library/export?${params}`);
+  if (!res.ok) throw new Error('Export failed');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const cd = res.headers.get('Content-Disposition') ?? '';
+  const match = cd.match(/filename="([^"]+)"/);
+  a.download = match ? match[1] : 'detections.zip';
+  a.click();
+  URL.revokeObjectURL(url);
 }
