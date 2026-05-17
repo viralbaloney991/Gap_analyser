@@ -81,6 +81,23 @@ func (s *Store) migrate(ctx context.Context) error {
 			generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 		CREATE INDEX IF NOT EXISTS correlation_cache_key_idx ON correlation_cache(cache_key);
+		CREATE TABLE IF NOT EXISTS saved_detections (
+		    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+		    client         TEXT        NOT NULL,
+		    source         TEXT        NOT NULL CHECK (source IN ('builder', 'suggestions')),
+		    title          TEXT        NOT NULL,
+		    technique_id   TEXT        NOT NULL,
+		    tactic         TEXT        NOT NULL,
+		    lucene_query   TEXT        NOT NULL,
+		    sigma_rule     TEXT        NOT NULL,
+		    severity       TEXT        NOT NULL CHECK (severity IN ('critical', 'high', 'medium', 'low')),
+		    log_source     TEXT        NOT NULL,
+		    falsepositives TEXT[]      NOT NULL DEFAULT '{}',
+		    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
+		CREATE INDEX IF NOT EXISTS saved_detections_client_idx    ON saved_detections (client);
+		CREATE INDEX IF NOT EXISTS saved_detections_technique_idx ON saved_detections (technique_id);
+		CREATE INDEX IF NOT EXISTS saved_detections_created_idx   ON saved_detections (created_at DESC);
 	`)
 	return err
 }
@@ -287,6 +304,30 @@ func (s *Store) GetCachedCorrelations(ctx context.Context, cacheKey string) ([]C
 		result = []CorrelationRow{}
 	}
 	return result, nil
+}
+
+// SavedDetection is a persisted detection from the Builder or Suggestions panel.
+type SavedDetection struct {
+	ID             string    `json:"id"`
+	Client         string    `json:"client"`
+	Source         string    `json:"source"` // "builder" | "suggestions"
+	Title          string    `json:"title"`
+	TechniqueID    string    `json:"technique_id"`
+	Tactic         string    `json:"tactic"`
+	LuceneQuery    string    `json:"lucene_query"`
+	SigmaRule      string    `json:"sigma_rule"`
+	Severity       string    `json:"severity"`
+	LogSource      string    `json:"log_source"`
+	Falsepositives []string  `json:"falsepositives"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// DetectionFilter controls which saved detections ListDetections returns.
+type DetectionFilter struct {
+	Client      string // empty = all clients
+	TechniqueID string // empty = all techniques
+	Severity    string // empty = all severities
+	Limit       int    // 0 = use default (100)
 }
 
 // AppendCachedCorrelations inserts one new correlation generation row.
