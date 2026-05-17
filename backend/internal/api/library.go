@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -281,7 +282,7 @@ func (h *Handler) HandleLibraryPush(w http.ResponseWriter, r *http.Request) {
 	baseURL := regionToRESTBase(cc.Region)
 	endpoint := baseURL + "/api/v1/external/alerts"
 
-	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, strings.NewReader(string(body)))
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		log.Printf("ERROR HandleLibraryPush build request: %v", err)
 		writeError(w, http.StatusInternalServerError, "failed to build push request")
@@ -297,7 +298,12 @@ func (h *Handler) HandleLibraryPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("ERROR HandleLibraryPush read response: %v", err)
+		writeError(w, http.StatusBadGateway, "failed to read Coralogix response")
+		return
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("ERROR HandleLibraryPush coralogix status=%d body=%s", resp.StatusCode, respBody)
@@ -312,7 +318,11 @@ func (h *Handler) HandleLibraryPush(w http.ResponseWriter, r *http.Request) {
 		} `json:"alert"`
 		ID string `json:"id"` // some API versions return top-level id
 	}
-	json.Unmarshal(respBody, &cxResp)
+	if err := json.Unmarshal(respBody, &cxResp); err != nil {
+		log.Printf("ERROR HandleLibraryPush parse response: %v body=%s", err, respBody)
+		writeError(w, http.StatusBadGateway, "failed to parse Coralogix response")
+		return
+	}
 
 	alertID := cxResp.Alert.ID
 	if alertID == "" {
