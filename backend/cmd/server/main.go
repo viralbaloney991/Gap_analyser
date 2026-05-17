@@ -118,6 +118,26 @@ func main() {
 	mux.HandleFunc("/api/export/narrative", handler.HandleExportNarrative)
 	mux.HandleFunc("/api/hunt/stream", handler.HandleHuntStream)
 	mux.HandleFunc("/api/hunt/export", handler.HandleHuntExport)
+	mux.HandleFunc("/api/library", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			handler.HandleLibraryList(w, r)
+		case http.MethodPost:
+			handler.HandleLibrarySave(w, r)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/library/export", handler.HandleLibraryExport)
+	mux.HandleFunc("/api/library/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/push") {
+			handler.HandleLibraryPush(w, r)
+		} else if r.Method == http.MethodDelete {
+			handler.HandleLibraryDelete(w, r)
+		} else {
+			http.NotFound(w, r)
+		}
+	})
 
 	// Serve static frontend files in production.
 	frontendDist := os.Getenv("FRONTEND_DIST")
