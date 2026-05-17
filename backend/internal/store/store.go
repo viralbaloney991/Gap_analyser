@@ -82,18 +82,18 @@ func (s *Store) migrate(ctx context.Context) error {
 		);
 		CREATE INDEX IF NOT EXISTS correlation_cache_key_idx ON correlation_cache(cache_key);
 		CREATE TABLE IF NOT EXISTS saved_detections (
-		    id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-		    client         TEXT        NOT NULL,
-		    source         TEXT        NOT NULL CHECK (source IN ('builder', 'suggestions')),
-		    title          TEXT        NOT NULL,
-		    technique_id   TEXT        NOT NULL,
-		    tactic         TEXT        NOT NULL,
-		    lucene_query   TEXT        NOT NULL,
-		    sigma_rule     TEXT        NOT NULL,
-		    severity       TEXT        NOT NULL CHECK (severity IN ('critical', 'high', 'medium', 'low')),
-		    log_source     TEXT        NOT NULL,
-		    falsepositives TEXT[]      NOT NULL DEFAULT '{}',
-		    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+			id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+			client         TEXT        NOT NULL,
+			source         TEXT        NOT NULL CHECK (source IN ('builder', 'suggestions')),
+			title          TEXT        NOT NULL,
+			technique_id   TEXT        NOT NULL,
+			tactic         TEXT        NOT NULL,
+			lucene_query   TEXT        NOT NULL,
+			sigma_rule     TEXT        NOT NULL,
+			severity       TEXT        NOT NULL CHECK (severity IN ('critical', 'high', 'medium', 'low')),
+			log_source     TEXT        NOT NULL,
+			falsepositives TEXT[]      NOT NULL DEFAULT '{}',
+			created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 		CREATE INDEX IF NOT EXISTS saved_detections_client_idx    ON saved_detections (client);
 		CREATE INDEX IF NOT EXISTS saved_detections_technique_idx ON saved_detections (technique_id);
@@ -318,7 +318,7 @@ type SavedDetection struct {
 	SigmaRule      string    `json:"sigma_rule"`
 	Severity       string    `json:"severity"`
 	LogSource      string    `json:"log_source"`
-	Falsepositives []string  `json:"falsepositives"`
+	Falsepositives []string `json:"falsepositives,omitempty"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
