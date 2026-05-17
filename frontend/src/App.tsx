@@ -9,13 +9,14 @@ import AlertInsights from './components/AlertInsights';
 import ThreatGraph from './components/ThreatGraph';
 import DetectionBuilder from './components/DetectionBuilder';
 import HuntView from './components/HuntView';
+import LibraryView from './components/LibraryView';
 import { analyzeClient, fetchInsights, fetchNoise } from './services/api';
 import type { AnalyzeResponse, InsightsReport, SimilarityResult, FlowAlert, HuntPayload } from './types';
 import './App.css';
 
 const VALID_LOOKBACK = [7, 14, 30, 90];
 
-type View = 'form' | 'summary' | 'mitre' | 'insights' | 'graph' | 'builder' | 'hunt';
+type View = 'form' | 'summary' | 'mitre' | 'insights' | 'graph' | 'builder' | 'hunt' | 'library';
 
 const FADE_UP_TRANSITION: Transition = { duration: 0.2, ease: 'easeOut' };
 
@@ -154,6 +155,7 @@ function App() {
                  : view === 'insights' ? 'Alert Insights'
                  : view === 'graph' ? 'Threat Graph'
                  : view === 'hunt' ? 'Hunt'
+                 : view === 'library' ? 'Detection Library'
                  : 'Build detections'
           }]),
       ]
@@ -179,6 +181,11 @@ function App() {
         </div>
 
         <div className="header-right">
+          {view !== 'form' && (
+            <button className="btn-small btn-library" onClick={() => navigate('library')}>
+              Library
+            </button>
+          )}
           {view !== 'form' && (
             <button className="btn-small" onClick={goBack}>
               <ArrowLeft size={13} style={{ verticalAlign: 'middle', marginRight: 3 }} /> Back
@@ -288,6 +295,11 @@ function App() {
                 origin={huntOrigin}
                 onBack={() => navigate(huntOrigin)}
               />
+            </motion.div>
+          )}
+          {view === 'library' && (
+            <motion.div key="library" {...FADE_UP} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <LibraryView clientName={clientName} />
             </motion.div>
           )}
         </AnimatePresence>
