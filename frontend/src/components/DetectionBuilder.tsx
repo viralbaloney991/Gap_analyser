@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, Fragment, useRef } from 'rea
 import { AlertTriangle, Info, XCircle } from 'lucide-react';
 import { MITRE_TACTICS, MITRE_TECHNIQUES, mockGenerate } from '../data/mitre-catalog';
 import type { MITRETechnique } from '../data/mitre-catalog';
-import { buildDetection, fetchMitreCatalog } from '../services/api';
+import { buildDetection, fetchMitreCatalog, saveDetection } from '../services/api';
 import type { GenerationResult, FlowAlert, MitreCatalog } from '../types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -192,6 +192,7 @@ export default function DetectionBuilder({ clientName, preselectedIds, onHunt }:
             onClose={() => setResult(null)}
             onRegenerate={handleGenerate}
             onHunt={onHunt}
+            clientName={clientName}
           />
         </div>
       </div>
@@ -591,11 +592,40 @@ interface GeneratedPanelProps {
   onClose: () => void;
   onRegenerate: () => void;
   onHunt?: (alert: FlowAlert) => void;
+  clientName: string;
 }
 
-function GeneratedPanel({ result, generating, onClose, onRegenerate, onHunt }: GeneratedPanelProps) {
+function GeneratedPanel({ result, generating, onClose, onRegenerate, onHunt, clientName }: GeneratedPanelProps) {
   const [saved, setSaved] = useState(false);
   const [showSigma, setShowSigma] = useState(false);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+
+  const handleSaveToLibrary = async (a: FlowAlert) => {
+    const key = a.techniqueId;
+    if (savedIds.has(key) || savingIds.has(key)) return;
+    setSavingIds(prev => new Set(prev).add(key));
+    try {
+      await saveDetection({
+        client: clientName,
+        source: 'builder',
+        title: a.name,
+        technique_id: a.techniqueId,
+        tactic: '',
+        lucene_query: a.logic,
+        sigma_rule: a.sigma_rule ?? '',
+        severity: a.severity ?? 'medium',
+        log_source: a.source ?? '',
+        falsepositives: a.falsepositives ?? [],
+      });
+      setSavedIds(prev => new Set(prev).add(key));
+      setTimeout(() => setSavedIds(prev => { const n = new Set(prev); n.delete(key); return n; }), 2000);
+    } catch {
+      // silent fail
+    } finally {
+      setSavingIds(prev => { const n = new Set(prev); n.delete(key); return n; });
+    }
+  };
 
   const handleSave = () => {
     if (!result) return;
@@ -711,6 +741,15 @@ function GeneratedPanel({ result, generating, onClose, onRegenerate, onHunt }: G
                       </button>
                     </div>
                   )}
+                  <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      className={`btn-small${savedIds.has(a.techniqueId) ? ' btn-saved' : ''}`}
+                      disabled={savedIds.has(a.techniqueId) || savingIds.has(a.techniqueId)}
+                      onClick={() => handleSaveToLibrary(a)}
+                    >
+                      {savingIds.has(a.techniqueId) ? 'Saving…' : savedIds.has(a.techniqueId) ? '✓ Saved' : 'Save'}
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}

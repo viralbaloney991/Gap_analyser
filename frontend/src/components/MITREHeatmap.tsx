@@ -8,8 +8,8 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Download } from 'lucide-react';
-import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse, HuntPayload } from '../types';
-import { fetchSuggestions } from '../services/api';
+import type { MITRECoverageResult, NavigatorTechnique, SuggestionsResponse, AlertSuggestion, HuntPayload } from '../types';
+import { fetchSuggestions, saveDetection } from '../services/api';
 
 interface Props {
   data: MITRECoverageResult;
@@ -553,6 +553,32 @@ function SuggestionsPanel({
   const [error, setError] = useState<string | null>(null);
   const [provider, setProvider] = useState('');
   const [showSigma, setShowSigma] = useState(false);
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set());
+
+  const handleSave = async (s: AlertSuggestion) => {
+    const key = s.title;
+    if (savedIds.has(key) || savingIds.has(key)) return;
+    setSavingIds(prev => new Set(prev).add(key));
+    try {
+      await saveDetection({
+        client: clientName,
+        source: 'suggestions',
+        title: s.title,
+        technique_id: technique.techniqueID,
+        tactic: technique.tactic,
+        lucene_query: s.lucene_query,
+        sigma_rule: s.sigma_rule ?? '',
+        severity: s.severity,
+        log_source: s.log_source,
+        falsepositives: s.falsepositives ?? [],
+      });
+      setSavedIds(prev => new Set(prev).add(key));
+      setTimeout(() => setSavedIds(prev => { const n = new Set(prev); n.delete(key); return n; }), 2000);
+    } catch { /* silent */ } finally {
+      setSavingIds(prev => { const n = new Set(prev); n.delete(key); return n; });
+    }
+  };
 
   const generate = async (force = false) => {
     setSuggestions(null);
@@ -683,6 +709,15 @@ function SuggestionsPanel({
                     </button>
                   </div>
                 )}
+                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    className={`btn-small${savedIds.has(s.title) ? ' btn-saved' : ''}`}
+                    disabled={savedIds.has(s.title) || savingIds.has(s.title)}
+                    onClick={() => handleSave(s)}
+                  >
+                    {savingIds.has(s.title) ? 'Saving…' : savedIds.has(s.title) ? '✓ Saved' : 'Save'}
+                  </button>
+                </div>
               </div>
             ))
           )}
