@@ -13,30 +13,30 @@ import (
 // HandleLibrarySave handles POST /api/library.
 func (h *Handler) HandleLibrarySave(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	if h.alertStore == nil {
-		http.Error(w, `{"error":"library unavailable: no database configured"}`, http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "library unavailable: no database configured")
 		return
 	}
 
 	var req models.SaveDetectionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if req.Client == "" || req.Title == "" || req.TechniqueID == "" || req.LuceneQuery == "" || req.SigmaRule == "" {
-		http.Error(w, `{"error":"missing required fields: client, title, technique_id, lucene_query, sigma_rule"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "missing required fields: client, title, technique_id, lucene_query, sigma_rule")
 		return
 	}
 	if req.Source != "builder" && req.Source != "suggestions" {
-		http.Error(w, `{"error":"source must be builder or suggestions"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "source must be builder or suggestions")
 		return
 	}
 	validSeverities := map[string]bool{"critical": true, "high": true, "medium": true, "low": true}
 	if !validSeverities[req.Severity] {
-		http.Error(w, `{"error":"severity must be critical, high, medium, or low"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "severity must be critical, high, medium, or low")
 		return
 	}
 	if req.Falsepositives == nil {
@@ -59,7 +59,7 @@ func (h *Handler) HandleLibrarySave(w http.ResponseWriter, r *http.Request) {
 	id, err := h.alertStore.SaveDetection(r.Context(), d)
 	if err != nil {
 		log.Printf("ERROR HandleLibrarySave: %v", err)
-		http.Error(w, `{"error":"failed to save detection"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to save detection")
 		return
 	}
 
@@ -72,7 +72,7 @@ func (h *Handler) HandleLibrarySave(w http.ResponseWriter, r *http.Request) {
 // Query params: client, technique, severity.
 func (h *Handler) HandleLibraryList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	if h.alertStore == nil {
@@ -90,7 +90,7 @@ func (h *Handler) HandleLibraryList(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.alertStore.ListDetections(r.Context(), f)
 	if err != nil {
 		log.Printf("ERROR HandleLibraryList: %v", err)
-		http.Error(w, `{"error":"failed to list detections"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to list detections")
 		return
 	}
 
@@ -126,11 +126,11 @@ func (h *Handler) HandleLibraryList(w http.ResponseWriter, r *http.Request) {
 // HandleLibraryDelete handles DELETE /api/library/{id}.
 func (h *Handler) HandleLibraryDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	if h.alertStore == nil {
-		http.Error(w, `{"error":"library unavailable"}`, http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "library unavailable")
 		return
 	}
 
@@ -139,13 +139,13 @@ func (h *Handler) HandleLibraryDelete(w http.ResponseWriter, r *http.Request) {
 	id = strings.TrimSuffix(id, "/push") // guard: delete vs push on same prefix
 	id = strings.TrimSpace(id)
 	if id == "" || strings.Contains(id, "/") {
-		http.Error(w, `{"error":"missing or invalid detection id"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "missing or invalid detection id")
 		return
 	}
 
 	if err := h.alertStore.DeleteDetection(r.Context(), id); err != nil {
 		log.Printf("ERROR HandleLibraryDelete id=%s: %v", id, err)
-		http.Error(w, `{"error":"failed to delete detection"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "failed to delete detection")
 		return
 	}
 
