@@ -16,6 +16,8 @@ import (
 	"coralogix-alert-analyzer/internal/store"
 )
 
+var coralogixHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 // HandleLibrarySave handles POST /api/library.
 func (h *Handler) HandleLibrarySave(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -178,6 +180,11 @@ func (h *Handler) HandleLibraryExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(rows) == 0 {
+		writeError(w, http.StatusNotFound, "no detections found for the given filter")
+		return
+	}
+
 	date := time.Now().UTC().Format("2006-01-02")
 	clientSlug := "all"
 	if client != "" {
@@ -278,7 +285,12 @@ func (h *Handler) HandleLibraryPush(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	body, _ := json.Marshal(payload)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("ERROR HandleLibraryPush marshal payload: %v", err)
+		writeError(w, http.StatusInternalServerError, "failed to prepare push payload")
+		return
+	}
 	baseURL := regionToRESTBase(cc.Region)
 	endpoint := baseURL + "/api/v1/external/alerts"
 
@@ -291,7 +303,7 @@ func (h *Handler) HandleLibraryPush(w http.ResponseWriter, r *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+cc.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := coralogixHTTPClient.Do(req)
 	if err != nil {
 		log.Printf("ERROR HandleLibraryPush coralogix request: %v", err)
 		writeError(w, http.StatusBadGateway, "failed to reach Coralogix API")

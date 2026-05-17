@@ -193,6 +193,7 @@ export default function DetectionBuilder({ clientName, preselectedIds, onHunt }:
             onRegenerate={handleGenerate}
             onHunt={onHunt}
             clientName={clientName}
+            techniques={techniques}
           />
         </div>
       </div>
@@ -593,9 +594,10 @@ interface GeneratedPanelProps {
   onRegenerate: () => void;
   onHunt?: (alert: FlowAlert) => void;
   clientName: string;
+  techniques: CatalogTechnique[];
 }
 
-function GeneratedPanel({ result, generating, onClose, onRegenerate, onHunt, clientName }: GeneratedPanelProps) {
+function GeneratedPanel({ result, generating, onClose, onRegenerate, onHunt, clientName, techniques }: GeneratedPanelProps) {
   const [saved, setSaved] = useState(false);
   const [showSigma, setShowSigma] = useState(false);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
@@ -605,13 +607,14 @@ function GeneratedPanel({ result, generating, onClose, onRegenerate, onHunt, cli
     const key = a.techniqueId;
     if (savedIds.has(key) || savingIds.has(key)) return;
     setSavingIds(prev => new Set(prev).add(key));
+    const tacticId = techniques.find(t => t.id === a.techniqueId)?.tactic ?? '';
     try {
       await saveDetection({
         client: clientName,
         source: 'builder',
         title: a.name,
         technique_id: a.techniqueId,
-        tactic: '',
+        tactic: tacticId,
         lucene_query: a.logic,
         sigma_rule: a.sigma_rule ?? '',
         severity: a.severity ?? 'medium',
