@@ -494,3 +494,15 @@ func TestHandleHuntExport_NotFound(t *testing.T) {
 		t.Errorf("status = %d, want 404", w.Code)
 	}
 }
+
+func TestOllyModelConstants(t *testing.T) {
+	if ollyPass1Model == "" {
+		t.Error("ollyPass1Model must not be empty")
+	}
+	if ollyPass2Model == "" {
+		t.Error("ollyPass2Model must not be empty")
+	}
+	if ollyPass1Model == ollyPass2Model {
+		t.Error("pass1 and pass2 models must differ")
+	}
+}

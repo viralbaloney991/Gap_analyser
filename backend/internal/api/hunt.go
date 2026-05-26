@@ -374,10 +374,13 @@ func deriveVerdict(hits int, section1 string) (verdict, confidence string) {
 
 // ── cx executor ────────────────────────────────────────────────────────────────
 
-// ollyModel is the cx model used for both passes.
-// claude-sonnet-4-5 is the only model that supports --mode skill and has
-// DataPrime expertise. GPT focus mode reliably 524s on the Coralogix backend.
-const ollyModel = "claude-sonnet-4-5"
+// ollyPass1Model is used for Pass 1 (schema discovery — 4 focused questions).
+// gpt-5.4 is the recommended Pro-mode model; faster for structured short output.
+const ollyPass1Model = "gpt-5.4"
+
+// ollyPass2Model is used for Pass 2 (full 11-section report).
+// claude-sonnet-4-6 has stronger long-form analytical reasoning than 4-5.
+const ollyPass2Model = "claude-sonnet-4-6"
 
 type cxExecutor interface {
 	runLogs(ctx context.Context, query, window string) ([]byte, error)
@@ -412,21 +415,16 @@ func (r *cxRunner) runLogs(ctx context.Context, query, window string) ([]byte, e
 }
 
 func (r *cxRunner) runOllySchema(ctx context.Context, prompt string) ([]byte, error) {
-	// Pass 1: claude-sonnet-4-5 in skill mode — same model as pass 2 because
-	// GPT focus mode reliably 524s on the Coralogix backend. The focused 4-question
-	// prompt completes quickly; --chat-id in pass 2 continues this session.
-	// --output agents returns structured CSV: "chat_id","interaction_id",status,"response",mode,"model"
-	// The first UUID in the output is the chat_id used to continue in pass 2.
 	cmd := exec.CommandContext(ctx, r.binPath, "olly", "ask",
-		"--output", "agents", "--mode", "skill", "--model", ollyModel, "--timeout", "300", prompt)
+		"--output", "agents", "--mode", "skill", "--model", ollyPass1Model,
+		"--timeout", "300", "--read-only", prompt)
 	cmd.Env = r.env()
 	return readCapped(cmd, maxOutputBytes)
 }
 
 func (r *cxRunner) runOllyReport(ctx context.Context, chatID, prompt string) ([]byte, error) {
-	// Pass 2: continues the pass-1 chat (via --chat-id) so Olly uses confirmed
-	// field names from schema discovery to run live pivot queries in section 8.
-	args := []string{"olly", "ask", "--mode", "skill", "--model", ollyModel, "--timeout", "600"}
+	args := []string{"olly", "ask", "--mode", "skill", "--model", ollyPass2Model,
+		"--timeout", "900", "--read-only"}
 	if chatID != "" {
 		args = append(args, "--chat-id", chatID)
 	}
