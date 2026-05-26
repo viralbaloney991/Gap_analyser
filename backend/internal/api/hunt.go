@@ -293,11 +293,27 @@ func formatSourceFields(source string) string {
 	return strings.TrimRight(sb.String(), "\n")
 }
 
-const ollySchemaPromptTemplate = `Schema discovery for threat hunt. Answer ONLY these 4 questions:
+const ollySchemaPromptConcisePrefix = "Be concise and structured. Output only what's asked. Use compact tables. No preamble."
+
+const ollySchemaPromptTemplate = `{{.ConcisePrefix}}
+
+Schema discovery for threat hunt. Answer ONLY these 4 questions:
 
 Query: {{.LuceneQuery}}
 Sample events ({{.SampleCount}} retrieved from last {{.Window}}):
 {{.SampleEvents}}
+
+Known normalized fields (cx_security.* — prefer these in DataPrime translation if confirmed present):
+  - cx_security.username, cx_security.email, cx_security.target_username, cx_security.target_email
+  - cx_security.source_ip, cx_security.destination_ip, cx_security.source_hostname
+  - cx_security.userAgent, cx_security.event_name, cx_security.event_result
+  - cx_security.event_type, cx_security.resource
+  - GeoIP: cx_security.source_ip_geoip.asn.number, cx_security.source_ip_geoip.asn.organization, cx_security.source_ip_geoip.country_name
+
+Log source detected: {{.LogSource}}
+Source-specific supplementary fields (use if cx_security.* fields are absent):
+{{.SourceFields}}
+
 1. Field mapping: for each key term in the Lucene query, find the matching DataPrime $d path
    in the sample events. Which confirmed paths have data?
 
@@ -310,24 +326,31 @@ Sample events ({{.SampleCount}} retrieved from last {{.Window}}):
 4. Top patterns: source logs | filter <condition> | groupby <most relevant field> aggregate
    count() as hits | orderby hits desc | limit 5
 
-Facts only. No preamble.`
+Facts only.`
 
 type ollySchemaPromptData struct {
-	LuceneQuery  string
-	SampleCount  int
-	SampleEvents string
-	Window       string
+	ConcisePrefix string
+	LuceneQuery   string
+	SampleCount   int
+	SampleEvents  string
+	Window        string
+	LogSource     string
+	SourceFields  string
 }
 
 var ollySchemaTmpl = template.Must(template.New("ollySchema").Parse(ollySchemaPromptTemplate))
 
 func buildOllySchemaPrompt(luceneQuery string, sampleCount int, sampleEvents, window string) (string, error) {
+	source := detectLogSource(luceneQuery)
 	var buf bytes.Buffer
 	err := ollySchemaTmpl.Execute(&buf, ollySchemaPromptData{
-		LuceneQuery:  luceneQuery,
-		SampleCount:  sampleCount,
-		SampleEvents: sampleEvents,
-		Window:       window,
+		ConcisePrefix: ollySchemaPromptConcisePrefix,
+		LuceneQuery:   luceneQuery,
+		SampleCount:   sampleCount,
+		SampleEvents:  sampleEvents,
+		Window:        window,
+		LogSource:     source,
+		SourceFields:  formatSourceFields(source),
 	})
 	if err != nil {
 		return "", fmt.Errorf("render olly schema prompt: %w", err)

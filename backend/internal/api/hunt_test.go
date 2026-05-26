@@ -83,6 +83,44 @@ func TestBuildOllySchemaPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildOllySchemaPromptEnrichment(t *testing.T) {
+	// AWS query — should get AWS supplementary fields
+	prompt, err := buildOllySchemaPrompt(
+		`eventName:"CreateBucket" AND awsRegion:us-east-1`, 5, "event1", "7d")
+	if err != nil {
+		t.Fatalf("buildOllySchemaPrompt: %v", err)
+	}
+	// Must include Tier 1 cx_security fields
+	if !strings.Contains(prompt, "cx_security.username") {
+		t.Error("prompt missing cx_security.username (Tier 1 field)")
+	}
+	if !strings.Contains(prompt, "cx_security.source_ip") {
+		t.Error("prompt missing cx_security.source_ip (Tier 1 field)")
+	}
+	// Must include log source detection result
+	if !strings.Contains(prompt, "aws") {
+		t.Error("prompt should mention detected log source: aws")
+	}
+	// Must include AWS-specific Tier 2 fields
+	if !strings.Contains(prompt, "errorCode") {
+		t.Error("prompt missing AWS supplementary field: errorCode")
+	}
+	// Must include concise prefix
+	if !strings.Contains(prompt, "concise") {
+		t.Error("prompt missing CONCISE_PREFIX instruction")
+	}
+
+	// Generic query — should get generic fields, no AWS fields
+	genericPrompt, err := buildOllySchemaPrompt(
+		`event_type:"cmd_exec" AND user:admin`, 2, "ev1", "30d")
+	if err != nil {
+		t.Fatalf("buildOllySchemaPrompt generic: %v", err)
+	}
+	if strings.Contains(genericPrompt, "errorCode") {
+		t.Error("generic prompt must not contain AWS-specific field errorCode")
+	}
+}
+
 func TestBuildOllyReportPrompt(t *testing.T) {
 	prompt := buildOllyReportPrompt()
 	for _, section := range []string{
