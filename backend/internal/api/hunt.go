@@ -113,6 +113,186 @@ func sanitizeQuery(q string) error {
 // 11-section report with live pivot findings.
 // All analysis stays inside Coralogix infrastructure.
 
+// ── Log source detection ──────────────────────────────────────────────────────
+
+// detectLogSource returns a short identifier for the cloud/vendor log source
+// inferred from keyword patterns in the Lucene query.
+func detectLogSource(luceneQuery string) string {
+	blob := strings.ToLower(luceneQuery)
+	// Google Workspace — must precede GCP ("google" matches both)
+	if containsAny(blob, "google workspace", "gsuite", "g-suite", "gmail-admin",
+		"google-workspace", "workspace") {
+		return "gworkspace"
+	}
+	if containsAny(blob, "cloudtrail", "guardduty", "vpc flow", "vpcflow",
+		"aws", "s3 bucket", "aws iam", "aws eks", "lambda", "ec2",
+		"rds snapshot", "aws waf", "recipientaccountid", "eventsource") {
+		return "aws"
+	}
+	if containsAny(blob, "gcp", "cloudaudit", "google cloud", "stackdriver",
+		"gke", "bigquery", "pubsub", "cloud audit", "protopayload", "gcs_bucket") {
+		return "gcp"
+	}
+	if containsAny(blob, "azure", "signinlogs", "auditlogs", "entra",
+		"microsoft azure", "aad", "azuread", "microsoft.authorization") {
+		return "azure"
+	}
+	if containsAny(blob, "okta", "auth0", "outcome.result") {
+		return "okta"
+	}
+	if containsAny(blob, "crowdstrike", "falcon", "cs-falcon") {
+		return "crowdstrike"
+	}
+	if containsAny(blob, "paloalto", "palo alto", "panorama", "pan-os",
+		"panw", "ngfw", "cortex xdr") {
+		return "paloalto"
+	}
+	if containsAny(blob, "fortinet", "fortigate", "fortiweb", "fortisiem",
+		"fortianalyzer", "forti") {
+		return "fortinet"
+	}
+	if containsAny(blob, "cloudflare", "cf-ray", "cloudflare waf",
+		"cloudflare access") {
+		return "cloudflare"
+	}
+	if containsAny(blob, "m365", "office365", "office 365", "microsoft 365",
+		"exchange online", "sharepoint", "msgraph", "microsoft-365", "defender for",
+		"workload:") {
+		return "m365"
+	}
+	if containsAny(blob, "github", "gitlab") {
+		return "github"
+	}
+	if containsAny(blob, "sentinelone", "sentinel one", "s1-") {
+		return "sentinelone"
+	}
+	return "generic"
+}
+
+func containsAny(s string, subs ...string) bool {
+	for _, sub := range subs {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
+}
+
+// _rawSupplementaryFields maps log source identifier → source-specific fields
+// that complement cx_security.* normalization.
+var _rawSupplementaryFields = map[string][]string{
+	"aws": {
+		"userIdentity.type              — role vs. user vs. service vs. assumed-role",
+		"userIdentity.arn               — full ARN of the caller",
+		"errorCode                      — e.g. AccessDenied, NoSuchBucket",
+		"errorMessage                   — human-readable failure reason",
+		"requestParameters.bucketName   — S3 target (or equivalent resource param)",
+		"awsRegion                      — region where the API call was made",
+		"recipientAccountId             — target account (cross-account activity)",
+	},
+	"gcp": {
+		"protoPayload.methodName        — full RPC method name",
+		"protoPayload.serviceName       — GCP service (storage.googleapis.com, etc.)",
+		"protoPayload.status.code       — gRPC status code (0 = OK)",
+		"resource.type                  — GCP resource type (gcs_bucket, etc.)",
+		"resource.labels.project_id     — GCP project",
+	},
+	"azure": {
+		"operationName                  — Azure operation",
+		"resultType                     — Success / Failure",
+		"resultDescription              — detailed failure reason",
+		"resourceId                     — full ARM resource path",
+	},
+	"okta": {
+		"target.displayName             — target app, group, or user acted upon",
+		"outcome.result                 — SUCCESS, FAILURE, SKIPPED, ALLOW, DENY",
+		"outcome.reason                 — detailed outcome reason",
+		"debugContext.debugData.url     — request URL",
+	},
+	"crowdstrike": {
+		"event.UserName                 — actor username",
+		"event.ComputerName             — affected host",
+		"event.RemoteAddressIP4         — source IP",
+		"event.DetectId                 — detection identifier",
+		"event.Technique                — MITRE ATT&CK technique name",
+		"event.SeverityName             — severity (Critical, High, Medium, Low)",
+		"event.PatternDispositionDescription — disposition (prevented, detected, etc.)",
+	},
+	"paloalto": {
+		"PaloAlto.rule                  — firewall policy rule name",
+		"PaloAlto.app                   — application identified",
+		"PaloAlto.destination_port      — destination port",
+		"PaloAlto.threat_name           — threat signature name",
+		"PaloAlto.severity              — threat severity",
+	},
+	"fortinet": {
+		"srcip                          — source IP address",
+		"dstip                          — destination IP address",
+		"action                         — allow / deny / close",
+		"policyname                     — firewall policy name",
+		"user                           — authenticated username",
+		"msg                            — event description",
+	},
+	"cloudflare": {
+		"ClientIP                       — client IP address",
+		"ClientRequestUserAgent         — user agent string",
+		"ClientCountry                  — client country code",
+		"ClientASNDescription           — client ASN org",
+		"Action                         — firewall action (block, allow, challenge)",
+		"RuleID                         — firewall rule that matched",
+	},
+	"m365": {
+		"UserId                         — actor UPN (user@domain.com)",
+		"ClientIP                       — client IP address",
+		"Operation                      — action type (FileDownloaded, MailboxLogin)",
+		"ObjectId                       — target object (file path, mailbox)",
+		"ResultStatus                   — Succeeded / Failed",
+		"Workload                       — M365 workload (Exchange, SharePoint, Teams)",
+	},
+	"gworkspace": {
+		"actor.callerType               — HUMAN vs. KEY (service account)",
+		"events.name                    — specific event action",
+		"events.type                    — event category (LOGIN, DRIVE, etc.)",
+		"ipAddress                      — raw IP from Google's log",
+	},
+	"github": {
+		"repo                           — repository name",
+		"org                            — organization",
+		"action                         — specific action (push, pull_request)",
+		"data.ref                       — branch / tag reference",
+		"programmatic_access_type       — token type (OAuth App, GitHub App)",
+	},
+	"sentinelone": {
+		"event.DetectId                 — detection identifier",
+		"event.SeverityName             — severity label",
+		"event.category                 — detection category",
+		"event.Technique                — MITRE ATT&CK technique",
+		"event.PatternDispositionDescription — disposition (killed, quarantined)",
+	},
+	"generic": {
+		"Any high-cardinality identity field (user, account, email, UPN)",
+		"Any IP address field not mapped to cx_security.source_ip",
+		"Any action / operation / method field",
+		"Any outcome / result / status field",
+	},
+}
+
+// formatSourceFields returns the supplementary fields for the given log source
+// as a newline-joined string for prompt injection.
+func formatSourceFields(source string) string {
+	fields, ok := _rawSupplementaryFields[source]
+	if !ok {
+		fields = _rawSupplementaryFields["generic"]
+	}
+	var sb strings.Builder
+	for _, f := range fields {
+		sb.WriteString("  - ")
+		sb.WriteString(f)
+		sb.WriteByte('\n')
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
 const ollySchemaPromptTemplate = `Schema discovery for threat hunt. Answer ONLY these 4 questions:
 
 Query: {{.LuceneQuery}}

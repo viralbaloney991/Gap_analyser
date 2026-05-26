@@ -506,3 +506,66 @@ func TestOllyModelConstants(t *testing.T) {
 		t.Error("pass1 and pass2 models must differ")
 	}
 }
+
+func TestDetectLogSource(t *testing.T) {
+	tests := []struct {
+		query string
+		want  string
+	}{
+		// AWS
+		{`eventSource:"cloudtrail.amazonaws.com"`, "aws"},
+		{`eventName:"CreateBucket" AND awsRegion:us-east-1`, "aws"},
+		{`errorCode:"AccessDenied" AND recipientAccountId:*`, "aws"},
+		// GCP
+		{`protoPayload.methodName:"storage.objects.delete"`, "gcp"},
+		{`resource.type:"gcs_bucket"`, "gcp"},
+		// Azure
+		{`operationName:"Microsoft.Authorization/roleAssignments/write"`, "azure"},
+		{`signinlogs AND resultType:"Failure"`, "azure"},
+		// Okta
+		{`target.type:"AppInstance" AND outcome.result:"FAILURE"`, "okta"},
+		{`actor.type:"User" AND auth0`, "okta"},
+		// CrowdStrike
+		{`event.Technique:"T1059" AND crowdstrike`, "crowdstrike"},
+		// Palo Alto
+		{`PaloAlto.threat_name:* AND PaloAlto.severity:"high"`, "paloalto"},
+		{`panw AND ngfw`, "paloalto"},
+		// Fortinet
+		{`action:"deny" AND policyname:* AND fortinet`, "fortinet"},
+		// Cloudflare
+		{`Action:"block" AND RuleID:* AND cloudflare`, "cloudflare"},
+		// M365
+		{`Operation:"MailboxLogin" AND Workload:"Exchange"`, "m365"},
+		{`UserId:* AND office365`, "m365"},
+		// Google Workspace
+		{`events.name:"login_failure" AND workspace`, "gworkspace"},
+		// GitHub
+		{`repo:* AND org:* AND github`, "github"},
+		// SentinelOne
+		{`event.DetectId:* AND sentinelone`, "sentinelone"},
+		// Generic fallback
+		{`event_type:"cmd_exec" AND user:admin`, "generic"},
+		{`kubernetes.pod:frontend-*`, "generic"},
+	}
+	for _, tc := range tests {
+		got := detectLogSource(tc.query)
+		if got != tc.want {
+			t.Errorf("detectLogSource(%q) = %q, want %q", tc.query, got, tc.want)
+		}
+	}
+}
+
+func TestFormatSourceFields(t *testing.T) {
+	// aws should return a non-empty string with known fields
+	out := formatSourceFields("aws")
+	if out == "" {
+		t.Error("formatSourceFields(aws) should not be empty")
+	}
+	if !strings.Contains(out, "errorCode") {
+		t.Errorf("formatSourceFields(aws) missing errorCode: %q", out)
+	}
+	// generic should still return something
+	if formatSourceFields("generic") == "" {
+		t.Error("formatSourceFields(generic) should not be empty")
+	}
+}
