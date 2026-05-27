@@ -107,8 +107,8 @@ func sanitizeQuery(q string) error {
 
 // ── Olly prompts ──────────────────────────────────────────────────────────────
 //
-// Two-pass design: pass 1 (gpt-5.2, focus, ~72s) discovers real field names
-// via 4 targeted questions and returns a chat_id. Pass 2 (claude-sonnet-4-5,
+// Two-pass design: pass 1 (gpt-5.4, skill, ~72s) discovers real field names
+// via 4 targeted questions and returns a chat_id. Pass 2 (claude-sonnet-4-6,
 // skill, --chat-id, ~216s) continues the same chat and produces the full
 // 11-section report with live pivot findings.
 // All analysis stays inside Coralogix infrastructure.
@@ -816,7 +816,7 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	qd := parseLogsOutput(logsOut, cxCmd)
 	sendSSE(w, flusher, "query_done", qd)
 
-	// Step 2a: Pass 1 — schema discovery (gpt-5.2, focus, ~72s)
+	// Step 2a: Pass 1 — schema discovery (gpt-5.4, skill, ~72s)
 	// Uses --output agents to get structured output with chat_id.
 	sampleText := formatSampleEvents(qd.rawEvents)
 	schemaPrompt, err := buildOllySchemaPrompt(lucene, qd.Hits, sampleText, window)
@@ -836,10 +836,10 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 		qd.Hits = total
 	}
 
-	// Step 2b: Pass 2 — full 11-section report (claude-sonnet-4-5, skill, ~216s)
-	// Continues the same chat so Olly has confirmed field names for live pivots.
-	// Falls back to a fresh chat if chat_id could not be extracted.
-	reportOut, err := cx.runOllyReport(ctx, chatID, buildOllyReportPrompt())
+	// Step 2b: Pass 2 — full 11-section report (claude-sonnet-4-6, skill, ~216s)
+	// Continues the same chat (chat_id from pass 1) so Olly uses confirmed field names.
+	// On timeout, polls the same chat with a recovery ping (up to 5 attempts).
+	reportOut, err := runWithRecovery(ctx, cx, chatID, buildOllyReportPrompt(), 5)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: err.Error()})
 		return
