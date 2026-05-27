@@ -2,10 +2,12 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBuildOllyPrompt(t *testing.T) {
@@ -397,13 +399,19 @@ func TestParseLogsOutputEmptyArray(t *testing.T) {
 }
 
 type mockCxExecutor struct {
-	logsOutput      []byte
-	logsErr         error
-	schemaOutput    []byte
-	schemaErr       error
-	reportOutput    []byte
-	reportErr       error
-	capturedChatID  string // records chatID passed to runOllyReport
+	logsOutput   []byte
+	logsErr      error
+	schemaOutput []byte
+	schemaErr    error
+	// Single-call fields (used by existing tests)
+	reportOutput []byte
+	reportErr    error
+	// Multi-call fields (used by recovery tests)
+	// reportOutputs[0] is the primary call; subsequent entries are recovery ping replies.
+	reportOutputs  [][]byte
+	reportErrors   []error
+	reportCallIdx  int
+	capturedChatID string // records chatID passed to runOllyReport
 }
 
 func (m *mockCxExecutor) runLogs(ctx context.Context, query, window string) ([]byte, error) {
@@ -416,6 +424,20 @@ func (m *mockCxExecutor) runOllySchema(ctx context.Context, prompt string) ([]by
 
 func (m *mockCxExecutor) runOllyReport(ctx context.Context, chatID, prompt string) ([]byte, error) {
 	m.capturedChatID = chatID
+	// Multi-call mode: use reportOutputs/reportErrors slices
+	if len(m.reportOutputs) > 0 {
+		idx := m.reportCallIdx
+		if idx >= len(m.reportOutputs) {
+			idx = len(m.reportOutputs) - 1
+		}
+		m.reportCallIdx++
+		var err error
+		if idx < len(m.reportErrors) {
+			err = m.reportErrors[idx]
+		}
+		return m.reportOutputs[idx], err
+	}
+	// Single-call mode: original behavior
 	return m.reportOutput, m.reportErr
 }
 
@@ -605,5 +627,91 @@ func TestFormatSourceFields(t *testing.T) {
 	// generic should still return something
 	if formatSourceFields("generic") == "" {
 		t.Error("formatSourceFields(generic) should not be empty")
+	}
+}
+
+func TestRunWithRecovery_ImmediateSuccess(t *testing.T) {
+	// Override waits for test speed
+	orig := recoveryWaits
+	recoveryWaits = []time.Duration{0, 0, 0, 0, 0}
+	defer func() { recoveryWaits = orig }()
+
+	reportOut := []byte("## 1. What We Found\nTotal hits: 3")
+	mock := &mockCxExecutor{
+		reportOutputs: [][]byte{reportOut},
+	}
+	out, err := runWithRecovery(context.Background(), mock, "chat-abc", "report prompt", 3)
+	if err != nil {
+		t.Fatalf("runWithRecovery: unexpected error: %v", err)
+	}
+	if string(out) != string(reportOut) {
+		t.Errorf("output = %q, want %q", out, reportOut)
+	}
+	if mock.reportCallIdx != 1 {
+		t.Errorf("reportCallIdx = %d, want 1 (no recovery needed)", mock.reportCallIdx)
+	}
+}
+
+func TestRunWithRecovery_RecoverySucceeds(t *testing.T) {
+	// Override waits for test speed
+	orig := recoveryWaits
+	recoveryWaits = []time.Duration{0, 0, 0, 0, 0}
+	defer func() { recoveryWaits = orig }()
+
+	recoveryOut := []byte("## 1. What We Found\nRecovered result")
+	mock := &mockCxExecutor{
+		reportOutputs: [][]byte{nil, recoveryOut},
+		reportErrors:  []error{fmt.Errorf("cx exit: signal: killed"), nil},
+	}
+	out, err := runWithRecovery(context.Background(), mock, "chat-xyz", "report prompt", 3)
+	if err != nil {
+		t.Fatalf("runWithRecovery: unexpected error after recovery: %v", err)
+	}
+	if string(out) != string(recoveryOut) {
+		t.Errorf("output = %q, want %q", out, recoveryOut)
+	}
+	if mock.reportCallIdx != 2 {
+		t.Errorf("reportCallIdx = %d, want 2 (primary + 1 recovery)", mock.reportCallIdx)
+	}
+}
+
+func TestRunWithRecovery_ExhaustsRetries(t *testing.T) {
+	// Override waits for test speed
+	orig := recoveryWaits
+	recoveryWaits = []time.Duration{0, 0, 0, 0, 0}
+	defer func() { recoveryWaits = orig }()
+
+	mock := &mockCxExecutor{
+		reportOutputs: [][]byte{nil, nil, nil, nil, nil, nil},
+		reportErrors: []error{
+			fmt.Errorf("timeout"), fmt.Errorf("timeout"), fmt.Errorf("timeout"),
+			fmt.Errorf("timeout"), fmt.Errorf("timeout"), fmt.Errorf("timeout"),
+		},
+	}
+	_, err := runWithRecovery(context.Background(), mock, "chat-fail", "report prompt", 5)
+	if err == nil {
+		t.Error("expected error after exhausting retries, got nil")
+	}
+	if mock.reportCallIdx != 6 {
+		t.Errorf("reportCallIdx = %d, want 6 (1 primary + 5 recoveries)", mock.reportCallIdx)
+	}
+}
+
+func TestRunWithRecovery_NoChatIDSkipsRecovery(t *testing.T) {
+	// Override waits for test speed
+	orig := recoveryWaits
+	recoveryWaits = []time.Duration{0, 0, 0, 0, 0}
+	defer func() { recoveryWaits = orig }()
+
+	mock := &mockCxExecutor{
+		reportOutputs: [][]byte{nil},
+		reportErrors:  []error{fmt.Errorf("timeout")},
+	}
+	_, err := runWithRecovery(context.Background(), mock, "", "report prompt", 5)
+	if err == nil {
+		t.Error("expected error when chatID is empty and primary fails")
+	}
+	if mock.reportCallIdx != 1 {
+		t.Errorf("reportCallIdx = %d, want 1 (no recovery without chatID)", mock.reportCallIdx)
 	}
 }

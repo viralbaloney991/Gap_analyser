@@ -666,6 +666,65 @@ func readCapped(cmd *exec.Cmd, limit int64) ([]byte, error) {
 	return limited, nil
 }
 
+// recoveryWaits defines the sleep durations between recovery ping attempts.
+// 45s → 60s → 75s → 90s → 105s, mirroring the olly.py baselining system.
+var recoveryWaits = []time.Duration{
+	45 * time.Second,
+	60 * time.Second,
+	75 * time.Second,
+	90 * time.Second,
+	105 * time.Second,
+}
+
+const recoveryPing = "Are you done? Return your best answer so far in the requested format. Be concise."
+
+// runWithRecovery calls cx.runOllyReport for Pass 2. On error (Cloudflare 524 or
+// subprocess timeout), if chatID is non-empty it polls the same chat with a short
+// recovery ping on a progressive back-off schedule (up to maxRetries attempts).
+// If chatID is empty, it returns the error immediately — there is no chat to recover.
+func runWithRecovery(ctx context.Context, cx cxExecutor, chatID, prompt string, maxRetries int) ([]byte, error) {
+	out, err := cx.runOllyReport(ctx, chatID, prompt)
+	if err == nil && len(out) > 0 {
+		return out, nil
+	}
+
+	if chatID == "" {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("olly report: empty response")
+	}
+
+	lastErr := err
+	if lastErr == nil {
+		lastErr = fmt.Errorf("olly report: empty response")
+	}
+
+	waits := recoveryWaits
+	if maxRetries < len(waits) {
+		waits = waits[:maxRetries]
+	}
+
+	for attempt, wait := range waits {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
+
+		rec, rerr := cx.runOllyReport(ctx, chatID, recoveryPing)
+		if rerr == nil && len(rec) > 0 {
+			return rec, nil
+		}
+		if rerr != nil {
+			lastErr = rerr
+		}
+		_ = attempt
+	}
+
+	return nil, fmt.Errorf("olly report timed out after %d recovery attempts: %w", len(waits), lastErr)
+}
+
 // ── SSE helpers ───────────────────────────────────────────────────────────────
 
 // noopFlusher is a fallback Flusher for environments that don't support
