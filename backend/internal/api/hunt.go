@@ -90,7 +90,10 @@ type huntErrorData struct {
 // ── Input sanitization ───────────────────────────────────────────────────────
 
 var queryAllowlist = regexp.MustCompile(`^[\x20-\x7E]+$`)
-var queryForbidden = regexp.MustCompile("[`" + `;|\\&\n\r]|\$[({]`)
+// Backslash is intentionally NOT forbidden: the cx command wraps the query in single
+// quotes, making \ inert in bash. Single quote IS forbidden because it would break
+// out of that single-quote context and enable shell injection.
+var queryForbidden = regexp.MustCompile("[`" + `';|&\n\r]|\$[({]`)
 
 func sanitizeQuery(q string) error {
 	if len(q) > 1000 {
@@ -678,6 +681,43 @@ var recoveryWaits = []time.Duration{
 
 const recoveryPing = "Are you done? Return your best answer so far in the requested format. Be concise."
 
+// is524 reports whether err looks like a Cloudflare 524 (origin timeout).
+func is524(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "524")
+}
+
+// runPass1WithRetry runs Pass 1 (schema discovery) with simple full-restart retries.
+// Pass 1 is stateless — each attempt creates a fresh chat — so it can be retried
+// unconditionally. Only 524 / timeout errors are retried; other errors fail fast.
+func runPass1WithRetry(ctx context.Context, cx cxExecutor, prompt string, maxRetries int) ([]byte, error) {
+	out, err := cx.runOllySchema(ctx, prompt)
+	if err == nil && len(out) > 0 {
+		return out, nil
+	}
+	if !is524(err) {
+		return nil, err
+	}
+	var lastErr error = err
+	for range maxRetries {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(30 * time.Second):
+		}
+		out, err = cx.runOllySchema(ctx, prompt)
+		if err == nil && len(out) > 0 {
+			return out, nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		if !is524(err) {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("olly schema timed out after %d retries: %w", maxRetries, lastErr)
+}
+
 // runWithRecovery calls cx.runOllyReport for Pass 2. On error (Cloudflare 524 or
 // subprocess timeout), if chatID is non-empty it polls the same chat with a short
 // recovery ping on a progressive back-off schedule (up to maxRetries attempts).
@@ -825,7 +865,7 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	schemaOut, err := cx.runOllySchema(ctx, schemaPrompt)
+	schemaOut, err := runPass1WithRetry(ctx, cx, schemaPrompt, 3)
 	if err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: err.Error()})
 		return
@@ -845,7 +885,11 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sections := parseOllySections(string(reportOut))
+	_, reportText := parseAgentsOutput(reportOut)
+	if reportText == "" {
+		reportText = string(reportOut)
+	}
+	sections := parseOllySections(reportText)
 	sendSSE(w, flusher, "olly_done", ollyDoneData{Sections: sections})
 
 	// Step 3: Build report

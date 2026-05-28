@@ -574,10 +574,6 @@ function SuggestionsPanel({
     }
   };
 
-  // Auto-load cached suggestions when the panel opens.
-  // force=false means the backend returns cached results instantly if available.
-  useEffect(() => { generate(false); }, [technique.techniqueID, technique.tactic]); // eslint-disable-line react-hooks/exhaustive-deps
-
   return (
     <div className="suggestions-section">
       <div className="suggestions-controls">
@@ -593,7 +589,7 @@ function SuggestionsPanel({
         </select>
         <button
           className="btn-generate"
-          onClick={() => generate(true)}
+          onClick={() => generate(!!suggestions)}
           disabled={loading}
         >
           {loading ? 'Generating...' : suggestions ? 'Regenerate' : 'Generate Suggestions'}
@@ -605,7 +601,7 @@ function SuggestionsPanel({
           <span className="state-error__icon">⚠</span>
           <div>
             <div className="state-error__title">Query generation failed</div>
-            <div className="state-error__body">The provider returned an error. Try a different provider.</div>
+            <div className="state-error__body">{error}</div>
           </div>
         </div>
       )}

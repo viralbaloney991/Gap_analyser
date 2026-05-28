@@ -120,7 +120,7 @@ func GenerateSuggestions(ctx context.Context, provider Provider, input GapInput)
 	resp, err := provider.Complete(ctx, CompletionRequest{
 		SystemPrompt: systemPrompt,
 		UserMessage:  userMsg,
-		MaxTokens:    4096,
+		MaxTokens:    16384,
 		FastMode:     true, // disable thinking/reasoning mode — suggestions need speed, not chain-of-thought
 	})
 	if err != nil {

@@ -1458,9 +1458,17 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, models.ErrorResponse{Error: message})
 }
 
+// edrTelemetryOnlySources are vendors whose data in Coralogix is alert notifications only —
+// not raw process/network/file telemetry. Passing them to the LLM causes it to hallucinate
+// queries against telemetry fields that do not exist in Coralogix.
+var edrTelemetryOnlySources = map[string]bool{
+	"crowdstrike": true,
+}
+
 // buildSuggestionLogSources returns non-vendor-managed log source names for a client,
 // capped at 30 to keep LLM prompts lean. Fully vendor-managed integrations
-// (VendorCoveredCount == AlertCount > 0) and vendor-covered alert data sources are excluded.
+// (VendorCoveredCount == AlertCount > 0), vendor-covered alert data sources, and
+// EDR vendors that only forward alert notifications (not raw telemetry) are excluded.
 func buildSuggestionLogSources(integrations []monday.Integration, alerts []*models.AlertDef) []string {
 	enriched := merge.CountAlertsByIntegration(integrations, alerts)
 
@@ -1469,7 +1477,8 @@ func buildSuggestionLogSources(integrations []monday.Integration, alerts []*mode
 
 	for _, integ := range enriched {
 		isVendorManaged := integ.AlertCount > 0 && integ.VendorCoveredCount == integ.AlertCount
-		if integ.Name != "" && !isVendorManaged && !logSourceSet[integ.Name] {
+		nameLower := strings.ToLower(integ.Name)
+		if integ.Name != "" && !isVendorManaged && !logSourceSet[integ.Name] && !edrTelemetryOnlySources[nameLower] {
 			logSourceSet[integ.Name] = true
 			logSources = append(logSources, integ.Name)
 		}
@@ -1480,7 +1489,7 @@ func buildSuggestionLogSources(integrations []monday.Integration, alerts []*mode
 			continue
 		}
 		for _, ds := range alert.Features.DataSources {
-			if !logSourceSet[ds] {
+			if !logSourceSet[ds] && !edrTelemetryOnlySources[strings.ToLower(ds)] {
 				logSourceSet[ds] = true
 				logSources = append(logSources, ds)
 			}
