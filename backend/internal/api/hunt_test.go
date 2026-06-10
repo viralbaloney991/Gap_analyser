@@ -325,6 +325,7 @@ func TestSanitizeQuery(t *testing.T) {
 		`kubernetes.pod:frontend-*`,
 		`user.risk_score:>70 OR source.geo.country_iso_code:<10`, // comparison operators are safe with argv exec
 		`$m.severity:"high" AND $l.subsystemName:"auth"`,         // DataPrime field references
+		`process.path:C:\\Windows\\System32\\cmd.exe`,             // Windows path — backslash is safe (exec argv, not shell)
 	}
 	for _, q := range valid {
 		if err := sanitizeQuery(q); err != nil {
@@ -340,7 +341,6 @@ func TestSanitizeQuery(t *testing.T) {
 		`event_type:cmd` + "\ninjected",
 		string(make([]byte, 1001)),          // over length limit (null bytes — caught by allowlist)
 		strings.Repeat(" ", 1001),           // 1001 printable ASCII chars — tests length guard exclusively
-		`event_type:cmd\injected`,           // backslash
 		`event_type:cmd & id`,               // background exec
 		`event_type:cmd $(cat /etc/passwd)`, // subshell via $()
 		`event_type:cmd ${PATH}`,            // variable expansion via ${}
@@ -349,6 +349,46 @@ func TestSanitizeQuery(t *testing.T) {
 		if err := sanitizeQuery(q); err == nil {
 			t.Errorf("sanitizeQuery(%q) = nil, want error", q)
 		}
+	}
+}
+
+func TestValidateWindow(t *testing.T) {
+	valid := []string{"24h", "7d", "5m", "30s", "2w", "1h", "1440m"}
+	for _, w := range valid {
+		if err := validateWindow(w); err != nil {
+			t.Errorf("validateWindow(%q) = %v, want nil", w, err)
+		}
+	}
+
+	invalid := []string{
+		"",               // empty
+		"--output",       // flag injection
+		"24h --limit 1",  // trailing args
+		"now-24h",        // already-prefixed
+		"24",             // missing unit
+		"h",              // missing number
+		"24H",            // wrong-case unit
+		"99999h",         // over 4 digits
+		"24h;rm -rf /",   // metacharacters
+		"-1h",            // leading dash
+		"24 h",           // embedded space
+	}
+	for _, w := range invalid {
+		if err := validateWindow(w); err == nil {
+			t.Errorf("validateWindow(%q) = nil, want error", w)
+		}
+	}
+}
+
+func TestOllyURLRe_RejectsHostSpoof(t *testing.T) {
+	good := "https://team.coralogix.com/#/olly/chat/abc123-def"
+	if !ollyURLRe.MatchString(good) {
+		t.Errorf("ollyURLRe should match legitimate coralogix URL %q", good)
+	}
+
+	spoof := "https://evil.com/x.coralogix.com/#/olly/chat/abc123"
+	if ollyURLRe.MatchString(spoof) {
+		t.Errorf("ollyURLRe must NOT match host-spoofing URL %q", spoof)
 	}
 }
 

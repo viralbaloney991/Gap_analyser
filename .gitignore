@@ -18,10 +18,12 @@ api-response.json
 *.log
 
 # Private / tooling
-.claude/
-!.claude/
+# Ignore everything under .claude/ (settings.local.json holds secrets) except shared skills.
+.claude/*
 !.claude/skills/
 !.claude/skills/**
+.claude/settings.local.json
+.claude/worktrees/
 .superpowers/
 .env
 .env.*

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -104,6 +105,19 @@ func sanitizeQuery(q string) error {
 	}
 	if queryForbidden.MatchString(q) {
 		return errors.New("query contains forbidden characters")
+	}
+	return nil
+}
+
+// windowFormat constrains the time window to a relative duration like "24h", "7d", "5m".
+// The window is interpolated into the cx "--start now-<window>" argument, so a flag-shaped
+// or otherwise unconstrained value could inject/override cx arguments. A strict
+// digits-then-unit format closes that off.
+var windowFormat = regexp.MustCompile(`^[0-9]{1,4}[smhdw]$`)
+
+func validateWindow(w string) error {
+	if !windowFormat.MatchString(w) {
+		return errors.New("window must be a relative duration like 24h, 7d, or 5m")
 	}
 	return nil
 }
@@ -529,7 +543,9 @@ func parseOllySections(output string) map[string]string {
 }
 
 var chatIDLineRe = regexp.MustCompile(`(?m)^Chat ID:.*\n?`)
-var ollyURLRe = regexp.MustCompile(`https://[^)\s]+\.coralogix\.com/#/olly/chat/[a-f0-9-]+`)
+// Host portion excludes "/" so a path segment cannot spoof the host,
+// e.g. https://evil.com/x.coralogix.com/#/olly/chat/... must NOT match.
+var ollyURLRe = regexp.MustCompile(`https://[^/)\s]+\.coralogix\.com/#/olly/chat/[a-f0-9-]+`)
 
 var agentsUUIDRe = regexp.MustCompile(`"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"`)
 var agentsResponseRe = regexp.MustCompile(`(?s)completed,"(.*?)",(?:focus|skill|fast|deep-research),"`)
@@ -795,7 +811,7 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	lucene := q.Get("lucene")
 	window := q.Get("window")
 	if window == "" {
-		window = "30d"
+		window = "24h"
 	}
 	name := q.Get("name")
 	severity := q.Get("severity")
@@ -810,13 +826,19 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
+	// CORS for this endpoint is handled by corsMiddleware (origin allowlist). Do not set a
+	// wildcard Access-Control-Allow-Origin here — it would let any site read live hunt results.
 
 	huntID := uuid.New().String()
 	sendSSE(w, flusher, "stream_opened", map[string]string{"hunt_id": huntID})
 
 	if err := sanitizeQuery(lucene); err != nil {
 		sendSSE(w, flusher, "error", huntErrorData{Code: "invalid_query", Message: err.Error()})
+		return
+	}
+
+	if err := validateWindow(window); err != nil {
+		sendSSE(w, flusher, "error", huntErrorData{Code: "invalid_window", Message: err.Error()})
 		return
 	}
 
@@ -849,7 +871,8 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	cxCmd := fmt.Sprintf("cx logs '%s' --start now-%s --output agents --limit 50", lucene, window)
 	logsOut, err := cx.runLogs(ctx, lucene, window)
 	if err != nil {
-		sendSSE(w, flusher, "error", huntErrorData{Code: "cx_logs_failed", Message: err.Error()})
+		log.Printf("ERROR [hunt] cx logs failed hunt=%s client=%s: %v", huntID, clientName, err)
+		sendSSE(w, flusher, "error", huntErrorData{Code: "cx_logs_failed", Message: "log query failed"})
 		return
 	}
 
@@ -861,13 +884,15 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	sampleText := formatSampleEvents(qd.rawEvents)
 	schemaPrompt, err := buildOllySchemaPrompt(lucene, qd.Hits, sampleText, window)
 	if err != nil {
-		sendSSE(w, flusher, "error", huntErrorData{Code: "prompt_build_failed", Message: err.Error()})
+		log.Printf("ERROR [hunt] prompt build failed hunt=%s client=%s: %v", huntID, clientName, err)
+		sendSSE(w, flusher, "error", huntErrorData{Code: "prompt_build_failed", Message: "internal error"})
 		return
 	}
 
 	schemaOut, err := runPass1WithRetry(ctx, cx, schemaPrompt, 3)
 	if err != nil {
-		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: err.Error()})
+		log.Printf("ERROR [hunt] olly pass 1 failed hunt=%s client=%s: %v", huntID, clientName, err)
+		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: "threat analysis failed"})
 		return
 	}
 
@@ -881,7 +906,8 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 	// On timeout, polls the same chat with a recovery ping (up to 5 attempts).
 	reportOut, err := runWithRecovery(ctx, cx, chatID, buildOllyReportPrompt(), 5)
 	if err != nil {
-		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: err.Error()})
+		log.Printf("ERROR [hunt] olly pass 2 failed hunt=%s client=%s: %v", huntID, clientName, err)
+		sendSSE(w, flusher, "error", huntErrorData{Code: "olly_failed", Message: "threat analysis failed"})
 		return
 	}
 
