@@ -53,6 +53,11 @@ function renderMd(text: string): React.ReactNode {
   return parts.length ? <>{parts}</> : text;
 }
 
+function buildOllyChatUrl(region: string | undefined, chatId: string | undefined): string {
+  if (!region || !chatId) return '';
+  return `https://${region}.coralogix.com/#/olly/chat/${encodeURIComponent(chatId)}`;
+}
+
 export default function HuntView({ detection, clientName, cxRegion, onBack, origin = 'builder' }: Props) {
   const [activeStep, setActiveStep] = useState<Step>('query');
   const [doneSteps, setDoneSteps] = useState<Set<Step>>(new Set());
@@ -73,7 +78,7 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
       logic: detection.logic,
       techniqueId: detection.techniqueId,
       tacticId: '',
-      window: detection.window,
+      window: '24h',
       source: detection.source,
       severity: detection.severity,
       client: clientName,
@@ -172,6 +177,11 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
     return 'hunt-badge-default';
   };
 
+  const continuationHref: string =
+    ollySections?.['chat_url'] ||
+    buildOllyChatUrl(cxRegion, ollySections?.['chat_id']) ||
+    '';
+
   const STEP_LABELS: Record<Step, string> = { query: 'Log Query', olly: 'Olly Analysis', report: 'Hunt Report' };
   const STEPS: Step[] = ['query', 'olly', 'report'];
 
@@ -186,7 +196,7 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
         <span className={`hunt-badge ${severityBadgeClass(detection.severity)}`}>{detection.severity}</span>
         <span className="hunt-badge hunt-badge-default">{detection.techniqueId}</span>
         <span className="hunt-badge hunt-badge-default">{detection.source}</span>
-        <span className="hunt-badge hunt-badge-default">{detection.window}</span>
+        <span className="hunt-badge hunt-badge-default">24h</span>
       </div>
 
       <div className="hunt-stepper">
@@ -406,10 +416,10 @@ export default function HuntView({ detection, clientName, cxRegion, onBack, orig
                 {new Date(report.timestamp).toLocaleString()} · {report.run_duration_ms}ms
               </span>
               <div className="report-actions-row">
-                {ollySections?.['chat_url'] && (
+                {continuationHref && (
                   <a
                     className="hunt-btn hunt-btn-primary"
-                    href={ollySections['chat_url']}
+                    href={continuationHref}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
