@@ -916,6 +916,9 @@ func (h *Handler) HandleHuntStream(w http.ResponseWriter, r *http.Request) {
 		reportText = string(reportOut)
 	}
 	sections := parseOllySections(reportText)
+	if chatID != "" {
+		sections["chat_id"] = chatID
+	}
 	sendSSE(w, flusher, "olly_done", ollyDoneData{Sections: sections})
 
 	// Step 3: Build report
