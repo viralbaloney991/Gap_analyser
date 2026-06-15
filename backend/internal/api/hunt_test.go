@@ -583,6 +583,73 @@ Group-By: $d.suser`)
 	if mock.capturedChatID != wantChatID {
 		t.Errorf("runOllyReport chatID = %q, want %q", mock.capturedChatID, wantChatID)
 	}
+	if !strings.Contains(body, `"chat_id":"`+wantChatID+`"`) {
+		t.Errorf("olly_done sections missing chat_id=%q in body: %s", wantChatID, body)
+	}
+}
+
+func TestHandleHuntStream_NoChatIDOmitted(t *testing.T) {
+	// schemaOutput produces NO UUID — parseAgentsOutput returns empty chatID.
+	schemaNoID := []byte(`Creating new chat...
+Sending message...
+[1]{chat_id,interaction_id,status,response,interaction_mode,model_choice}:
+  completed,"## Summary\nNo uuid here",focus,"gpt-5.2"
+`)
+	reportOut := []byte(`## 1. What We Found
+Total hits: 0
+
+## 2. Hunt Summary
+Severity: Low
+Confidence: Low
+
+## 3. Original Query
+event_type:"cmd_exec"
+
+## 4. Schema Mapping
+none
+
+## 5. Translated Query — DataPrime
+source logs | filter $d.event_type == 'cmd_exec'
+
+## 6. Translated Query — Lucene
+$d.event_type:"cmd_exec"
+
+## 7. Detection Logic
+Detects command execution.
+
+## 8. False Positive Sources
+none
+
+## 9. Visibility Gaps
+none
+
+## 10. Follow-up Hunts
+none
+
+## 11. Alert Definition
+Name: test
+Type: standard
+Condition: count > 0
+Severity: Low
+Group-By: host`)
+
+	mock := &mockCxExecutor{
+		logsOutput:   []byte(`[]`),
+		schemaOutput: schemaNoID,
+		reportOutput: reportOut,
+	}
+	h := &Handler{cxBinPath: "/usr/local/bin/cx", cxExec: mock}
+	req := httptest.NewRequest(http.MethodGet, `/api/hunt/stream?lucene=event_type%3Acmd_exec&window=5m`, nil)
+	w := httptest.NewRecorder()
+	h.HandleHuntStream(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "event: olly_done") {
+		t.Fatalf("missing olly_done: %s", body)
+	}
+	if strings.Contains(body, `"chat_id"`) {
+		t.Errorf("olly_done sections must NOT contain chat_id when pass 1 yields no UUID\nbody: %s", body)
+	}
 }
 
 func TestHandleHuntExport_NotFound(t *testing.T) {

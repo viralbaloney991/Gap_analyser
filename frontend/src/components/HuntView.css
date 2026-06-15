@@ -32,8 +32,7 @@
 .hunt-badge-sev-high { color: #F97316; background: rgba(249,115,22,.1); border-color: rgba(249,115,22,.3); }
 .hunt-badge-sev-medium { color: #F59E0B; background: rgba(245,158,11,.1); border-color: rgba(245,158,11,.3); }
 .hunt-badge-sev-low { color: #3B82F6; background: rgba(59,130,246,.1); border-color: rgba(59,130,246,.3); }
-.hunt-badge-default { color: #6E7B8B; background: rgba(110,123,139,.1); border-color: rgba(110,123,139,.2); }
-.hunt-stepper {
+.hunt-badge-default { color: #6E7B8B; background: rgba(110,123,139,.1); border-color: rgba(110,123,139,.2); }.hunt-stepper {
   display: flex; align-items: center; gap: 0;
   margin-bottom: 32px; padding: 16px 20px;
   background: #0E1223; border: 1px solid #1E2A3A; border-radius: 10px;
